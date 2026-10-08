@@ -86,6 +86,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final isWide = size.width >= 900;
     final isDesktop =
         !kIsWeb && (Platform.isLinux || Platform.isWindows || Platform.isMacOS);
+    final myDeviceName = ref.watch(deviceNameProvider);
 
     final body = SafeArea(
       child: isWide ? _desktopLayout() : _mobileLayout(),
@@ -93,7 +94,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     return CallbackShortcuts(
       bindings: {
-        // TV remotes and keyboards: Enter/Space activate, S sends, A adds files.
         const SingleActivator(LogicalKeyboardKey.keyS, control: true):
             _choosePeerAndSend,
         const SingleActivator(LogicalKeyboardKey.keyA, control: true):
@@ -104,19 +104,83 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       },
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('LocalShare'),
+          titleSpacing: 20,
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  gradient: AppColors.primaryGradient,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.accent.withValues(alpha: 0.3),
+                      blurRadius: 10,
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.share_rounded,
+                  size: 18,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Text('LocalShare'),
+              const Spacer(),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceHigh,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: AppColors.surfaceBorder.withValues(alpha: 0.6),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        color: AppColors.success,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      myDeviceName,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
           actions: [
-            IconButton(
-              tooltip: 'Settings',
-              onPressed: () => _showSettings(context),
-              icon: const Icon(Icons.settings_outlined),
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: IconButton(
+                tooltip: 'Settings',
+                onPressed: () => _showSettings(context),
+                icon: const Icon(Icons.settings_outlined),
+              ),
             ),
           ],
         ),
         floatingActionButton: FloatingActionButton.extended(
           onPressed: _addFiles,
-          icon: const Icon(Icons.add),
+          icon: const Icon(Icons.add_rounded),
           label: const Text('Add files'),
+          elevation: 4,
+          backgroundColor: AppColors.accent,
+          foregroundColor: AppColors.background,
         ),
         body: isDesktop
             ? DropTarget(
@@ -141,17 +205,53 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           Positioned.fill(
             child: IgnorePointer(
               child: Container(
-                color: AppColors.accent.withValues(alpha: 0.12),
+                color: AppColors.background.withValues(alpha: 0.9),
                 alignment: Alignment.center,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.file_download_outlined,
-                        size: 64, color: AppColors.accent),
-                    const SizedBox(height: 12),
-                    Text('Drop files to share',
-                        style: Theme.of(context).textTheme.titleLarge),
-                  ],
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 48, vertical: 36),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(
+                      color: AppColors.accent,
+                      width: 2,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.accent.withValues(alpha: 0.3),
+                        blurRadius: 30,
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: AppColors.accent.withValues(alpha: 0.15),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.file_download_outlined,
+                          size: 56,
+                          color: AppColors.accent,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Drop files to share',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Files will be added to your transfer list',
+                        style:
+                            TextStyle(color: AppColors.textMuted, fontSize: 13),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -220,11 +320,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget _peerStrip() {
     final peers = ref.watch(peersProvider).valueOrNull ?? const <DeviceInfo>[];
     if (peers.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 12),
-        child: Text(
-          'Looking for nearby devices…',
-          style: TextStyle(color: AppColors.textMuted),
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: const [
+            SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: AppColors.accent,
+              ),
+            ),
+            SizedBox(width: 10),
+            Text(
+              'Looking for nearby devices…',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+            ),
+          ],
         ),
       );
     }
@@ -236,7 +350,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         itemCount: peers.length,
         separatorBuilder: (_, __) => const SizedBox(width: 8),
         itemBuilder: (context, i) => ActionChip(
-          avatar: const Icon(Icons.devices, size: 16),
+          avatar: const Icon(Icons.devices_rounded, size: 16),
           label: Text(peers[i].displayName),
           onPressed: () => _sendTo(peers[i]),
         ),
@@ -255,13 +369,36 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         children: [
           Row(
             children: [
-              Text('Selected', style: Theme.of(context).textTheme.titleMedium),
+              Text(
+                'Selected Files',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              if (files.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.accent.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '${files.length}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.accent,
+                    ),
+                  ),
+                ),
+              ],
               const Spacer(),
               if (files.isNotEmpty)
-                TextButton(
+                TextButton.icon(
                   onPressed: () =>
                       ref.read(sendControllerProvider.notifier).clear(),
-                  child: const Text('Clear'),
+                  icon: const Icon(Icons.clear_all_rounded, size: 18),
+                  label: const Text('Clear'),
                 ),
             ],
           ),
@@ -273,15 +410,46 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     itemCount: files.length,
                     itemBuilder: (context, i) {
                       final file = files[i];
-                      return ListTile(
-                        leading: const Icon(Icons.insert_drive_file_outlined),
-                        title: Text(file.fileName,
-                            maxLines: 1, overflow: TextOverflow.ellipsis),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.close),
-                          onPressed: () => ref
-                              .read(sendControllerProvider.notifier)
-                              .removeFile(file),
+                      return Container(
+                        margin: const EdgeInsets.symmetric(vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.surface,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color:
+                                AppColors.surfaceBorder.withValues(alpha: 0.5),
+                          ),
+                        ),
+                        child: ListTile(
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 2),
+                          leading: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: AppColors.accent.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(
+                              Icons.insert_drive_file_outlined,
+                              color: AppColors.accent,
+                              size: 20,
+                            ),
+                          ),
+                          title: Text(
+                            file.fileName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.close_rounded, size: 20),
+                            onPressed: () => ref
+                                .read(sendControllerProvider.notifier)
+                                .removeFile(file),
+                          ),
                         ),
                       );
                     },
@@ -289,8 +457,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
           if (send.jobs.isNotEmpty) ...[
             const Divider(),
+            const SizedBox(height: 8),
+            Text(
+              'Transfers',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: AppColors.textMuted,
+                  ),
+            ),
+            const SizedBox(height: 4),
             SizedBox(
-              height: 120,
+              height: 140,
               child: ListView(
                 children: [
                   for (final job in send.jobs.values)
@@ -305,20 +481,45 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
             ),
           ],
-          if (files.isNotEmpty)
+          if (files.isNotEmpty) ...[
+            const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
                 onPressed: send.busy ? null : _choosePeerAndSend,
-                icon: const Icon(Icons.send),
+                icon: const Icon(Icons.send_rounded),
                 label: Text('Send ${files.length} file(s)'),
               ),
             ),
+          ],
           if (send.error != null)
             Padding(
               padding: const EdgeInsets.only(top: 8),
-              child: Text(send.error!,
-                  style: const TextStyle(color: AppColors.danger)),
+              child: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppColors.danger.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                      color: AppColors.danger.withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error_outline_rounded,
+                        color: AppColors.danger, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        send.error!,
+                        style: const TextStyle(
+                          color: AppColors.danger,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
         ],
       ),
@@ -333,7 +534,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final peers = ref.read(peersProvider).valueOrNull ?? const <DeviceInfo>[];
     if (peers.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No nearby devices yet.')),
+        SnackBar(
+          content: const Text('No nearby devices found yet.'),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
       );
       return;
     }
@@ -345,7 +552,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
-      // Let the sheet grow and scroll so the keyboard does not cover the field.
       isScrollControlled: true,
       builder: (context) => const _SettingsSheet(),
     );
@@ -358,17 +564,43 @@ class _EmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.cloud_upload_outlined,
-              size: 56, color: AppColors.textMuted.withValues(alpha: 0.6)),
-          const SizedBox(height: 12),
-          const Text('Add files to share them with nearby devices'),
-          const SizedBox(height: 4),
-          const Text('Everything stays on your local network',
-              style: TextStyle(fontSize: 12)),
-        ],
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceHigh,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: AppColors.surfaceBorder.withValues(alpha: 0.5),
+                ),
+              ),
+              child: Icon(
+                Icons.cloud_upload_outlined,
+                size: 32,
+                color: AppColors.accent.withValues(alpha: 0.7),
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Add files to share them with nearby devices',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 2),
+            const Text(
+              'Everything stays secure on your local network',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 11, color: AppColors.textMuted),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -381,33 +613,45 @@ class _SettingsSheet extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final name = ref.watch(deviceNameProvider);
     final caps = ref.watch(capabilitiesProvider).valueOrNull;
+
     return SafeArea(
       child: Padding(
-        // Lift the sheet above the on-screen keyboard when it opens.
         padding: EdgeInsets.fromLTRB(
-          16,
-          16,
-          16,
-          16 + MediaQuery.viewInsetsOf(context).bottom,
+          20,
+          8,
+          20,
+          20 + MediaQuery.viewInsetsOf(context).bottom,
         ),
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Device name',
-                  style: Theme.of(context).textTheme.titleMedium),
+              Text(
+                'Device Settings',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Device name',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
               const SizedBox(height: 8),
               TextFormField(
                 initialValue: name,
-                decoration: const InputDecoration(border: OutlineInputBorder()),
+                decoration: const InputDecoration(
+                  prefixIcon: Icon(Icons.edit_outlined),
+                  hintText: 'Enter visible device name',
+                ),
                 onChanged: (value) =>
                     ref.read(deviceNameProvider.notifier).state = value,
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 20),
               if (caps != null) ...[
-                Text('Capabilities',
-                    style: Theme.of(context).textTheme.titleMedium),
+                Text(
+                  'Capabilities',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 8,
@@ -415,9 +659,17 @@ class _SettingsSheet extends ConsumerWidget {
                   children: [
                     for (final entry in caps.toJson().entries)
                       Chip(
+                        avatar: Icon(
+                          entry.value
+                              ? Icons.check_circle_rounded
+                              : Icons.cancel_rounded,
+                          size: 16,
+                          color: entry.value
+                              ? AppColors.success
+                              : AppColors.textMuted,
+                        ),
                         label:
                             Text('${entry.key}: ${entry.value ? "yes" : "no"}'),
-                        visualDensity: VisualDensity.compact,
                       ),
                   ],
                 ),
