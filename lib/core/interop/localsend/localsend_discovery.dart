@@ -35,6 +35,9 @@ class LocalSendDiscovery {
   /// Our own announced info, so peers can reply to us.
   LocalSendInfo? ownInfo;
 
+  /// Known local IP addresses of this device to filter out loopback/self-sightings.
+  Set<String> ownAddresses = const {};
+
   /// Our compat listener port (where peers' `register` callbacks arrive).
   int callbackPort = kLocalSendPort;
 
@@ -110,6 +113,10 @@ class LocalSendDiscovery {
 
   /// Send the fallback unicast reply the spec allows.
   void replyUnicast(InternetAddress address, LocalSendInfo info) {
+    if (ownAddresses.contains(address.address) ||
+        address.address == '127.0.0.1') {
+      return;
+    }
     final datagram =
         utf8.encode(jsonEncode({...info.toJson(), 'announce': false}));
     try {
@@ -162,6 +169,12 @@ class LocalSendDiscovery {
     if (event != RawSocketEvent.read) return;
     final datagram = _socket?.receive();
     if (datagram == null) return;
+
+    final senderAddress = datagram.address.address;
+    if (senderAddress == '127.0.0.1' || ownAddresses.contains(senderAddress)) {
+      return;
+    }
+
     final Map<String, Object?> json;
     try {
       json = (jsonDecode(utf8.decode(datagram.data)) as Map)
@@ -178,16 +191,17 @@ class LocalSendDiscovery {
     if ((json['announce'] as bool?) ?? false) {
       // A peer is announcing: emit them immediately, reply via UDP unicast,
       // and send an HTTP /register post (as per LocalSend spec) for reliable TCP handshake.
-      _emit(info, datagram.address.address, json);
+      _emit(info, senderAddress, json);
       replyUnicast(datagram.address, ownInfo ?? _defaultInfo);
-      unawaited(_replyHttpRegister(datagram.address.address, info.port));
+      unawaited(_replyHttpRegister(senderAddress, info.port));
     } else {
       // A unicast reply (announce=false) — emit as a discovered peer.
-      _emit(info, datagram.address.address, json);
+      _emit(info, senderAddress, json);
     }
   }
 
   Future<void> _replyHttpRegister(String address, int peerPort) async {
+    if (ownAddresses.contains(address) || address == '127.0.0.1') return;
     try {
       final client = HttpClient()
         ..connectionTimeout = const Duration(milliseconds: 1500);
@@ -204,11 +218,23 @@ class LocalSendDiscovery {
 
   /// Accept a peer learned via its HTTP `register` callback.
   void ingestRegister(Map<String, Object?> json, String address) {
-    _emit(LocalSendInfo.fromJson(json), address, json);
+    if (ownAddresses.contains(address) || address == '127.0.0.1') return;
+    final info = LocalSendInfo.fromJson(json);
+    if (info.fingerprint.isNotEmpty &&
+        info.fingerprint == ownInfo?.fingerprint) {
+      return;
+    }
+    _emit(info, address, json);
   }
 
   void _emit(LocalSendInfo info, String address, Map<String, Object?> json) {
     if (_sightings.isClosed) return;
+    if (ownAddresses.contains(address) || address == '127.0.0.1') return;
+    if (info.fingerprint.isNotEmpty &&
+        info.fingerprint == ownInfo?.fingerprint) {
+      return;
+    }
+
     final port = (json['port'] as num?)?.toInt() ?? kLocalSendPort;
     _sightings.add(LocalSendSighting(
       device: DeviceInfo(
@@ -234,71 +260,93 @@ class LocalSendDiscovery {
         protocol: 'http',
       );
 
-  /// Actively probes the local subnet via HTTP /info in case UDP multicast/broadcast
+  /// Actively probes the local subnet via HTTP /info and /register in case UDP multicast/broadcast
   /// is blocked by the AP/hotspot router (AP isolation).
   Future<void> probeSubnet() async {
+    final subnetsToScan = <String>{};
+
     try {
       final interfaces = await NetworkInterface.list(
         includeLinkLocal: false,
         type: InternetAddressType.IPv4,
       );
-      final client = HttpClient()
-        ..connectionTimeout = const Duration(milliseconds: 800);
       for (final iface in interfaces) {
         for (final addr in iface.addresses) {
           final ip = addr.address;
           if (ip == '127.0.0.1') continue;
           final parts = ip.split('.');
-          if (parts.length != 4) continue;
-          final prefix = '${parts[0]}.${parts[1]}.${parts[2]}';
-          final myHost = int.tryParse(parts[3]) ?? -1;
-
-          // Target gateway / hotspot host (.1) first, then all 1..254 hosts
-          final targetHosts = <int>[];
-          if (myHost != 1) targetHosts.add(1);
-          for (var i = 1; i <= 254; i++) {
-            if (i != myHost && !targetHosts.contains(i)) targetHosts.add(i);
-          }
-
-          // Probe in batches of 25 for rapid parallel sweep (~8 seconds total)
-          const batchSize = 25;
-          for (var i = 0; i < targetHosts.length; i += batchSize) {
-            final batch = targetHosts.skip(i).take(batchSize);
-            await Future.wait(batch.map((host) async {
-              final targetIp = '$prefix.$host';
-              try {
-                final uri = Uri.parse(
-                    'http://$targetIp:$port$kLocalSendApiPrefix/info');
-                final req = await client.getUrl(uri);
-                final res = await req.close();
-                if (res.statusCode == 200) {
-                  final body = await utf8.decoder.bind(res).join();
-                  final json =
-                      (jsonDecode(body) as Map).cast<String, Object?>();
-                  final info = LocalSendInfo.fromJson(json);
-                  if (info.fingerprint.isNotEmpty &&
-                      info.fingerprint == ownInfo?.fingerprint) {
-                    return;
-                  }
-                  _emit(info, targetIp, json);
-                  // Send register back so peer discovers us in return
-                  try {
-                    final regUri = Uri.parse(
-                        'http://$targetIp:$port$kLocalSendApiPrefix/register');
-                    final regReq = await client.postUrl(regUri);
-                    regReq.headers.contentType = ContentType.json;
-                    regReq
-                        .write(jsonEncode((ownInfo ?? _defaultInfo).toJson()));
-                    final regRes = await regReq.close();
-                    await regRes.drain<void>();
-                  } catch (_) {}
-                }
-              } catch (_) {}
-            }));
+          if (parts.length == 4) {
+            subnetsToScan.add('${parts[0]}.${parts[1]}.${parts[2]}');
           }
         }
       }
-      client.close(force: true);
+    } catch (_) {}
+
+    // Also include standard mobile hotspot subnets in case interface listing was restricted
+    subnetsToScan
+        .addAll(['192.168.43', '192.168.49', '172.20.10', '192.168.137']);
+
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(milliseconds: 700);
+
+    for (final prefix in subnetsToScan) {
+      // Probe gateway (.1) first
+      final gatewayIp = '$prefix.1';
+      if (!ownAddresses.contains(gatewayIp)) {
+        await _probeHost(client, gatewayIp);
+      }
+
+      // Hotspot subnets typically allocate low numbers (.2..25)
+      final isHotspotSubnet = prefix == '192.168.43' ||
+          prefix == '192.168.49' ||
+          prefix == '172.20.10' ||
+          prefix == '192.168.137';
+      final maxHost = isHotspotSubnet ? 35 : 254;
+
+      final hosts = <int>[];
+      for (var i = 2; i <= maxHost; i++) {
+        hosts.add(i);
+      }
+
+      const batchSize = 25;
+      for (var i = 0; i < hosts.length; i += batchSize) {
+        final batch = hosts.skip(i).take(batchSize);
+        await Future.wait(batch.map((host) async {
+          final targetIp = '$prefix.$host';
+          if (ownAddresses.contains(targetIp)) return;
+          await _probeHost(client, targetIp);
+        }));
+      }
+    }
+    client.close(force: true);
+  }
+
+  Future<void> _probeHost(HttpClient client, String targetIp) async {
+    try {
+      final uri = Uri.parse('http://$targetIp:$port$kLocalSendApiPrefix/info');
+      final req = await client.getUrl(uri);
+      final res = await req.close();
+      if (res.statusCode == 200) {
+        final body = await utf8.decoder.bind(res).join();
+        final json = (jsonDecode(body) as Map).cast<String, Object?>();
+        final info = LocalSendInfo.fromJson(json);
+        if (info.fingerprint.isNotEmpty &&
+            info.fingerprint == ownInfo?.fingerprint) {
+          return;
+        }
+        _emit(info, targetIp, json);
+
+        // Send register back so peer discovers us simultaneously
+        try {
+          final regUri =
+              Uri.parse('http://$targetIp:$port$kLocalSendApiPrefix/register');
+          final regReq = await client.postUrl(regUri);
+          regReq.headers.contentType = ContentType.json;
+          regReq.write(jsonEncode((ownInfo ?? _defaultInfo).toJson()));
+          final regRes = await regReq.close();
+          await regRes.drain<void>();
+        } catch (_) {}
+      }
     } catch (_) {}
   }
 

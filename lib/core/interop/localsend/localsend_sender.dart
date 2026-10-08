@@ -57,6 +57,7 @@ class LocalSendClient {
 
   HttpClient? _client;
   String? _sessionId;
+  String? _workingAddress;
 
   String? get sessionId => _sessionId;
 
@@ -87,24 +88,54 @@ class LocalSendClient {
     final query = <String, String>{
       if (pin != null && pin.isNotEmpty) 'pin': pin,
     };
-    final uri =
-        _uri(peer, scheme, '$kLocalSendApiPrefix/prepare-upload', query);
-    final req = await _client!.postUrl(uri);
-    req.headers.contentType = ContentType.json;
-    req.write(encodeJson(
-        LocalSendPrepareRequest(info: localInfo, files: byId).toJson()));
-    final res = await req.close();
-    final body = await utf8.decoder.bind(res).join();
 
-    if (res.statusCode == LocalSendStatus.pinRequired) {
-      throw const SessionRejected('pin_required');
+    final dialAddresses = <String>[];
+    if (peer.addresses.isNotEmpty) {
+      dialAddresses.addAll(peer.addresses);
     }
-    if (res.statusCode != HttpStatus.ok) {
-      throw SessionRejected('peer rejected prepare-upload: ${res.statusCode}');
+    if (peer.bestAddress != null && !dialAddresses.contains(peer.bestAddress)) {
+      dialAddresses.add(peer.bestAddress!);
     }
-    final response = LocalSendPrepareResponse.fromJson(decodeJson(body));
-    _sessionId = response.sessionId;
-    return response.files;
+    if (dialAddresses.isEmpty) {
+      throw const ProtocolError('peer has no dialable address');
+    }
+
+    Object? lastError;
+    for (final address in dialAddresses) {
+      try {
+        final uri = Uri(
+          scheme: scheme,
+          host: address,
+          port: peer.port,
+          path: '$kLocalSendApiPrefix/prepare-upload',
+          queryParameters: query.isEmpty ? null : query,
+        );
+        final req = await _client!.postUrl(uri);
+        req.headers.contentType = ContentType.json;
+        req.write(encodeJson(
+            LocalSendPrepareRequest(info: localInfo, files: byId).toJson()));
+        final res = await req.close();
+        final body = await utf8.decoder.bind(res).join();
+
+        if (res.statusCode == LocalSendStatus.pinRequired) {
+          _workingAddress = address;
+          throw const SessionRejected('pin_required');
+        }
+        if (res.statusCode != HttpStatus.ok) {
+          throw SessionRejected(
+              'peer rejected prepare-upload: ${res.statusCode}');
+        }
+        final response = LocalSendPrepareResponse.fromJson(decodeJson(body));
+        _sessionId = response.sessionId;
+        _workingAddress = address;
+        return response.files;
+      } on Object catch (error) {
+        lastError = error;
+        if (error is SessionRejected) rethrow;
+      }
+    }
+    throw lastError ??
+        const ProtocolError('Failed to connect to peer on any address');
   }
 
   /// Upload every file, honouring [tokens] from [prepare].
@@ -116,7 +147,7 @@ class LocalSendClient {
   }) async {
     final queue = List<LocalSendOutgoing>.from(files);
     final workers = <Future<void>>[];
-    for (var i = 0; i < parallelFiles && i < queue.length; i++) {
+    for (var i = 0; i < parallelFiles; i++) {
       workers.add(_worker(peer, queue, tokens, observer));
     }
     await Future.wait(workers);
@@ -150,7 +181,7 @@ class LocalSendClient {
     String token,
     LocalSendObserver observer,
   ) async {
-    final address = peer.bestAddress;
+    final address = _workingAddress ?? peer.bestAddress;
     if (address == null) {
       throw const ProtocolError('peer has no dialable address');
     }
@@ -207,12 +238,13 @@ class LocalSendClient {
 
   Uri _uri(
       DeviceInfo peer, String scheme, String path, Map<String, String> query) {
+    final host = _workingAddress ?? peer.bestAddress!;
     return Uri(
       scheme: scheme,
-      host: peer.bestAddress!,
+      host: host,
       port: peer.port,
       path: path,
-      queryParameters: query,
+      queryParameters: query.isEmpty ? null : query,
     );
   }
 

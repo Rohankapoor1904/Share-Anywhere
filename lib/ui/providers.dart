@@ -35,9 +35,10 @@ final storageDirProvider = FutureProvider<Directory>((ref) async {
 /// The engine node, constructed once the storage directory is known.
 final localShareNodeProvider = FutureProvider<LocalShareNode>((ref) async {
   final dir = await ref.watch(storageDirProvider.future);
+  final initialName = ref.read(deviceNameProvider);
   final node = LocalShareNode(
     config: NodeConfig(
-      displayName: ref.read(deviceNameProvider),
+      displayName: initialName,
       downloadDirectory: dir,
     ),
     adapter: createRadioAdapter(),
@@ -45,6 +46,9 @@ final localShareNodeProvider = FutureProvider<LocalShareNode>((ref) async {
       File('${dir.path}${Platform.pathSeparator}trust.json'),
     ),
   );
+  ref.listen(deviceNameProvider, (_, next) {
+    node.setDisplayName(next);
+  });
   ref.onDispose(() => unawaited(node.stop()));
   return node;
 });

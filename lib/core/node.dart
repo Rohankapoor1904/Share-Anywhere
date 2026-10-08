@@ -92,7 +92,7 @@ class NodeConfig {
     this.port = kDefaultPort,
   });
 
-  final String displayName;
+  String displayName;
   final Directory downloadDirectory;
   final int port;
 }
@@ -191,10 +191,35 @@ class LocalShareNode implements TransferTarget, LocalSendHost {
           fingerprint: fingerprint,
           port: _localSendServer?.boundPort ?? kLocalSendPort,
           protocol: 'http',
-          deviceType: LocalSendDeviceType.desktop,
+          deviceType: Platform.isAndroid || Platform.isIOS
+              ? LocalSendDeviceType.mobile
+              : LocalSendDeviceType.desktop,
           download: false,
         )
       : null;
+
+  void setDisplayName(String newName) {
+    config.displayName = newName;
+    if (_localSendDiscovery != null) {
+      _localSendDiscovery!.ownInfo = localSendInfo;
+    }
+  }
+
+  Future<Set<String>> getLocalIpAddresses() async {
+    final ips = <String>{'127.0.0.1', '0.0.0.0', 'localhost'};
+    try {
+      final interfaces = await NetworkInterface.list(
+        includeLinkLocal: false,
+        type: InternetAddressType.IPv4,
+      );
+      for (final iface in interfaces) {
+        for (final addr in iface.addresses) {
+          ips.add(addr.address);
+        }
+      }
+    } catch (_) {}
+    return ips;
+  }
 
   Future<void> start() async {
     _deviceId = generateToken(byteLength: 16);
@@ -224,14 +249,17 @@ class LocalShareNode implements TransferTarget, LocalSendHost {
       },
     );
 
+    final localIps = await getLocalIpAddresses();
+
     _discovery = DiscoveryOrchestrator(
       adapter: adapter,
       localDeviceId: _deviceId,
       localFingerprint: fingerprint,
+      localAddresses: localIps,
     )..start();
 
     if (localSendCompat) {
-      await _startLocalSendCompat();
+      await _startLocalSendCompat(localIps);
     }
 
     _events.add(EngineReady(
@@ -243,7 +271,7 @@ class LocalShareNode implements TransferTarget, LocalSendHost {
 
   /// Bring up the LocalSend v2 surface: a plain-HTTP listener plus multicast
   /// discovery, both bridged into the normal peer list.
-  Future<void> _startLocalSendCompat() async {
+  Future<void> _startLocalSendCompat(Set<String> localIps) async {
     final receiver = LocalSendReceiver(
       host: this,
       downloadDirectory: config.downloadDirectory,
@@ -262,6 +290,7 @@ class LocalShareNode implements TransferTarget, LocalSendHost {
     // was already taken by another LocalSend instance on this device).
     final discovery = LocalSendDiscovery()
       ..ownInfo = info
+      ..ownAddresses = localIps
       ..callbackPort = server.boundPort;
     await discovery.start();
     discovery.sightings.listen((s) => _discovery?.ingest(s.device));
@@ -389,7 +418,7 @@ class LocalShareNode implements TransferTarget, LocalSendHost {
     required List<IncomingFile> files,
     Future<String?> Function(DeviceInfo peer)? requestPin,
   }) async {
-    if (_isLocalSendPeer(peer)) {
+    if (_isLocalSendPeer(peer) || peer.port == kLocalSendPort) {
       await _sendLocalSend(peer: peer, files: files, requestPin: requestPin);
       return;
     }
@@ -410,43 +439,57 @@ class LocalShareNode implements TransferTarget, LocalSendHost {
       ));
     }
 
-    final client = TransferClient(expectedFingerprint: peer.fingerprint);
     try {
-      SessionResponse response;
-      String? pin;
-      var attempt = 0;
-      while (true) {
-        final request = SessionRequest(
-          protocolVersion: kProtocolVersion,
-          deviceId: _deviceId,
-          displayName: config.displayName,
-          fingerprint: fingerprint,
-          files: outgoing.map((o) => o.descriptor).toList(),
-          pin: pin,
-        );
-        response = await client.openSession(peer: peer, request: request);
-        if (response.accepted) break;
-        if (response.reason == 'pin_required' &&
-            requestPin != null &&
-            attempt < 5) {
-          attempt++;
-          pin = await requestPin(peer);
-          if (pin == null || pin.isEmpty) {
-            throw const SessionRejected('cancelled at PIN prompt');
+      final client = TransferClient(expectedFingerprint: peer.fingerprint);
+      try {
+        SessionResponse response;
+        String? pin;
+        var attempt = 0;
+        while (true) {
+          final request = SessionRequest(
+            protocolVersion: kProtocolVersion,
+            deviceId: _deviceId,
+            displayName: config.displayName,
+            fingerprint: fingerprint,
+            files: outgoing.map((o) => o.descriptor).toList(),
+            pin: pin,
+          );
+          response = await client.openSession(peer: peer, request: request);
+          if (response.accepted) break;
+          if (response.reason == 'pin_required' &&
+              requestPin != null &&
+              attempt < 5) {
+            attempt++;
+            pin = await requestPin(peer);
+            if (pin == null || pin.isEmpty) {
+              throw const SessionRejected('cancelled at PIN prompt');
+            }
+            continue;
           }
-          continue;
+          throw SessionRejected(
+              response.reason ?? 'receiver rejected the session');
         }
-        throw SessionRejected(
-            response.reason ?? 'receiver rejected the session');
+        await client.sendAll(
+          peer: peer,
+          files: outgoing,
+          session: response,
+          observer: _SendObserver(_events),
+        );
+      } finally {
+        await client.close();
       }
-      await client.sendAll(
-        peer: peer,
-        files: outgoing,
-        session: response,
-        observer: _SendObserver(_events),
-      );
-    } finally {
-      await client.close();
+    } on Object catch (_) {
+      // If native TLS fails or is rejected, automatically fallback to LocalSend protocol
+      try {
+        final fallbackPeer = peer.copyWith(
+          platform: 'localsend',
+          port: kLocalSendPort,
+        );
+        await _sendLocalSend(
+            peer: fallbackPeer, files: files, requestPin: requestPin);
+      } catch (_) {
+        rethrow;
+      }
     }
   }
 

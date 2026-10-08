@@ -17,8 +17,8 @@ const String kMdnsServiceNamePrefix = 'LocalShare-';
 /// BLE 128-bit service UUID used to carry the discovery payload.
 const String kBleServiceUuid = '6c4c6f63-616c-7368-6172-652d-30303031';
 
-/// Default TCP port. Kept stable so peers can be found without prior setup.
-const int kDefaultPort = 53317;
+/// Default TCP port for native TLS transfers. Kept distinct from LocalSend (53317).
+const int kDefaultPort = 53318;
 
 /// Default chunk size (1 MiB). The sender may negotiate up to [kMaxChunkSize].
 const int kDefaultChunkSize = 1024 * 1024;

@@ -52,6 +52,7 @@ class TransferClient {
 
   HttpClient? _client;
   String? _sessionId;
+  String? _workingAddress;
 
   /// The negotiated session id (set by [openSession]).
   String? get sessionId => _sessionId;
@@ -61,31 +62,48 @@ class TransferClient {
     required DeviceInfo peer,
     required SessionRequest request,
   }) async {
-    final address = peer.bestAddress;
-    if (address == null) {
-      throw ProtocolError('peer has no dialable address');
+    final dialAddresses = <String>[];
+    if (peer.addresses.isNotEmpty) {
+      dialAddresses.addAll(peer.addresses);
+    }
+    if (peer.bestAddress != null && !dialAddresses.contains(peer.bestAddress)) {
+      dialAddresses.add(peer.bestAddress!);
+    }
+    if (dialAddresses.isEmpty) {
+      throw const ProtocolError('peer has no dialable address');
     }
 
     final client = pinnedHttpClient(expectedFingerprint);
     _client = client;
 
-    final uri = Uri.https(
-      '$address:${peer.port}',
-      '/v1/session',
-    );
-    final req = await client.postUrl(uri);
-    req.headers.contentType = ContentType.json;
-    req.headers.set(kHeaderDeviceId, request.deviceId);
-    req.headers.set(kHeaderFingerprint, request.fingerprint);
-    req.write(encodeJson(request.toJson()));
-    final res = await req.close();
-    final body = await utf8.decoder.bind(res).join();
-    if (res.statusCode != HttpStatus.ok) {
-      throw ProtocolError('session request failed: ${res.statusCode} $body');
+    Object? lastError;
+    for (final address in dialAddresses) {
+      try {
+        final uri = Uri.https(
+          '$address:${peer.port}',
+          '/v1/session',
+        );
+        final req = await client.postUrl(uri);
+        req.headers.contentType = ContentType.json;
+        req.headers.set(kHeaderDeviceId, request.deviceId);
+        req.headers.set(kHeaderFingerprint, request.fingerprint);
+        req.write(encodeJson(request.toJson()));
+        final res = await req.close();
+        final body = await utf8.decoder.bind(res).join();
+        if (res.statusCode != HttpStatus.ok) {
+          throw ProtocolError(
+              'session request failed: ${res.statusCode} $body');
+        }
+        final response = SessionResponse.fromJson(decodeJson(body));
+        _sessionId = response.sessionId;
+        _workingAddress = address;
+        return response;
+      } on Object catch (e) {
+        lastError = e;
+      }
     }
-    final response = SessionResponse.fromJson(decodeJson(body));
-    _sessionId = response.sessionId;
-    return response;
+    throw lastError ??
+        const ProtocolError('Failed to connect to peer on any address');
   }
 
   /// Upload every file in [files], honouring resume offsets and running up to
@@ -131,7 +149,7 @@ class TransferClient {
     SessionResponse session,
     SendObserver observer,
   ) async {
-    final address = peer.bestAddress!;
+    final address = _workingAddress ?? peer.bestAddress!;
     final id = file.descriptor.id;
     final start = startOffsetFor(file, session);
     final total = file.descriptor.size;

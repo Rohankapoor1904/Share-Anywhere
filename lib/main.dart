@@ -7,14 +7,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import 'core/util/device_name.dart';
 import 'ui/home_screen.dart';
 import 'ui/providers.dart';
 import 'ui/screens/permissions_screen.dart';
 import 'ui/theme.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const ProviderScope(child: LocalShareApp()));
+  final hardwareName = await getHardwareDeviceName();
+  runApp(
+    ProviderScope(
+      overrides: [
+        deviceNameProvider.overrideWith((ref) => hardwareName),
+      ],
+      child: const LocalShareApp(),
+    ),
+  );
 }
 
 class LocalShareApp extends StatelessWidget {

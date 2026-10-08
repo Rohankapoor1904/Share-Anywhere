@@ -27,16 +27,19 @@ class DeviceInfo {
   final DiscoveryChannel discoveredVia;
 
   DeviceInfo copyWith({
+    String? displayName,
+    String? fingerprint,
+    String? platform,
     List<String>? addresses,
     DiscoveryChannel? discoveredVia,
     int? port,
   }) =>
       DeviceInfo(
         deviceId: deviceId,
-        displayName: displayName,
-        fingerprint: fingerprint,
+        displayName: displayName ?? this.displayName,
+        fingerprint: fingerprint ?? this.fingerprint,
         port: port ?? this.port,
-        platform: platform,
+        platform: platform ?? this.platform,
         addresses: addresses ?? this.addresses,
         discoveredVia: discoveredVia ?? this.discoveredVia,
       );

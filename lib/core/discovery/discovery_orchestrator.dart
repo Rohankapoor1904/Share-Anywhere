@@ -2,8 +2,8 @@
 ///
 /// mDNS and BLE report the same device differently (mDNS knows the IP; BLE
 /// knows proximity but not an address). This orchestrator deduplicates by
-/// device id, keeps the union of known addresses, and applies a staleness
-/// timeout so vanished devices disappear from the UI.
+/// device id, fingerprint, and IP address, keeps the union of known addresses,
+/// and applies a staleness timeout so vanished devices disappear from the UI.
 library;
 
 import 'dart:async';
@@ -25,14 +25,15 @@ class DiscoveryOrchestrator {
     required this.adapter,
     required this.localDeviceId,
     required this.localFingerprint,
-    // Increased from 20s → 60s: a single missed mDNS/UDP packet no longer
-    // evicts a device that is still on the network.
+    this.localAddresses = const {},
+    // 60s staleness: temporary packet drops don't evict devices.
     this.staleness = const Duration(seconds: 60),
   });
 
   final RadioAdapter adapter;
   final String localDeviceId;
   final String localFingerprint;
+  final Set<String> localAddresses;
   final Duration staleness;
 
   final Map<String, _Tracked> _peers = {};
@@ -65,14 +66,24 @@ class DiscoveryOrchestrator {
       (record) {
         final device = _fromRecord(record, channel);
         if (device == null) return;
-        // Never report ourselves; dedupe by fingerprint as well as id.
-        if (device.deviceId == localDeviceId) return;
-        if (device.fingerprint.isNotEmpty &&
-            device.fingerprint == localFingerprint) {
-          return;
-        }
+        if (_isSelf(device)) return;
         _merge(device);
       };
+
+  bool _isSelf(DeviceInfo device) {
+    if (device.deviceId == localDeviceId) return true;
+    if (localDeviceId.isNotEmpty && device.deviceId.contains(localDeviceId)) {
+      return true;
+    }
+    if (device.fingerprint.isNotEmpty &&
+        device.fingerprint == localFingerprint) {
+      return true;
+    }
+    if (device.addresses.any((a) => localAddresses.contains(a))) {
+      return true;
+    }
+    return false;
+  }
 
   DeviceInfo? _fromRecord(
       Map<String, String> record, DiscoveryChannel channel) {
@@ -96,25 +107,67 @@ class DiscoveryOrchestrator {
   }
 
   void _merge(DeviceInfo incoming) {
-    final existing = _peers[incoming.deviceId];
-    if (existing == null) {
+    if (_isSelf(incoming)) return;
+
+    // Look for matching existing peer: by deviceId, by fingerprint, or by shared IP.
+    _Tracked? match = _peers[incoming.deviceId];
+    if (match == null && incoming.fingerprint.isNotEmpty) {
+      for (final t in _peers.values) {
+        if (t.device.fingerprint.isNotEmpty &&
+            t.device.fingerprint == incoming.fingerprint) {
+          match = t;
+          break;
+        }
+      }
+    }
+    if (match == null && incoming.addresses.isNotEmpty) {
+      for (final t in _peers.values) {
+        if (t.device.addresses.any((a) => incoming.addresses.contains(a))) {
+          match = t;
+          break;
+        }
+      }
+    }
+
+    if (match == null) {
       _peers[incoming.deviceId] = _Tracked(incoming, DateTime.now());
       _events.add(DiscoveryEvent.added(incoming));
       return;
     }
+
+    // Merge addresses
     final mergedAddresses =
-        {...existing.device.addresses, ...incoming.addresses}.toList();
-    final merged = existing.device.copyWith(
+        {...match.device.addresses, ...incoming.addresses}.toList();
+
+    // Prefer a richer human-readable name over placeholders
+    var displayName = match.device.displayName;
+    if (_isGenericName(displayName) && !_isGenericName(incoming.displayName)) {
+      displayName = incoming.displayName;
+    }
+
+    final platform = incoming.platform ?? match.device.platform;
+    final fingerprint = incoming.fingerprint.isNotEmpty
+        ? incoming.fingerprint
+        : match.device.fingerprint;
+
+    final merged = match.device.copyWith(
+      displayName: displayName,
+      fingerprint: fingerprint,
+      platform: platform,
       addresses: mergedAddresses,
       discoveredVia: incoming.discoveredVia == DiscoveryChannel.mdns
           ? DiscoveryChannel.mdns
-          : existing.device.discoveredVia,
+          : match.device.discoveredVia,
     );
-    existing.device = merged;
-    existing.seen = DateTime.now();
-    // Re-emit the updated device so the UI refreshes its info.
-    _events.add(DiscoveryEvent.added(merged));
+    match.device = merged;
+    match.seen = DateTime.now();
   }
+
+  bool _isGenericName(String name) =>
+      name == 'Nearby device' ||
+      name == 'LocalSend' ||
+      name == 'My Device' ||
+      name.isEmpty;
 
   void _sweep() {
     final now = DateTime.now();
@@ -130,6 +183,7 @@ class DiscoveryOrchestrator {
 
   /// Inject a peer discovered out-of-band (manual IP entry, QR code, etc.).
   void addManual(DeviceInfo device) {
+    if (_isSelf(device)) return;
     _peers[device.deviceId] = _Tracked(device, DateTime.now());
     _events.add(DiscoveryEvent.added(device));
   }
@@ -137,11 +191,7 @@ class DiscoveryOrchestrator {
   /// Feed a peer observed by an out-of-band channel (e.g. LocalSend multicast)
   /// into the same dedupe/staleness pipeline as the radios.
   void ingest(DeviceInfo device) {
-    if (device.deviceId == localDeviceId) return;
-    if (device.fingerprint.isNotEmpty &&
-        device.fingerprint == localFingerprint) {
-      return;
-    }
+    if (_isSelf(device)) return;
     _merge(device);
   }
 
