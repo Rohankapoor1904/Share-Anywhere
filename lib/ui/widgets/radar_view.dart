@@ -143,52 +143,79 @@ class _DeviceAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      label: 'Send to ${device.displayName}',
-      child: GestureDetector(
-        onTap: onTap == null ? null : () => onTap!(device),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: const LinearGradient(
-                  colors: [AppColors.accent, AppColors.accentDeep],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.accent.withValues(alpha: 0.35),
-                    blurRadius: 18,
-                    spreadRadius: 1,
-                  ),
-                ],
-              ),
-              child: Icon(_iconFor(device), color: AppColors.background, size: 26),
-            ),
-            const SizedBox(height: 6),
-            SizedBox(
-              width: 84,
-              child: Text(
-                device.displayName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
+    return FocusableActionDetector(
+      onShowFocusHighlight: (focused) {},
+      actions: {
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (_) {
+            onTap?.call(device);
+            return null;
+          },
         ),
+      },
+      child: Builder(
+        builder: (context) {
+          final focused = Focus.of(context).hasFocus;
+          return Semantics(
+            button: true,
+            label: 'Send to ${device.displayName}',
+            child: GestureDetector(
+              onTap: onTap == null ? null : () => onTap!(device),
+              child: AnimatedScale(
+                scale: focused ? 1.12 : 1.0,
+                duration: const Duration(milliseconds: 150),
+                child: _avatarBody(focused),
+              ),
+            ),
+          );
+        },
       ),
+    );
+  }
+
+  Widget _avatarBody(bool focused) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 56,
+          height: 56,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: const LinearGradient(
+              colors: [AppColors.accent, AppColors.accentDeep],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            border: focused
+                ? Border.all(color: AppColors.textPrimary, width: 3)
+                : null,
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.accent.withValues(alpha: focused ? 0.65 : 0.35),
+                blurRadius: focused ? 26 : 18,
+                spreadRadius: focused ? 3 : 1,
+              ),
+            ],
+          ),
+          child: Icon(_iconFor(device), color: AppColors.background, size: 26),
+        ),
+        const SizedBox(height: 6),
+        SizedBox(
+          width: 84,
+          child: Text(
+            device.displayName,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
     );
   }
 

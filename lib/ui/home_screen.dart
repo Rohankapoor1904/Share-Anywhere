@@ -2,8 +2,12 @@
 library;
 
 import 'dart:async';
+import 'dart:io';
 
+import 'package:desktop_drop/desktop_drop.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/node.dart';
@@ -25,6 +29,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   StreamSubscription<EngineEvent>? _sub;
+  bool _dragging = false;
 
   @override
   void initState() {
@@ -79,27 +84,88 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget build(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
     final isWide = size.width >= 900;
+    final isDesktop = !kIsWeb && (Platform.isLinux || Platform.isWindows || Platform.isMacOS);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('LocalShare'),
-        actions: [
-          IconButton(
-            tooltip: 'Settings',
-            onPressed: () => _showSettings(context),
-            icon: const Icon(Icons.settings_outlined),
-          ),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => ref.read(sendControllerProvider.notifier).pickFiles(),
-        icon: const Icon(Icons.add),
-        label: const Text('Add files'),
-      ),
-      body: SafeArea(
-        child: isWide ? _desktopLayout() : _mobileLayout(),
+    final body = SafeArea(
+      child: isWide ? _desktopLayout() : _mobileLayout(),
+    );
+
+    return CallbackShortcuts(
+      bindings: {
+        // TV remotes and keyboards: Enter/Space activate, S sends, A adds files.
+        const SingleActivator(LogicalKeyboardKey.keyS, control: true): _choosePeerAndSend,
+        const SingleActivator(LogicalKeyboardKey.keyA, control: true): _addFiles,
+        const SingleActivator(LogicalKeyboardKey.escape):
+            () => ref.read(sendControllerProvider.notifier).clear(),
+        const SingleActivator(LogicalKeyboardKey.select): _choosePeerAndSend,
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('LocalShare'),
+          actions: [
+            IconButton(
+              tooltip: 'Settings',
+              onPressed: () => _showSettings(context),
+              icon: const Icon(Icons.settings_outlined),
+            ),
+          ],
+        ),
+        floatingActionButton: FloatingActionButton.extended(
+          onPressed: _addFiles,
+          icon: const Icon(Icons.add),
+          label: const Text('Add files'),
+        ),
+        body: isDesktop
+            ? DropTarget(
+                onDragEntered: (_) => setState(() => _dragging = true),
+                onDragExited: (_) => setState(() => _dragging = false),
+                onDragDone: (details) {
+                  setState(() => _dragging = false);
+                  _addDroppedFiles(details.files.map((f) => f.path).toList());
+                },
+                child: _dropOverlay(body),
+              )
+            : body,
       ),
     );
+  }
+
+  Widget _dropOverlay(Widget child) {
+    return Stack(
+      children: [
+        child,
+        if (_dragging)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: Container(
+                color: AppColors.accent.withValues(alpha: 0.12),
+                alignment: Alignment.center,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.file_download_outlined, size: 64, color: AppColors.accent),
+                    const SizedBox(height: 12),
+                    Text('Drop files to share', style: Theme.of(context).textTheme.titleLarge),
+                  ],
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  void _addFiles() =>
+      ref.read(sendControllerProvider.notifier).pickFiles();
+
+  void _addDroppedFiles(List<String> paths) {
+    final files = paths
+        .where((p) => File(p).existsSync())
+        .map((p) => SelectedFile(path: p, fileName: p.split(Platform.pathSeparator).last))
+        .toList();
+    if (files.isNotEmpty) {
+      ref.read(sendControllerProvider.notifier).addFiles(files);
+    }
   }
 
   Widget _mobileLayout() {

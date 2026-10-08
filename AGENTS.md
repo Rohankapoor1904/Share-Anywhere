@@ -15,10 +15,26 @@ style) built with Flutter. LAN-only; no third-party internet servers.
   - `discovery/` — `DiscoveryOrchestrator` merges mDNS + BLE sightings into one
     deduped peer list with a staleness sweep.
   - `session/` — trust store + pairing manager (PIN challenge for unknown peers).
-  - `node.dart` — `LocalShareNode` facade the UI talks to.
+  - `interop/localsend/` — LocalSend v2.2 compat: wire models, receiver, sender,
+    dedicated plain-HTTP server, multicast discovery.
+  - `node.dart` — `LocalShareNode` facade the UI talks to. `send()` routes peers
+    with `platform == 'localsend'` through the v2 client automatically.
 - `lib/platform/` — `RadioAdapter` implementations. `create_adapter.dart` picks
   them per platform.
 - `lib/ui/` — Riverpod providers, `RadarView` centrepiece, screens/widgets.
+  Desktop drag-and-drop uses `desktop_drop` (guarded by `Platform.is*`).
+- `packaging/{linux,windows,macos}/` — distributable build scripts.
+- `tools/make_icons.py` — regenerates `assets/icon/*` (Pillow required).
+
+## LocalSend interop
+
+- LocalSend peers can't complete our pinned-cert TLS handshake, so a separate
+  plain-HTTP listener (`LocalSendServer`) serves `/api/localsend/v2/*`. It is
+  independent of the TLS `TransferServer` and runs on `kLocalSendPort` (53317).
+- `send()` inspects `DeviceInfo.platform`; `'localsend'`/`'localsend-https'`
+  route to `_sendLocalSend`, which reuses the native PIN-prompt flow.
+- `NsdRadioAdapter` also registers `_localsend._tcp` and browses it, surfacing
+  found apps as `platform: localsend` peers.
 
 ## Platform notes (verified)
 
@@ -46,10 +62,14 @@ style) built with Flutter. LAN-only; no third-party internet servers.
 
 ```bash
 flutter analyze            # must be clean
-flutter test               # 21 tests
+flutter test               # 27 tests
 flutter build linux --debug
 flutter run -d linux
+
+# Linux distributables (.deb, and .AppImage if appimagetool present)
+./packaging/linux/build.sh
 ```
 
-Headless UI smoke test: build, then `xvfb-run -a ./build/linux/x64/debug/bundle/localshare`.
-Expect two harmless GTK/ATK `CRITICAL` warnings; there must be no Dart exceptions.
+Headless UI smoke test: build, then `xvfb-run -a ./build/linux/x64/release/bundle/localshare`.
+Expect a couple of harmless GTK/ATK `CRITICAL` warnings; there must be no Dart
+exceptions. The process stays up until killed (exit 124 under `timeout` is fine).

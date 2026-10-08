@@ -123,6 +123,14 @@ class DiscoveryOrchestrator {
     _events.add(DiscoveryEvent.added(device));
   }
 
+  /// Feed a peer observed by an out-of-band channel (e.g. LocalSend multicast)
+  /// into the same dedupe/staleness pipeline as the radios.
+  void ingest(DeviceInfo device) {
+    if (device.deviceId == localDeviceId) return;
+    if (device.fingerprint.isNotEmpty && device.fingerprint == localFingerprint) return;
+    _merge(device);
+  }
+
   Future<void> dispose() async {
     _sweeper?.cancel();
     for (final sub in _subscriptions) {

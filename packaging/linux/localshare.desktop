@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=LocalShare
+GenericName=Local File Sharing
+Comment=Share files with nearby devices over your local network
+Exec=localshare
+Icon=localshare
+Terminal=false
+Type=Application
+Categories=Network;FileTransfer;Utility;
+Keywords=file;share;transfer;airdrop;localsend;wifi;
+StartupNotify=true

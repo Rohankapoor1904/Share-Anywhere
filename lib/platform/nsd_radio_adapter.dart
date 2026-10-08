@@ -11,11 +11,13 @@ import 'dart:typed_data';
 
 import 'package:nsd/nsd.dart' as nsd;
 
+import '../core/interop/localsend/localsend_models.dart';
 import '../core/platform/radio_adapter.dart';
 import '../core/protocol/protocol.dart';
 
 class NsdRadioAdapter implements RadioAdapter {
   nsd.Registration? _registration;
+  nsd.Registration? _localSendRegistration;
   nsd.Discovery? _discovery;
   final StreamController<Map<String, String>> _controller =
       StreamController.broadcast();
@@ -41,6 +43,30 @@ class NsdRadioAdapter implements RadioAdapter {
         txt: txt.map((k, v) => MapEntry(k, Uint8List.fromList(utf8.encode(v)))),
       ),
     );
+    // Also appear to LocalSend apps browsing `_localsend._tcp`.
+    _localSendRegistration = await nsd.register(
+      nsd.Service(
+        name: serviceName,
+        type: kLocalSendMdnsService,
+        port: port,
+        txt: _localSendTxt(txt),
+      ),
+    );
+  }
+
+  /// Translate our TXT fields to the names LocalSend clients expect.
+  Map<String, Uint8List> _localSendTxt(Map<String, String> txt) {
+    final alias = txt['displayName'] ?? txt['alias'] ?? 'LocalShare';
+    final fields = <String, String>{
+      'alias': alias,
+      'version': kLocalSendVersion,
+      'fingerprint': txt['fingerprint'] ?? '',
+      'port': txt['port'] ?? '',
+      'protocol': 'http',
+      'deviceModel': 'LocalShare',
+      'deviceType': 'desktop',
+    };
+    return fields.map((k, v) => MapEntry(k, Uint8List.fromList(utf8.encode(v))));
   }
 
   @override
@@ -50,12 +76,18 @@ class NsdRadioAdapter implements RadioAdapter {
     if (registration != null) {
       await nsd.unregister(registration);
     }
+    final localSend = _localSendRegistration;
+    _localSendRegistration = null;
+    if (localSend != null) {
+      await nsd.unregister(localSend);
+    }
   }
 
   @override
   Stream<Map<String, String>> discoverMdns({
     Duration interval = const Duration(seconds: 2),
   }) async* {
+    unawaited(_discoverLocalSend());
     _discovery = await nsd.startDiscovery(kMdnsServiceType);
     _discovery!.addServiceListener((service, status) async {
       if (status != nsd.ServiceStatus.found) return;
@@ -67,6 +99,45 @@ class NsdRadioAdapter implements RadioAdapter {
       _controller.add(_toRecord(resolved));
     });
     yield* _controller.stream;
+  }
+
+  /// Browse `_localsend._tcp` and surface LocalSend apps as `localsend` peers so
+  /// the engine routes them through the v2 compat layer.
+  Future<void> _discoverLocalSend() async {
+    try {
+      final discovery = await nsd.startDiscovery(kLocalSendMdnsService);
+      discovery.addServiceListener((service, status) async {
+        if (status != nsd.ServiceStatus.found || _controller.isClosed) return;
+        final resolved = await nsd.resolve(service);
+        if (_controller.isClosed) return;
+        _controller.add(_localSendRecord(resolved));
+      });
+    } on Object {
+      // No LocalSend services on this network, or discovery unsupported here.
+    }
+  }
+
+  Map<String, String> _localSendRecord(nsd.Service service) {
+    final record = <String, String>{
+      'platform': 'localsend',
+      'port': '${service.port ?? kLocalSendPort}',
+    };
+    service.txt?.forEach((key, value) {
+      if (value == null) return;
+      try {
+        record[key] = utf8.decode(value);
+      } on Object {
+        // Non-UTF8 TXT value; skip.
+      }
+    });
+    record['displayName'] = record['alias'] ?? service.name ?? 'LocalSend';
+    record['deviceId'] = record['fingerprint'] ?? service.name ?? '';
+    final addresses = service.addresses?.map((a) => a.address).toList() ?? const [];
+    if (addresses.isNotEmpty) {
+      record['addresses'] = addresses.join(',');
+      record['address'] = addresses.first;
+    }
+    return record;
   }
 
   Map<String, String> _toRecord(nsd.Service service) {

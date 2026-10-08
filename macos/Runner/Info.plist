@@ -26,7 +26,16 @@
 	<string>$(PRODUCT_COPYRIGHT)</string>
 	<key>NSMainNibFile</key>
 	<string>MainMenu</string>
-	<key>NSPrincipalClass</key>
+<key>NSBluetoothAlwaysUsageDescription</key>
+<string>LocalShare uses Bluetooth to find nearby devices for file sharing.</string>
+<key>NSLocalNetworkUsageDescription</key>
+<string>LocalShare discovers and transfers files to devices on your local network.</string>
+<key>NSBonjourServices</key>
+<array>
+<string>_localshare._tcp</string>
+<string>_localsend._tcp</string>
+</array>
+<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>
 </plist>

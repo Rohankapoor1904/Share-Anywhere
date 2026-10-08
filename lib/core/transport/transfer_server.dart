@@ -17,6 +17,7 @@ import 'dart:io';
 import 'dart:math';
 
 import '../crypto/hashing.dart';
+import '../interop/localsend/localsend_receiver.dart';
 import '../protocol/models.dart';
 import '../protocol/protocol.dart';
 import '../util/errors.dart';
@@ -79,6 +80,7 @@ class TransferServer {
     required this.downloadDirectory,
     this.port = kDefaultPort,
     this.maxConcurrentSessions = 4,
+    this.localSendReceiver,
   });
 
   final SecurityContext securityContext;
@@ -86,6 +88,9 @@ class TransferServer {
   final Directory downloadDirectory;
   final int port;
   final int maxConcurrentSessions;
+
+  /// Optional LocalSend v2 compatibility layer, mounted on the same server.
+  LocalSendReceiver? localSendReceiver;
 
   HttpServer? _server;
   final Map<String, _ActiveSession> _sessions = {};
@@ -125,6 +130,11 @@ class TransferServer {
   }
 
   Future<void> _handle(HttpRequest request) async {
+    // LocalSend clients may speak over plain HTTP on the same port; the compat
+    // layer handles those routes before our native v1 surface.
+    final compat = localSendReceiver;
+    if (compat != null && await compat.handle(request)) return;
+
     switch ('${request.method} ${request.uri.path}') {
       case 'POST /v1/session':
         await _handleSession(request);
