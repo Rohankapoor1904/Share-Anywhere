@@ -46,8 +46,9 @@ class AndroidRadioAdapter implements RadioAdapter {
 
   @override
   Future<void> connectWifiDirect(String deviceId) async {
-    // Wi-Fi Direct group negotiation is device-specific; the platform channel
-    // resolves a group and returns a network name we can join.
+    // Wi-Fi Direct group negotiation (WifiP2pManager) is not implemented yet;
+    // this currently just tears down any active SoftAP. Real group formation
+    // needs a native MethodChannel around WifiP2pManager.
     await WiFiForIoTPlugin.setWiFiAPEnabled(false);
   }
 
