@@ -98,7 +98,10 @@ class LocalSendReceiver {
     if (body.isNotEmpty) {
       try {
         final json = (jsonDecode(body) as Map).cast<String, Object?>();
-        final address = request.connectionInfo?.remoteAddress.address;
+        var address = request.connectionInfo?.remoteAddress.address;
+        if (address != null && address.startsWith('::ffff:')) {
+          address = address.substring(7);
+        }
         if (address != null) onRegister?.call(json, address);
       } on Object {
         request.response.statusCode = LocalSendStatus.badRequest;
@@ -125,6 +128,14 @@ class LocalSendReceiver {
       request.response.statusCode = LocalSendStatus.badRequest;
       await request.response.close();
       return;
+    }
+
+    var address = request.connectionInfo?.remoteAddress.address;
+    if (address != null && address.startsWith('::ffff:')) {
+      address = address.substring(7);
+    }
+    if (address != null) {
+      onRegister?.call(prepare.info.toJson(), address);
     }
 
     final pin = request.uri.queryParameters['pin'];

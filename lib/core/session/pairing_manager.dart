@@ -16,7 +16,7 @@ import 'trust_store.dart';
 class PairingSettings {
   PairingSettings({
     this.autoAcceptTrusted = true,
-    this.autoAcceptAll = false,
+    this.autoAcceptAll = true,
     this.pinLength = 6,
     this.maxPinAttempts = 3,
   });

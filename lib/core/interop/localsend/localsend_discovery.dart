@@ -10,6 +10,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../../protocol/models.dart';
+import '../../protocol/protocol.dart';
 import 'localsend_models.dart';
 
 /// A discovered LocalSend peer plus the protocol details we need to dial it.
@@ -153,6 +154,7 @@ class LocalSendDiscovery {
       for (final iface in interfaces) {
         for (final addr in iface.addresses) {
           final ip = addr.address;
+          if (ip.startsWith('169.254.') || ip == '127.0.0.1') continue;
           final parts = ip.split('.');
           if (parts.length == 4) {
             final subnetBroadcast = '${parts[0]}.${parts[1]}.${parts[2]}.255';
@@ -170,7 +172,10 @@ class LocalSendDiscovery {
     final datagram = _socket?.receive();
     if (datagram == null) return;
 
-    final senderAddress = datagram.address.address;
+    var senderAddress = datagram.address.address;
+    if (senderAddress.startsWith('::ffff:')) {
+      senderAddress = senderAddress.substring(7);
+    }
     if (senderAddress == '127.0.0.1' || ownAddresses.contains(senderAddress)) {
       return;
     }
@@ -201,12 +206,17 @@ class LocalSendDiscovery {
   }
 
   Future<void> _replyHttpRegister(String address, int peerPort) async {
-    if (ownAddresses.contains(address) || address == '127.0.0.1') return;
+    var targetAddress = address;
+    if (targetAddress.startsWith('::ffff:')) {
+      targetAddress = targetAddress.substring(7);
+    }
+    if (ownAddresses.contains(targetAddress) || targetAddress == '127.0.0.1')
+      return;
     try {
       final client = HttpClient()
         ..connectionTimeout = const Duration(milliseconds: 1500);
-      final uri =
-          Uri.parse('http://$address:$peerPort$kLocalSendApiPrefix/register');
+      final uri = Uri.parse(
+          'http://$targetAddress:$peerPort$kLocalSendApiPrefix/register');
       final req = await client.postUrl(uri);
       req.headers.contentType = ContentType.json;
       req.write(jsonEncode((ownInfo ?? _defaultInfo).toJson()));
@@ -218,18 +228,28 @@ class LocalSendDiscovery {
 
   /// Accept a peer learned via its HTTP `register` callback.
   void ingestRegister(Map<String, Object?> json, String address) {
-    if (ownAddresses.contains(address) || address == '127.0.0.1') return;
+    var cleanAddress = address;
+    if (cleanAddress.startsWith('::ffff:')) {
+      cleanAddress = cleanAddress.substring(7);
+    }
+    if (ownAddresses.contains(cleanAddress) || cleanAddress == '127.0.0.1')
+      return;
     final info = LocalSendInfo.fromJson(json);
     if (info.fingerprint.isNotEmpty &&
         info.fingerprint == ownInfo?.fingerprint) {
       return;
     }
-    _emit(info, address, json);
+    _emit(info, cleanAddress, json);
   }
 
   void _emit(LocalSendInfo info, String address, Map<String, Object?> json) {
     if (_sightings.isClosed) return;
-    if (ownAddresses.contains(address) || address == '127.0.0.1') return;
+    var cleanAddress = address;
+    if (cleanAddress.startsWith('::ffff:')) {
+      cleanAddress = cleanAddress.substring(7);
+    }
+    if (ownAddresses.contains(cleanAddress) || cleanAddress == '127.0.0.1')
+      return;
     if (info.fingerprint.isNotEmpty &&
         info.fingerprint == ownInfo?.fingerprint) {
       return;
@@ -239,16 +259,16 @@ class LocalSendDiscovery {
     _sightings.add(LocalSendSighting(
       device: DeviceInfo(
         deviceId:
-            info.fingerprint.isEmpty ? '$address:$port' : info.fingerprint,
+            info.fingerprint.isEmpty ? '$cleanAddress:$port' : info.fingerprint,
         displayName: info.alias,
         fingerprint: info.fingerprint,
         port: port,
         platform: info.protocol == 'https' ? 'localsend-https' : 'localsend',
-        addresses: [address],
+        addresses: [cleanAddress],
         discoveredVia: DiscoveryChannel.mdns,
       ),
       info: info,
-      address: address,
+      address: cleanAddress,
     ));
   }
 
@@ -263,7 +283,8 @@ class LocalSendDiscovery {
   /// Actively probes the local subnet via HTTP /info and /register in case UDP multicast/broadcast
   /// is blocked by the AP/hotspot router (AP isolation).
   Future<void> probeSubnet() async {
-    final subnetsToScan = <String>{};
+    final primarySubnets = <String>{};
+    final fallbackSubnets = <String>{};
 
     try {
       final interfaces = await NetworkInterface.list(
@@ -273,30 +294,27 @@ class LocalSendDiscovery {
       for (final iface in interfaces) {
         for (final addr in iface.addresses) {
           final ip = addr.address;
-          if (ip == '127.0.0.1') continue;
+          if (ip == '127.0.0.1' || ip.startsWith('169.254.')) continue;
           final parts = ip.split('.');
           if (parts.length == 4) {
-            subnetsToScan.add('${parts[0]}.${parts[1]}.${parts[2]}');
+            primarySubnets.add('${parts[0]}.${parts[1]}.${parts[2]}');
           }
         }
       }
     } catch (_) {}
 
-    // Also include standard mobile hotspot subnets in case interface listing was restricted
-    subnetsToScan
+    // Fallback hotspot subnets only if not already discovered
+    fallbackSubnets
         .addAll(['192.168.43', '192.168.49', '172.20.10', '192.168.137']);
+    final subnetsToScan = [
+      ...primarySubnets,
+      ...fallbackSubnets.where((s) => !primarySubnets.contains(s)),
+    ];
 
     final client = HttpClient()
-      ..connectionTimeout = const Duration(milliseconds: 700);
+      ..connectionTimeout = const Duration(milliseconds: 400);
 
     for (final prefix in subnetsToScan) {
-      // Probe gateway (.1) first
-      final gatewayIp = '$prefix.1';
-      if (!ownAddresses.contains(gatewayIp)) {
-        await _probeHost(client, gatewayIp);
-      }
-
-      // Hotspot subnets typically allocate low numbers (.2..25)
       final isHotspotSubnet = prefix == '192.168.43' ||
           prefix == '192.168.49' ||
           prefix == '172.20.10' ||
@@ -304,11 +322,11 @@ class LocalSendDiscovery {
       final maxHost = isHotspotSubnet ? 35 : 254;
 
       final hosts = <int>[];
-      for (var i = 2; i <= maxHost; i++) {
+      for (var i = 1; i <= maxHost; i++) {
         hosts.add(i);
       }
 
-      const batchSize = 25;
+      const batchSize = 50;
       for (var i = 0; i < hosts.length; i += batchSize) {
         final batch = hosts.skip(i).take(batchSize);
         await Future.wait(batch.map((host) async {
@@ -322,32 +340,36 @@ class LocalSendDiscovery {
   }
 
   Future<void> _probeHost(HttpClient client, String targetIp) async {
-    try {
-      final uri = Uri.parse('http://$targetIp:$port$kLocalSendApiPrefix/info');
-      final req = await client.getUrl(uri);
-      final res = await req.close();
-      if (res.statusCode == 200) {
-        final body = await utf8.decoder.bind(res).join();
-        final json = (jsonDecode(body) as Map).cast<String, Object?>();
-        final info = LocalSendInfo.fromJson(json);
-        if (info.fingerprint.isNotEmpty &&
-            info.fingerprint == ownInfo?.fingerprint) {
-          return;
-        }
-        _emit(info, targetIp, json);
+    for (final targetPort in [port, kDefaultPort]) {
+      try {
+        final uri =
+            Uri.parse('http://$targetIp:$targetPort$kLocalSendApiPrefix/info');
+        final req = await client.getUrl(uri);
+        final res = await req.close();
+        if (res.statusCode == 200) {
+          final body = await utf8.decoder.bind(res).join();
+          final json = (jsonDecode(body) as Map).cast<String, Object?>();
+          final info = LocalSendInfo.fromJson(json);
+          if (info.fingerprint.isNotEmpty &&
+              info.fingerprint == ownInfo?.fingerprint) {
+            return;
+          }
+          _emit(info, targetIp, json);
 
-        // Send register back so peer discovers us simultaneously
-        try {
-          final regUri =
-              Uri.parse('http://$targetIp:$port$kLocalSendApiPrefix/register');
-          final regReq = await client.postUrl(regUri);
-          regReq.headers.contentType = ContentType.json;
-          regReq.write(jsonEncode((ownInfo ?? _defaultInfo).toJson()));
-          final regRes = await regReq.close();
-          await regRes.drain<void>();
-        } catch (_) {}
-      }
-    } catch (_) {}
+          // Send register back so peer discovers us simultaneously
+          try {
+            final regUri = Uri.parse(
+                'http://$targetIp:$targetPort$kLocalSendApiPrefix/register');
+            final regReq = await client.postUrl(regUri);
+            regReq.headers.contentType = ContentType.json;
+            regReq.write(jsonEncode((ownInfo ?? _defaultInfo).toJson()));
+            final regRes = await regReq.close();
+            await regRes.drain<void>();
+          } catch (_) {}
+          break;
+        }
+      } catch (_) {}
+    }
   }
 
   Future<void> dispose() async {

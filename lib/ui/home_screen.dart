@@ -55,10 +55,67 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         send.applyProgress(fileId, progress);
       case SendFinished(:final fileId):
         send.markDone(fileId);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Row(
+                children: [
+                  Icon(Icons.check_circle_rounded, color: AppColors.success),
+                  SizedBox(width: 10),
+                  Text('File sent successfully!'),
+                ],
+              ),
+              behavior: SnackBarBehavior.floating,
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
       case SendFailed(:final fileId, :final error):
         send.markFailed(fileId, error);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.error_outline_rounded,
+                      color: AppColors.danger),
+                  const SizedBox(width: 10),
+                  Expanded(child: Text('Send failed: $error')),
+                ],
+              ),
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
       case FileReceived(:final file, :final path):
         ref.read(receivedFilesHistoryProvider.notifier).add(file, path);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.download_done_rounded,
+                      color: AppColors.success),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Received: ${file.fileName} (${formatBytes(file.size)})',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 4),
+              action: SnackBarAction(
+                label: 'View',
+                onPressed: () => setState(() => _selectedIndex = 1),
+              ),
+            ),
+          );
+        }
       case EngineReady():
         break;
     }
@@ -85,6 +142,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<SendState>(sendControllerProvider, (prev, next) {
+      if (next.pinRequest != null && prev?.pinRequest == null) {
+        showPinDialog(context, next.pinRequest!.deviceName).then((pin) {
+          if (pin != null && pin.isNotEmpty) {
+            ref.read(sendControllerProvider.notifier).submitPin(pin);
+          } else {
+            ref.read(sendControllerProvider.notifier).cancelPin();
+          }
+        });
+      }
+    });
+
     final size = MediaQuery.sizeOf(context);
     final isWide = size.width >= 900;
     final isDesktop =
@@ -270,7 +339,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ),
                 ],
               ),
-        floatingActionButton: _selectedIndex == 0
+        floatingActionButton: (_selectedIndex == 0 &&
+                ref.watch(sendControllerProvider).files.isEmpty)
             ? FloatingActionButton.extended(
                 onPressed: _addFiles,
                 icon: const Icon(Icons.add_rounded),
@@ -645,13 +715,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
               ],
               const Spacer(),
-              if (files.isNotEmpty)
+              if (files.isNotEmpty) ...[
+                TextButton.icon(
+                  onPressed: _addFiles,
+                  icon: const Icon(Icons.add_rounded, size: 18),
+                  label: const Text('Add more'),
+                ),
                 TextButton.icon(
                   onPressed: () =>
                       ref.read(sendControllerProvider.notifier).clear(),
                   icon: const Icon(Icons.clear_all_rounded, size: 18),
                   label: const Text('Clear'),
                 ),
+              ],
             ],
           ),
           const SizedBox(height: 8),
@@ -773,6 +849,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
               ),
             ),
+          const SizedBox(height: 12),
         ],
       ),
     );
@@ -1043,13 +1120,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (peers.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('No nearby devices found yet.'),
+          content: const Text(
+              'No nearby devices found yet. Tap "Add IP" or "Rescan".'),
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
         ),
       );
+      return;
+    }
+    if (peers.length == 1) {
+      await _sendTo(peers.first);
       return;
     }
     final peer = await showDevicePicker(context, peers);
