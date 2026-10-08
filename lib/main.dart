@@ -86,7 +86,11 @@ class _StartupGateState extends ConsumerState<_StartupGate>
       if (caps == null) {
         return const Scaffold(body: Center(child: CircularProgressIndicator()));
       }
-      return PermissionsScreen(capabilities: caps, onGranted: _check);
+      return PermissionsScreen(
+        capabilities: caps,
+        onGranted: _check,
+        onSkip: () => setState(() => _granted = true),
+      );
     }
     return const HomeScreen();
   }

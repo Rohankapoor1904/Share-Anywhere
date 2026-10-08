@@ -134,6 +134,24 @@ class LocalShareNode implements TransferTarget, LocalSendHost {
   int get port => _server?.boundPort ?? config.port;
   Iterable<DeviceInfo> get peers => _discovery?.peers ?? const [];
 
+  /// A live stream of peers that emits whenever discovery events occur or on periodic sweep.
+  Stream<List<DeviceInfo>> get peerStream {
+    final controller = StreamController<List<DeviceInfo>>.broadcast();
+    controller.add(peers.toList());
+    final sub = _discovery?.events.listen((_) {
+      if (!controller.isClosed) controller.add(peers.toList());
+    });
+    final timer = Timer.periodic(const Duration(milliseconds: 1500), (_) {
+      if (!controller.isClosed) controller.add(peers.toList());
+    });
+    controller.onCancel = () {
+      sub?.cancel();
+      timer.cancel();
+      controller.close();
+    };
+    return controller.stream;
+  }
+
   /// Force a fresh discovery sweep (burst announce + subnet scan).
   void rescan() {
     _localSendDiscovery?.announce();

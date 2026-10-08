@@ -15,6 +15,7 @@ class PermissionsScreen extends StatelessWidget {
     super.key,
     required this.capabilities,
     required this.onGranted,
+    this.onSkip,
   });
 
   final RadioCapabilities capabilities;
@@ -22,6 +23,7 @@ class PermissionsScreen extends StatelessWidget {
   /// Called once the user has responded, so the caller can re-evaluate the
   /// permission state and move on to the discovery screen without a restart.
   final VoidCallback onGranted;
+  final VoidCallback? onSkip;
 
   Future<void> _request(BuildContext context) async {
     final requests = <Permission>[
@@ -74,6 +76,14 @@ class PermissionsScreen extends StatelessWidget {
                     onPressed: () => openAppSettings(),
                     child: const Text('Open settings'),
                   ),
+                  if (onSkip != null)
+                    TextButton(
+                      onPressed: onSkip,
+                      child: const Text(
+                        'Continue anyway (Wi-Fi only)',
+                        style: TextStyle(color: AppColors.textSecondary),
+                      ),
+                    ),
                 ],
               ),
             ),

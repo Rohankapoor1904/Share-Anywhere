@@ -59,7 +59,9 @@ class LocalSendDiscovery {
       socket.multicastHops = 1;
       try {
         socket.joinMulticast(InternetAddress(kLocalSendMulticastAddress));
-      } on Object {}
+      } on Object {
+        // Some networks/containers forbid multicast joins; announcement still works.
+      }
       // Join multicast on all available network interfaces (WiFi, Hotspot AP)
       try {
         final interfaces = await NetworkInterface.list(
@@ -72,9 +74,13 @@ class LocalSendDiscovery {
               InternetAddress(kLocalSendMulticastAddress),
               iface,
             );
-          } catch (_) {}
+          } catch (_) {
+            // Ignore interface join failures.
+          }
         }
-      } catch (_) {}
+      } catch (_) {
+        // Ignore interface list failures.
+      }
 
       socket.listen(_onEvent);
       _socket = socket;
@@ -170,13 +176,30 @@ class LocalSendDiscovery {
       return;
     }
     if ((json['announce'] as bool?) ?? false) {
-      // A peer is announcing: emit them immediately AND reply so they find us.
+      // A peer is announcing: emit them immediately, reply via UDP unicast,
+      // and send an HTTP /register post (as per LocalSend spec) for reliable TCP handshake.
       _emit(info, datagram.address.address, json);
       replyUnicast(datagram.address, ownInfo ?? _defaultInfo);
+      unawaited(_replyHttpRegister(datagram.address.address, info.port));
     } else {
       // A unicast reply (announce=false) — emit as a discovered peer.
       _emit(info, datagram.address.address, json);
     }
+  }
+
+  Future<void> _replyHttpRegister(String address, int peerPort) async {
+    try {
+      final client = HttpClient()
+        ..connectionTimeout = const Duration(milliseconds: 1500);
+      final uri =
+          Uri.parse('http://$address:$peerPort$kLocalSendApiPrefix/register');
+      final req = await client.postUrl(uri);
+      req.headers.contentType = ContentType.json;
+      req.write(jsonEncode((ownInfo ?? _defaultInfo).toJson()));
+      final res = await req.close();
+      await res.drain<void>();
+      client.close(force: true);
+    } catch (_) {}
   }
 
   /// Accept a peer learned via its HTTP `register` callback.
@@ -220,7 +243,7 @@ class LocalSendDiscovery {
         type: InternetAddressType.IPv4,
       );
       final client = HttpClient()
-        ..connectionTimeout = const Duration(milliseconds: 1500);
+        ..connectionTimeout = const Duration(milliseconds: 800);
       for (final iface in interfaces) {
         for (final addr in iface.addresses) {
           final ip = addr.address;
@@ -230,20 +253,15 @@ class LocalSendDiscovery {
           final prefix = '${parts[0]}.${parts[1]}.${parts[2]}';
           final myHost = int.tryParse(parts[3]) ?? -1;
 
-          // Target common mobile hotspot addresses first (e.g. 192.168.43.1), then 1..30 and nearby
+          // Target gateway / hotspot host (.1) first, then all 1..254 hosts
           final targetHosts = <int>[];
-          if (myHost != 1) targetHosts.add(1); // Gateway / Hotspot host
-          for (var i = 1; i <= 30; i++) {
+          if (myHost != 1) targetHosts.add(1);
+          for (var i = 1; i <= 254; i++) {
             if (i != myHost && !targetHosts.contains(i)) targetHosts.add(i);
           }
-          for (var i = myHost - 5; i <= myHost + 5; i++) {
-            if (i >= 1 && i <= 254 && i != myHost && !targetHosts.contains(i)) {
-              targetHosts.add(i);
-            }
-          }
 
-          // Probe in batches of 10 to avoid socket exhaustion
-          const batchSize = 10;
+          // Probe in batches of 25 for rapid parallel sweep (~8 seconds total)
+          const batchSize = 25;
           for (var i = 0; i < targetHosts.length; i += batchSize) {
             final batch = targetHosts.skip(i).take(batchSize);
             await Future.wait(batch.map((host) async {
@@ -269,8 +287,8 @@ class LocalSendDiscovery {
                         'http://$targetIp:$port$kLocalSendApiPrefix/register');
                     final regReq = await client.postUrl(regUri);
                     regReq.headers.contentType = ContentType.json;
-                    regReq.write(
-                        jsonEncode((ownInfo ?? _defaultInfo).toJson()));
+                    regReq
+                        .write(jsonEncode((ownInfo ?? _defaultInfo).toJson()));
                     final regRes = await regReq.close();
                     await regRes.drain<void>();
                   } catch (_) {}

@@ -61,8 +61,8 @@ final nodeStartedProvider = FutureProvider<LocalShareNode>((ref) async {
 final peersProvider = StreamProvider<List<DeviceInfo>>((ref) async* {
   final node = await ref.watch(nodeStartedProvider.future);
   yield node.peers.toList();
-  await for (final _ in node.events) {
-    yield node.peers.toList();
+  await for (final list in node.peerStream) {
+    yield list;
   }
 });
 
