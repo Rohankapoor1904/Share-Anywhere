@@ -48,21 +48,13 @@ class LocalSendDiscovery {
 
   Future<void> start() async {
     try {
-      RawDatagramSocket? socket;
-      try {
-        socket = await RawDatagramSocket.bind(
-          InternetAddress.anyIPv4,
-          port,
-          reuseAddress: true,
-          reusePort: true,
-        );
-      } catch (_) {
-        socket = await RawDatagramSocket.bind(
-          InternetAddress.anyIPv4,
-          port,
-          reuseAddress: true,
-        );
-      }
+      final canReusePort = !Platform.isWindows;
+      final socket = await RawDatagramSocket.bind(
+        InternetAddress.anyIPv4,
+        port,
+        reuseAddress: true,
+        reusePort: canReusePort,
+      );
       socket.broadcastEnabled = true;
       socket.multicastHops = 1;
       try {
