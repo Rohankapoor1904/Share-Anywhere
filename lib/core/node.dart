@@ -128,10 +128,35 @@ class LocalShareNode implements TransferTarget, LocalSendHost {
   final Map<String, IncomingTransfer> _activeSessions = {};
 
   Stream<EngineEvent> get events => _events.stream;
+  Stream<DiscoveryEvent>? get discoveryEvents => _discovery?.events;
   String get deviceId => _deviceId;
   String get fingerprint => certificate.fingerprint;
   int get port => _server?.boundPort ?? config.port;
   Iterable<DeviceInfo> get peers => _discovery?.peers ?? const [];
+
+  /// Manually inject a peer by address and port into the discovery list.
+  DeviceInfo addManualPeer({
+    required String address,
+    int port = kDefaultPort,
+    String? displayName,
+    bool isLocalSend = false,
+  }) {
+    final cleanAddress = address.trim();
+    final deviceId = 'manual-$cleanAddress:$port';
+    final device = DeviceInfo(
+      deviceId: deviceId,
+      displayName: (displayName != null && displayName.isNotEmpty)
+          ? displayName
+          : cleanAddress,
+      fingerprint: '',
+      port: port,
+      platform: isLocalSend ? 'localsend' : null,
+      addresses: [cleanAddress],
+      discoveredVia: DiscoveryChannel.manual,
+    );
+    _discovery?.addManual(device);
+    return device;
+  }
 
   /// Our identity as advertised to LocalSend peers, or null when compat is off.
   LocalSendInfo? get localSendInfo => localSendCompat

@@ -330,6 +330,157 @@ Future<void> showReceiverPinDialog(
   );
 }
 
+/// Dialog for manually entering a device IP address and port.
+Future<({String address, int port, bool isLocalSend, String? displayName})?>
+    showManualConnectDialog(BuildContext context) {
+  return showDialog<
+      ({String address, int port, bool isLocalSend, String? displayName})>(
+    context: context,
+    builder: (context) => const _ManualConnectDialog(),
+  );
+}
+
+class _ManualConnectDialog extends StatefulWidget {
+  const _ManualConnectDialog();
+
+  @override
+  State<_ManualConnectDialog> createState() => _ManualConnectDialogState();
+}
+
+class _ManualConnectDialogState extends State<_ManualConnectDialog> {
+  final _ipController = TextEditingController();
+  final _portController = TextEditingController(text: '53317');
+  final _nameController = TextEditingController();
+  bool _isLocalSend = false;
+
+  @override
+  void dispose() {
+    _ipController.dispose();
+    _portController.dispose();
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final ip = _ipController.text.trim();
+    if (ip.isEmpty) return;
+    final port = int.tryParse(_portController.text.trim()) ?? 53317;
+    final name = _nameController.text.trim();
+
+    Navigator.pop(
+      context,
+      (
+        address: ip,
+        port: port,
+        isLocalSend: _isLocalSend,
+        displayName: name.isEmpty ? null : name,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      scrollable: true,
+      title: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: AppColors.accent.withValues(alpha: 0.15),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.lan_rounded,
+              color: AppColors.accent,
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 12),
+          const Text('Connect via IP'),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Enter the IP address of the recipient device if automatic discovery fails (e.g. AP isolation).',
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _ipController,
+            autofocus: true,
+            keyboardType: TextInputType.text,
+            decoration: const InputDecoration(
+              labelText: 'IP Address',
+              hintText: 'e.g. 192.168.1.50',
+              prefixIcon: Icon(Icons.wifi_rounded),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                flex: 2,
+                child: TextField(
+                  controller: _portController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: const InputDecoration(
+                    labelText: 'Port',
+                    hintText: '53317',
+                    prefixIcon: Icon(Icons.numbers_rounded),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 3,
+                child: TextField(
+                  controller: _nameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Name (Optional)',
+                    hintText: 'Living Room TV',
+                    prefixIcon: Icon(Icons.badge_outlined),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          CheckboxListTile(
+            value: _isLocalSend,
+            onChanged: (val) => setState(() => _isLocalSend = val ?? false),
+            activeColor: AppColors.accent,
+            contentPadding: EdgeInsets.zero,
+            title: const Text(
+              'Target runs LocalSend app',
+              style: TextStyle(fontSize: 13, color: AppColors.textPrimary),
+            ),
+            subtitle: const Text(
+              'Uses LocalSend v2 protocol over HTTP',
+              style: TextStyle(fontSize: 11, color: AppColors.textMuted),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton.icon(
+          onPressed: _submit,
+          icon: const Icon(Icons.add_rounded, size: 18),
+          label: const Text('Add Device'),
+        ),
+      ],
+    );
+  }
+}
+
 /// Bottom sheet for choosing a peer on phones.
 Future<DeviceInfo?> showDevicePicker(
   BuildContext context,
