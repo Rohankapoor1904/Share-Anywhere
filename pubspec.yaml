@@ -35,7 +35,8 @@ dependencies:
   web_socket_channel: ^3.0.1
 
   # Permissions, files, misc
-  permission_handler: ^13.0.2
+  # 13.x pulls permission_handler_android 14.x, which needs Kotlin 2.3/AGP 9.
+  permission_handler: ^12.0.3
   file_picker: ^8.1.6
   path_provider: ^2.1.5
   path: ^1.9.0
