@@ -564,38 +564,43 @@ class _EmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: AppColors.surfaceHigh,
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: AppColors.surfaceBorder.withValues(alpha: 0.5),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceHigh,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: AppColors.surfaceBorder.withValues(alpha: 0.5),
+                ),
+              ),
+              child: Icon(
+                Icons.cloud_upload_outlined,
+                size: 32,
+                color: AppColors.accent.withValues(alpha: 0.7),
               ),
             ),
-            child: Icon(
-              Icons.cloud_upload_outlined,
-              size: 44,
-              color: AppColors.accent.withValues(alpha: 0.7),
+            const SizedBox(height: 8),
+            const Text(
+              'Add files to share them with nearby devices',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+                color: AppColors.textPrimary,
+              ),
             ),
-          ),
-          const SizedBox(height: 14),
-          const Text(
-            'Add files to share them with nearby devices',
-            style: TextStyle(
-              fontWeight: FontWeight.w600,
-              color: AppColors.textPrimary,
+            const SizedBox(height: 2),
+            const Text(
+              'Everything stays secure on your local network',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 11, color: AppColors.textMuted),
             ),
-          ),
-          const SizedBox(height: 4),
-          const Text(
-            'Everything stays secure on your local network',
-            style: TextStyle(fontSize: 12, color: AppColors.textMuted),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
