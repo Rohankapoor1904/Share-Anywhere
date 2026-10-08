@@ -134,6 +134,12 @@ class LocalShareNode implements TransferTarget, LocalSendHost {
   int get port => _server?.boundPort ?? config.port;
   Iterable<DeviceInfo> get peers => _discovery?.peers ?? const [];
 
+  /// Force a fresh discovery sweep (burst announce + subnet scan).
+  void rescan() {
+    _localSendDiscovery?.announce();
+    unawaited(_localSendDiscovery?.probeSubnet() ?? Future.value());
+  }
+
   /// Manually inject a peer by address and port into the discovery list.
   DeviceInfo addManualPeer({
     required String address,
@@ -143,6 +149,7 @@ class LocalShareNode implements TransferTarget, LocalSendHost {
   }) {
     final cleanAddress = address.trim();
     final deviceId = 'manual-$cleanAddress:$port';
+    final actualIsLocalSend = isLocalSend || port == kLocalSendPort;
     final device = DeviceInfo(
       deviceId: deviceId,
       displayName: (displayName != null && displayName.isNotEmpty)
@@ -150,7 +157,7 @@ class LocalShareNode implements TransferTarget, LocalSendHost {
           : cleanAddress,
       fingerprint: '',
       port: port,
-      platform: isLocalSend ? 'localsend' : null,
+      platform: actualIsLocalSend ? 'localsend' : null,
       addresses: [cleanAddress],
       discoveredVia: DiscoveryChannel.manual,
     );

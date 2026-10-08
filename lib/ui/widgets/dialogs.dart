@@ -372,7 +372,7 @@ class _ManualConnectDialogState extends State<_ManualConnectDialog> {
       (
         address: ip,
         port: port,
-        isLocalSend: _isLocalSend,
+        isLocalSend: _isLocalSend || port == 53317,
         displayName: name.isEmpty ? null : name,
       ),
     );

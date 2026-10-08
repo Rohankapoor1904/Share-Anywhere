@@ -42,20 +42,48 @@ class LocalSendDiscovery {
       StreamController.broadcast();
   RawDatagramSocket? _socket;
   Timer? _announcer;
+  Timer? _subnetScanner;
 
   Stream<LocalSendSighting> get sightings => _sightings.stream;
 
   Future<void> start() async {
     try {
-      final socket =
-          await RawDatagramSocket.bind(InternetAddress.anyIPv4, port);
+      RawDatagramSocket? socket;
+      try {
+        socket = await RawDatagramSocket.bind(
+          InternetAddress.anyIPv4,
+          port,
+          reuseAddress: true,
+          reusePort: true,
+        );
+      } catch (_) {
+        socket = await RawDatagramSocket.bind(
+          InternetAddress.anyIPv4,
+          port,
+          reuseAddress: true,
+        );
+      }
       socket.broadcastEnabled = true;
       socket.multicastHops = 1;
       try {
         socket.joinMulticast(InternetAddress(kLocalSendMulticastAddress));
-      } on Object {
-        // Some networks/containers forbid multicast joins; announcement still works.
-      }
+      } on Object {}
+      // Join multicast on all available network interfaces (WiFi, Hotspot AP)
+      try {
+        final interfaces = await NetworkInterface.list(
+          includeLinkLocal: false,
+          type: InternetAddressType.IPv4,
+        );
+        for (final iface in interfaces) {
+          try {
+            socket.joinMulticast(
+              InternetAddress(kLocalSendMulticastAddress),
+              iface,
+            );
+          } catch (_) {}
+        }
+      } catch (_) {}
+
       socket.listen(_onEvent);
       _socket = socket;
     } on SocketException {
@@ -64,12 +92,17 @@ class LocalSendDiscovery {
     }
     // Burst of 3 rapid announces so we're found quickly on first start.
     announce();
-    Future<void>.delayed(const Duration(milliseconds: 600))
-        .then((_) => announce());
-    Future<void>.delayed(const Duration(milliseconds: 1800))
-        .then((_) => announce());
+    unawaited(Future<void>.delayed(const Duration(milliseconds: 600))
+        .then((_) => announce()));
+    unawaited(Future<void>.delayed(const Duration(milliseconds: 1800))
+        .then((_) => announce()));
     // Periodic re-announce every 4 seconds so new peers find us quickly.
     _announcer = Timer.periodic(const Duration(seconds: 4), (_) => announce());
+    // Active subnet probe for mobile hotspot / AP isolation fallback
+    unawaited(Future<void>.delayed(const Duration(milliseconds: 1000))
+        .then((_) => probeSubnet()));
+    _subnetScanner =
+        Timer.periodic(const Duration(seconds: 15), (_) => probeSubnet());
   }
 
   /// Broadcast our identity to multicast, global broadcast and subnet broadcast.
@@ -186,9 +219,84 @@ class LocalSendDiscovery {
         protocol: 'http',
       );
 
+  /// Actively probes the local subnet via HTTP /info in case UDP multicast/broadcast
+  /// is blocked by the AP/hotspot router (AP isolation).
+  Future<void> probeSubnet() async {
+    try {
+      final interfaces = await NetworkInterface.list(
+        includeLinkLocal: false,
+        type: InternetAddressType.IPv4,
+      );
+      final client = HttpClient()
+        ..connectionTimeout = const Duration(milliseconds: 1500);
+      for (final iface in interfaces) {
+        for (final addr in iface.addresses) {
+          final ip = addr.address;
+          if (ip == '127.0.0.1') continue;
+          final parts = ip.split('.');
+          if (parts.length != 4) continue;
+          final prefix = '${parts[0]}.${parts[1]}.${parts[2]}';
+          final myHost = int.tryParse(parts[3]) ?? -1;
+
+          // Target common mobile hotspot addresses first (e.g. 192.168.43.1), then 1..30 and nearby
+          final targetHosts = <int>[];
+          if (myHost != 1) targetHosts.add(1); // Gateway / Hotspot host
+          for (var i = 1; i <= 30; i++) {
+            if (i != myHost && !targetHosts.contains(i)) targetHosts.add(i);
+          }
+          for (var i = myHost - 5; i <= myHost + 5; i++) {
+            if (i >= 1 && i <= 254 && i != myHost && !targetHosts.contains(i)) {
+              targetHosts.add(i);
+            }
+          }
+
+          // Probe in batches of 10 to avoid socket exhaustion
+          const batchSize = 10;
+          for (var i = 0; i < targetHosts.length; i += batchSize) {
+            final batch = targetHosts.skip(i).take(batchSize);
+            await Future.wait(batch.map((host) async {
+              final targetIp = '$prefix.$host';
+              try {
+                final uri = Uri.parse(
+                    'http://$targetIp:$port$kLocalSendApiPrefix/info');
+                final req = await client.getUrl(uri);
+                final res = await req.close();
+                if (res.statusCode == 200) {
+                  final body = await utf8.decoder.bind(res).join();
+                  final json =
+                      (jsonDecode(body) as Map).cast<String, Object?>();
+                  final info = LocalSendInfo.fromJson(json);
+                  if (info.fingerprint.isNotEmpty &&
+                      info.fingerprint == ownInfo?.fingerprint) {
+                    return;
+                  }
+                  _emit(info, targetIp, json);
+                  // Send register back so peer discovers us in return
+                  try {
+                    final regUri = Uri.parse(
+                        'http://$targetIp:$port$kLocalSendApiPrefix/register');
+                    final regReq = await client.postUrl(regUri);
+                    regReq.headers.contentType = ContentType.json;
+                    regReq.write(
+                        jsonEncode((ownInfo ?? _defaultInfo).toJson()));
+                    final regRes = await regReq.close();
+                    await regRes.drain<void>();
+                  } catch (_) {}
+                }
+              } catch (_) {}
+            }));
+          }
+        }
+      }
+      client.close(force: true);
+    } catch (_) {}
+  }
+
   Future<void> dispose() async {
     _announcer?.cancel();
     _announcer = null;
+    _subnetScanner?.cancel();
+    _subnetScanner = null;
     await _sightings.close();
     _socket?.close();
     _socket = null;

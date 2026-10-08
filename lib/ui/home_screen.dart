@@ -229,6 +229,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
           actions: [
             IconButton(
+              tooltip: 'Rescan network',
+              onPressed: _rescan,
+              icon: const Icon(Icons.refresh_rounded),
+            ),
+            IconButton(
               tooltip: 'Connect via IP',
               onPressed: _openManualConnect,
               icon: const Icon(Icons.add_link_rounded),
@@ -367,6 +372,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
+  Future<void> _rescan() async {
+    final node = await ref.read(nodeStartedProvider.future);
+    node.rescan();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Scanning network for devices...'),
+        duration: Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   Future<void> _openManualConnect() async {
     final result = await showManualConnectDialog(context);
     if (result == null) return;
@@ -460,6 +478,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
               ),
               const Spacer(),
+              TextButton.icon(
+                style: TextButton.styleFrom(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                onPressed: _rescan,
+                icon: const Icon(Icons.refresh_rounded, size: 16),
+                label: const Text('Rescan', style: TextStyle(fontSize: 12)),
+              ),
+              const SizedBox(width: 8),
               TextButton.icon(
                 style: TextButton.styleFrom(
                   padding:
