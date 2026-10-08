@@ -25,7 +25,9 @@ class DiscoveryOrchestrator {
     required this.adapter,
     required this.localDeviceId,
     required this.localFingerprint,
-    this.staleness = const Duration(seconds: 20),
+    // Increased from 20s → 60s: a single missed mDNS/UDP packet no longer
+    // evicts a device that is still on the network.
+    this.staleness = const Duration(seconds: 60),
   });
 
   final RadioAdapter adapter;
@@ -42,7 +44,7 @@ class DiscoveryOrchestrator {
   Iterable<DeviceInfo> get peers => _peers.values.map((t) => t.device);
 
   void start() {
-    _sweeper ??= Timer.periodic(const Duration(seconds: 5), (_) => _sweep());
+    _sweeper ??= Timer.periodic(const Duration(seconds: 10), (_) => _sweep());
     _listen(adapter.discoverMdns(), DiscoveryChannel.mdns);
     _listen(adapter.scanBle(), DiscoveryChannel.ble);
   }
@@ -110,6 +112,8 @@ class DiscoveryOrchestrator {
     );
     existing.device = merged;
     existing.seen = DateTime.now();
+    // Re-emit the updated device so the UI refreshes its info.
+    _events.add(DiscoveryEvent.added(merged));
   }
 
   void _sweep() {

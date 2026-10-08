@@ -19,6 +19,7 @@ class NsdRadioAdapter implements RadioAdapter {
   nsd.Registration? _registration;
   nsd.Registration? _localSendRegistration;
   nsd.Discovery? _discovery;
+  nsd.Discovery? _localSendDiscovery;
   final StreamController<Map<String, String>> _controller =
       StreamController.broadcast();
 
@@ -88,8 +89,18 @@ class NsdRadioAdapter implements RadioAdapter {
   Stream<Map<String, String>> discoverMdns({
     Duration interval = const Duration(seconds: 2),
   }) async* {
+    // Start both service type discoveries concurrently.
     unawaited(_discoverLocalSend());
-    _discovery = await nsd.startDiscovery(kMdnsServiceType);
+
+    try {
+      _discovery = await nsd.startDiscovery(kMdnsServiceType);
+    } on Object {
+      // NSD may fail on some Windows/Android configurations; yield nothing and
+      // let the LocalSend multicast path carry discovery.
+      yield* _controller.stream;
+      return;
+    }
+
     _discovery!.addServiceListener((service, status) async {
       if (status != nsd.ServiceStatus.found) {
         return;
@@ -115,6 +126,7 @@ class NsdRadioAdapter implements RadioAdapter {
   Future<void> _discoverLocalSend() async {
     try {
       final discovery = await nsd.startDiscovery(kLocalSendMdnsService);
+      _localSendDiscovery = discovery;
       discovery.addServiceListener((service, status) async {
         if (status != nsd.ServiceStatus.found || _controller.isClosed) {
           return;
@@ -219,6 +231,11 @@ class NsdRadioAdapter implements RadioAdapter {
     _discovery = null;
     if (discovery != null) {
       await nsd.stopDiscovery(discovery);
+    }
+    final localSendDisc = _localSendDiscovery;
+    _localSendDiscovery = null;
+    if (localSendDisc != null) {
+      await nsd.stopDiscovery(localSendDisc);
     }
     await _controller.close();
   }

@@ -232,12 +232,16 @@ class LocalShareNode implements TransferTarget, LocalSendHost {
       _localSendDiscovery?.ingestRegister(json, address);
     };
 
-    final discovery = LocalSendDiscovery(port: server.boundPort)
-      ..ownInfo = info;
-    discovery.callbackPort = server.boundPort;
+    // UDP discovery always listens on kLocalSendPort (53317) so peers can find
+    // us. callbackPort tells them where our HTTP API is (may differ if 53317
+    // was already taken by another LocalSend instance on this device).
+    final discovery = LocalSendDiscovery()
+      ..ownInfo = info
+      ..callbackPort = server.boundPort;
     await discovery.start();
     discovery.sightings.listen((s) => _discovery?.ingest(s.device));
     _localSendDiscovery = discovery;
+    // Extra burst announce so peers already on the network notice us quickly.
     discovery.announce();
   }
 

@@ -62,7 +62,13 @@ class LocalSendDiscovery {
       // Port busy (another LocalSend instance). Discovery degrades to mDNS/BLE.
       _socket = null;
     }
+    // Burst of 3 rapid announces so we're found quickly on first start.
     announce();
+    Future<void>.delayed(const Duration(milliseconds: 600))
+        .then((_) => announce());
+    Future<void>.delayed(const Duration(milliseconds: 1800))
+        .then((_) => announce());
+    // Periodic re-announce every 4 seconds so new peers find us quickly.
     _announcer = Timer.periodic(const Duration(seconds: 4), (_) => announce());
   }
 
@@ -132,18 +138,20 @@ class LocalSendDiscovery {
     } on Object {
       return;
     }
-    // Ignore our own announcement: announce=true with our fingerprint.
     final info = LocalSendInfo.fromJson(json);
+    // Ignore our own datagrams (compare by fingerprint when available).
     if (info.fingerprint.isNotEmpty &&
         info.fingerprint == ownInfo?.fingerprint) {
       return;
     }
     if ((json['announce'] as bool?) ?? false) {
-      // A peer is announcing; answer so it learns about us.
+      // A peer is announcing: emit them immediately AND reply so they find us.
+      _emit(info, datagram.address.address, json);
       replyUnicast(datagram.address, ownInfo ?? _defaultInfo);
-      return;
+    } else {
+      // A unicast reply (announce=false) — emit as a discovered peer.
+      _emit(info, datagram.address.address, json);
     }
-    _emit(info, datagram.address.address, json);
   }
 
   /// Accept a peer learned via its HTTP `register` callback.
@@ -152,6 +160,7 @@ class LocalSendDiscovery {
   }
 
   void _emit(LocalSendInfo info, String address, Map<String, Object?> json) {
+    if (_sightings.isClosed) return;
     final port = (json['port'] as num?)?.toInt() ?? kLocalSendPort;
     _sightings.add(LocalSendSighting(
       device: DeviceInfo(
