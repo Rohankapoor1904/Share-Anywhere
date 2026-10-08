@@ -345,6 +345,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
+      // Let the sheet grow and scroll so the keyboard does not cover the field.
+      isScrollControlled: true,
       builder: (context) => const _SettingsSheet(),
     );
   }
@@ -381,38 +383,47 @@ class _SettingsSheet extends ConsumerWidget {
     final caps = ref.watch(capabilitiesProvider).valueOrNull;
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Device name', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            TextFormField(
-              initialValue: name,
-              decoration: const InputDecoration(border: OutlineInputBorder()),
-              onChanged: (value) =>
-                  ref.read(deviceNameProvider.notifier).state = value,
-            ),
-            const SizedBox(height: 16),
-            if (caps != null) ...[
-              Text('Capabilities',
+        // Lift the sheet above the on-screen keyboard when it opens.
+        padding: EdgeInsets.fromLTRB(
+          16,
+          16,
+          16,
+          16 + MediaQuery.viewInsetsOf(context).bottom,
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Device name',
                   style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final entry in caps.toJson().entries)
-                    Chip(
-                      label:
-                          Text('${entry.key}: ${entry.value ? "yes" : "no"}'),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                ],
+              TextFormField(
+                initialValue: name,
+                decoration: const InputDecoration(border: OutlineInputBorder()),
+                onChanged: (value) =>
+                    ref.read(deviceNameProvider.notifier).state = value,
               ),
+              const SizedBox(height: 16),
+              if (caps != null) ...[
+                Text('Capabilities',
+                    style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final entry in caps.toJson().entries)
+                      Chip(
+                        label:
+                            Text('${entry.key}: ${entry.value ? "yes" : "no"}'),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                  ],
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );

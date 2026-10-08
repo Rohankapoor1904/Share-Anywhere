@@ -40,13 +40,28 @@ class _StartupGate extends ConsumerStatefulWidget {
   ConsumerState<_StartupGate> createState() => _StartupGateState();
 }
 
-class _StartupGateState extends ConsumerState<_StartupGate> {
+class _StartupGateState extends ConsumerState<_StartupGate>
+    with WidgetsBindingObserver {
   bool? _granted;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _check();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // The user may have toggled a permission in system settings; re-evaluate
+    // when they come back instead of requiring an app restart.
+    if (state == AppLifecycleState.resumed) _check();
   }
 
   Future<void> _check() async {
@@ -56,7 +71,9 @@ class _StartupGateState extends ConsumerState<_StartupGate> {
     }
     final scan = await Permission.bluetoothScan.status;
     final nearby = await Permission.nearbyWifiDevices.status;
-    setState(() => _granted = scan.isGranted || nearby.isGranted);
+    final granted = scan.isGranted || nearby.isGranted;
+    if (!mounted) return;
+    setState(() => _granted = granted);
   }
 
   @override
@@ -69,7 +86,7 @@ class _StartupGateState extends ConsumerState<_StartupGate> {
       if (caps == null) {
         return const Scaffold(body: Center(child: CircularProgressIndicator()));
       }
-      return PermissionsScreen(capabilities: caps);
+      return PermissionsScreen(capabilities: caps, onGranted: _check);
     }
     return const HomeScreen();
   }

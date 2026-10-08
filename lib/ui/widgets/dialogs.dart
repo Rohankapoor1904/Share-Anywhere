@@ -74,6 +74,7 @@ class _PinDialogState extends State<_PinDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
+      scrollable: true,
       title: const Text('Enter pairing PIN'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
