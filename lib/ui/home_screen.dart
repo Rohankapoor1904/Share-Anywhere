@@ -84,7 +84,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget build(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
     final isWide = size.width >= 900;
-    final isDesktop = !kIsWeb && (Platform.isLinux || Platform.isWindows || Platform.isMacOS);
+    final isDesktop =
+        !kIsWeb && (Platform.isLinux || Platform.isWindows || Platform.isMacOS);
 
     final body = SafeArea(
       child: isWide ? _desktopLayout() : _mobileLayout(),
@@ -93,10 +94,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return CallbackShortcuts(
       bindings: {
         // TV remotes and keyboards: Enter/Space activate, S sends, A adds files.
-        const SingleActivator(LogicalKeyboardKey.keyS, control: true): _choosePeerAndSend,
-        const SingleActivator(LogicalKeyboardKey.keyA, control: true): _addFiles,
-        const SingleActivator(LogicalKeyboardKey.escape):
-            () => ref.read(sendControllerProvider.notifier).clear(),
+        const SingleActivator(LogicalKeyboardKey.keyS, control: true):
+            _choosePeerAndSend,
+        const SingleActivator(LogicalKeyboardKey.keyA, control: true):
+            _addFiles,
+        const SingleActivator(LogicalKeyboardKey.escape): () =>
+            ref.read(sendControllerProvider.notifier).clear(),
         const SingleActivator(LogicalKeyboardKey.select): _choosePeerAndSend,
       },
       child: Scaffold(
@@ -143,9 +146,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.file_download_outlined, size: 64, color: AppColors.accent),
+                    Icon(Icons.file_download_outlined,
+                        size: 64, color: AppColors.accent),
                     const SizedBox(height: 12),
-                    Text('Drop files to share', style: Theme.of(context).textTheme.titleLarge),
+                    Text('Drop files to share',
+                        style: Theme.of(context).textTheme.titleLarge),
                   ],
                 ),
               ),
@@ -155,13 +160,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  void _addFiles() =>
-      ref.read(sendControllerProvider.notifier).pickFiles();
+  void _addFiles() => ref.read(sendControllerProvider.notifier).pickFiles();
 
   void _addDroppedFiles(List<String> paths) {
     final files = paths
         .where((p) => File(p).existsSync())
-        .map((p) => SelectedFile(path: p, fileName: p.split(Platform.pathSeparator).last))
+        .map((p) => SelectedFile(
+            path: p, fileName: p.split(Platform.pathSeparator).last))
         .toList();
     if (files.isNotEmpty) {
       ref.read(sendControllerProvider.notifier).addFiles(files);
@@ -254,7 +259,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               const Spacer(),
               if (files.isNotEmpty)
                 TextButton(
-                  onPressed: () => ref.read(sendControllerProvider.notifier).clear(),
+                  onPressed: () =>
+                      ref.read(sendControllerProvider.notifier).clear(),
                   child: const Text('Clear'),
                 ),
             ],
@@ -269,11 +275,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       final file = files[i];
                       return ListTile(
                         leading: const Icon(Icons.insert_drive_file_outlined),
-                        title: Text(file.fileName, maxLines: 1, overflow: TextOverflow.ellipsis),
+                        title: Text(file.fileName,
+                            maxLines: 1, overflow: TextOverflow.ellipsis),
                         trailing: IconButton(
                           icon: const Icon(Icons.close),
-                          onPressed: () =>
-                              ref.read(sendControllerProvider.notifier).removeFile(file),
+                          onPressed: () => ref
+                              .read(sendControllerProvider.notifier)
+                              .removeFile(file),
                         ),
                       );
                     },
@@ -309,7 +317,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           if (send.error != null)
             Padding(
               padding: const EdgeInsets.only(top: 8),
-              child: Text(send.error!, style: const TextStyle(color: AppColors.danger)),
+              child: Text(send.error!,
+                  style: const TextStyle(color: AppColors.danger)),
             ),
         ],
       ),
@@ -350,11 +359,13 @@ class _EmptyState extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.cloud_upload_outlined, size: 56, color: AppColors.textMuted.withValues(alpha: 0.6)),
+          Icon(Icons.cloud_upload_outlined,
+              size: 56, color: AppColors.textMuted.withValues(alpha: 0.6)),
           const SizedBox(height: 12),
           const Text('Add files to share them with nearby devices'),
           const SizedBox(height: 4),
-          const Text('Everything stays on your local network', style: TextStyle(fontSize: 12)),
+          const Text('Everything stays on your local network',
+              style: TextStyle(fontSize: 12)),
         ],
       ),
     );
@@ -380,11 +391,13 @@ class _SettingsSheet extends ConsumerWidget {
             TextFormField(
               initialValue: name,
               decoration: const InputDecoration(border: OutlineInputBorder()),
-              onChanged: (value) => ref.read(deviceNameProvider.notifier).state = value,
+              onChanged: (value) =>
+                  ref.read(deviceNameProvider.notifier).state = value,
             ),
             const SizedBox(height: 16),
             if (caps != null) ...[
-              Text('Capabilities', style: Theme.of(context).textTheme.titleMedium),
+              Text('Capabilities',
+                  style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
@@ -392,7 +405,8 @@ class _SettingsSheet extends ConsumerWidget {
                 children: [
                   for (final entry in caps.toJson().entries)
                     Chip(
-                      label: Text('${entry.key}: ${entry.value ? "yes" : "no"}'),
+                      label:
+                          Text('${entry.key}: ${entry.value ? "yes" : "no"}'),
                       visualDensity: VisualDensity.compact,
                     ),
                 ],

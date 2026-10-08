@@ -4,7 +4,8 @@ import 'package:localshare/core/protocol/models.dart';
 import 'package:localshare/ui/format.dart';
 import 'package:localshare/ui/widgets/radar_view.dart';
 
-DeviceInfo _device(String id, String name, {DiscoveryChannel via = DiscoveryChannel.mdns}) =>
+DeviceInfo _device(String id, String name,
+        {DiscoveryChannel via = DiscoveryChannel.mdns}) =>
     DeviceInfo(
       deviceId: id,
       displayName: name,
@@ -51,7 +52,8 @@ void main() {
       expect(find.text('MacBook'), findsOneWidget);
     });
 
-    testWidgets('invokes the tap callback with the tapped device', (tester) async {
+    testWidgets('invokes the tap callback with the tapped device',
+        (tester) async {
       DeviceInfo? tapped;
       await tester.pumpWidget(
         MaterialApp(

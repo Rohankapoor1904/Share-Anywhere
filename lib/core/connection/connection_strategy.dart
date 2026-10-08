@@ -42,11 +42,13 @@ class ConnectionStrategy {
   ///
   /// [assumeSameLan] is set by the discovery layer when both devices answered on
   /// the local subnet. When false, we attempt a radio-mediated path.
-  Future<ConnectionPlan> plan(DeviceInfo peer, {required bool assumeSameLan}) async {
+  Future<ConnectionPlan> plan(DeviceInfo peer,
+      {required bool assumeSameLan}) async {
     final caps = await adapter.capabilities();
 
     if (assumeSameLan && peer.bestAddress != null) {
-      return ConnectionPlan(mode: ConnectionMode.lan, address: peer.bestAddress);
+      return ConnectionPlan(
+          mode: ConnectionMode.lan, address: peer.bestAddress);
     }
 
     if (caps.wifiDirect) {

@@ -5,7 +5,8 @@ import '../format.dart';
 
 /// A single row in the received-files list.
 class ReceivedFileTile extends StatelessWidget {
-  const ReceivedFileTile({super.key, required this.fileName, required this.path});
+  const ReceivedFileTile(
+      {super.key, required this.fileName, required this.path});
 
   final String fileName;
   final String path;
@@ -42,7 +43,8 @@ class TransferTile extends StatelessWidget {
     final fraction = total <= 0 ? 0.0 : (transferred / total).clamp(0.0, 1.0);
     final remaining = speed <= 0
         ? Duration.zero
-        : Duration(seconds: ((total - transferred) / speed).ceil().clamp(0, 1 << 30));
+        : Duration(
+            seconds: ((total - transferred) / speed).ceil().clamp(0, 1 << 30));
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
@@ -60,7 +62,9 @@ class TransferTile extends StatelessWidget {
                 ),
               ),
               Text(
-                status == 'done' ? 'Done' : '${(fraction * 100).toStringAsFixed(0)}%',
+                status == 'done'
+                    ? 'Done'
+                    : '${(fraction * 100).toStringAsFixed(0)}%',
                 style: TextStyle(
                   color: status == 'done' ? const Color(0xFF43D9AD) : null,
                   fontWeight: FontWeight.w600,

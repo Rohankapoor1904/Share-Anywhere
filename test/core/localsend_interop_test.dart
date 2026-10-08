@@ -46,7 +46,8 @@ class _Host extends LocalSendHost {
   }
 
   @override
-  void onLocalSendFileReceived(FileDescriptor file, String path) => received.add(path);
+  void onLocalSendFileReceived(FileDescriptor file, String path) =>
+      received.add(path);
 }
 
 /// Spec-written receiver, independent of LocalShare's sender implementation.
@@ -70,7 +71,8 @@ class _SpecReceiver {
       final p = req.uri.path;
       if (req.method == 'POST' && p == '$kLocalSendApiPrefix/prepare-upload') {
         prepareCount++;
-        if (requirePin != null && req.uri.queryParameters['pin'] != '$requirePin') {
+        if (requirePin != null &&
+            req.uri.queryParameters['pin'] != '$requirePin') {
           req.response.statusCode = LocalSendStatus.pinRequired;
           await req.response.close();
           return;
@@ -89,7 +91,8 @@ class _SpecReceiver {
         sessions[sid] = tokens;
         preparedSessionId = sid;
         req.response.headers.contentType = ContentType.json;
-        req.response.write(jsonEncode(LocalSendPrepareResponse(sessionId: sid, files: tokens).toJson()));
+        req.response.write(jsonEncode(
+            LocalSendPrepareResponse(sessionId: sid, files: tokens).toJson()));
         await req.response.close();
         return;
       }
@@ -101,9 +104,11 @@ class _SpecReceiver {
           await req.response.close();
           return;
         }
-        final bytes = await req.fold<List<int>>(<int>[], (a, b) => a..addAll(b));
+        final bytes =
+            await req.fold<List<int>>(<int>[], (a, b) => a..addAll(b));
         final digest = hashBytes(bytes);
-        if (expectedSha[q['fileId']]!.isNotEmpty && digest != expectedSha[q['fileId']]) {
+        if (expectedSha[q['fileId']]!.isNotEmpty &&
+            digest != expectedSha[q['fileId']]) {
           req.response.statusCode = LocalSendStatus.checksumMismatch;
           await req.response.close();
           return;
@@ -141,9 +146,11 @@ void main() {
     if (dir.existsSync()) await dir.delete(recursive: true);
   });
 
-  test('LocalShare receiver accepts a full v2 upload and verifies sha256', () async {
+  test('LocalShare receiver accepts a full v2 upload and verifies sha256',
+      () async {
     final host = _Host(dir);
-    final server = LocalSendServer(receiver: LocalSendReceiver(host: host, downloadDirectory: dir));
+    final server = LocalSendServer(
+        receiver: LocalSendReceiver(host: host, downloadDirectory: dir));
     await server.start();
 
     final payload = utf8.encode('hello localsend');
@@ -168,7 +175,8 @@ void main() {
     );
     final peer = await _deviceFor(server.boundPort);
     final tokens = await client.prepare(peer: peer, files: files);
-    await client.sendAll(peer: peer, files: files, tokens: tokens, observer: _NoopObserver());
+    await client.sendAll(
+        peer: peer, files: files, tokens: tokens, observer: _NoopObserver());
     await client.close();
 
     expect(host.received, hasLength(1));
@@ -176,26 +184,44 @@ void main() {
     await server.stop();
   });
 
-  test('receiver rejects a checksum mismatch with 422 and writes nothing', () async {
+  test('receiver rejects a checksum mismatch with 422 and writes nothing',
+      () async {
     final host = _Host(dir);
-    final server = LocalSendServer(receiver: LocalSendReceiver(host: host, downloadDirectory: dir));
+    final server = LocalSendServer(
+        receiver: LocalSendReceiver(host: host, downloadDirectory: dir));
     await server.start();
 
     final payload = utf8.encode('tampered');
     final src = File('${dir.path}/src.txt')..writeAsBytesSync(payload);
     final client = LocalSendClient(
       localInfo: const LocalSendInfo(
-        alias: 'Spec', version: '2.2', fingerprint: 'fp', port: 9, protocol: 'http',
+        alias: 'Spec',
+        version: '2.2',
+        fingerprint: 'fp',
+        port: 9,
+        protocol: 'http',
       ),
     );
     final peer = await _deviceFor(server.boundPort);
     final tokens = await client.prepare(peer: peer, files: [
-      LocalSendOutgoing(path: src.path, fileName: 'x.txt', size: payload.length, sha256: 'deadbeef'),
+      LocalSendOutgoing(
+          path: src.path,
+          fileName: 'x.txt',
+          size: payload.length,
+          sha256: 'deadbeef'),
     ]);
     final observer = _CaptureObserver();
-    await client.sendAll(peer: peer, files: [
-      LocalSendOutgoing(path: src.path, fileName: 'x.txt', size: payload.length, sha256: 'deadbeef'),
-    ], tokens: tokens, observer: observer);
+    await client.sendAll(
+        peer: peer,
+        files: [
+          LocalSendOutgoing(
+              path: src.path,
+              fileName: 'x.txt',
+              size: payload.length,
+              sha256: 'deadbeef'),
+        ],
+        tokens: tokens,
+        observer: observer);
     await client.close();
 
     expect(observer.errors, hasLength(1));
@@ -204,23 +230,39 @@ void main() {
     await server.stop();
   });
 
-  test('receiver challenges an unknown peer and prepares again with the right PIN', () async {
+  test(
+      'receiver challenges an unknown peer and prepares again with the right PIN',
+      () async {
     final host = _Host(dir, pin: '123456');
-    final server = LocalSendServer(receiver: LocalSendReceiver(host: host, downloadDirectory: dir));
+    final server = LocalSendServer(
+        receiver: LocalSendReceiver(host: host, downloadDirectory: dir));
     await server.start();
     final payload = utf8.encode('pin ok');
     final src = File('${dir.path}/pin.txt')..writeAsBytesSync(payload);
     final client = LocalSendClient(
       localInfo: const LocalSendInfo(
-        alias: 'Spec', version: '2.2', fingerprint: 'fp', port: 9, protocol: 'http',
+        alias: 'Spec',
+        version: '2.2',
+        fingerprint: 'fp',
+        port: 9,
+        protocol: 'http',
       ),
     );
     final peer = await _deviceFor(server.boundPort);
-    final files = [LocalSendOutgoing(path: src.path, fileName: 'pin.txt', size: payload.length, sha256: hashBytes(payload))];
+    final files = [
+      LocalSendOutgoing(
+          path: src.path,
+          fileName: 'pin.txt',
+          size: payload.length,
+          sha256: hashBytes(payload))
+    ];
 
-    await expectLater(client.prepare(peer: peer, files: files), throwsA(isA<Exception>()));
-    final tokens = await client.prepare(peer: peer, files: files, pin: '123456');
-    await client.sendAll(peer: peer, files: files, tokens: tokens, observer: _NoopObserver());
+    await expectLater(
+        client.prepare(peer: peer, files: files), throwsA(isA<Exception>()));
+    final tokens =
+        await client.prepare(peer: peer, files: files, pin: '123456');
+    await client.sendAll(
+        peer: peer, files: files, tokens: tokens, observer: _NoopObserver());
     await client.close();
 
     expect(File(host.received.single).readAsStringSync(), 'pin ok');
@@ -228,7 +270,8 @@ void main() {
     await server.stop();
   });
 
-  test('LocalShare sender drives a spec-written receiver and lands bytes', () async {
+  test('LocalShare sender drives a spec-written receiver and lands bytes',
+      () async {
     final spec = _SpecReceiver(dir);
     await spec.start();
     final payload = utf8.encode('from localshare');
@@ -237,13 +280,24 @@ void main() {
 
     final client = LocalSendClient(
       localInfo: const LocalSendInfo(
-        alias: 'LocalShare', version: '2.2', fingerprint: 'ls-fp', port: 53317, protocol: 'http',
+        alias: 'LocalShare',
+        version: '2.2',
+        fingerprint: 'ls-fp',
+        port: 53317,
+        protocol: 'http',
       ),
     );
     final peer = await _deviceFor(spec.port);
-    final files = [LocalSendOutgoing(path: src.path, fileName: 'out.bin', size: payload.length, sha256: hashBytes(payload))];
+    final files = [
+      LocalSendOutgoing(
+          path: src.path,
+          fileName: 'out.bin',
+          size: payload.length,
+          sha256: hashBytes(payload))
+    ];
     final tokens = await client.prepare(peer: peer, files: files);
-    await client.sendAll(peer: peer, files: files, tokens: tokens, observer: observer);
+    await client.sendAll(
+        peer: peer, files: files, tokens: tokens, observer: observer);
     await client.close();
 
     expect(spec.prepareCount, 1);
@@ -260,13 +314,24 @@ void main() {
     final src = File('${dir.path}/n.bin')..writeAsBytesSync(payload);
     final client = LocalSendClient(
       localInfo: const LocalSendInfo(
-        alias: 'LocalShare', version: '2.2', fingerprint: 'ls-fp', port: 53317, protocol: 'http',
+        alias: 'LocalShare',
+        version: '2.2',
+        fingerprint: 'ls-fp',
+        port: 53317,
+        protocol: 'http',
       ),
     );
     final peer = await _deviceFor(spec.port);
-    final files = [LocalSendOutgoing(path: src.path, fileName: 'n.bin', size: payload.length, sha256: hashBytes(payload))];
+    final files = [
+      LocalSendOutgoing(
+          path: src.path,
+          fileName: 'n.bin',
+          size: payload.length,
+          sha256: hashBytes(payload))
+    ];
 
-    await expectLater(client.prepare(peer: peer, files: files), throwsA(isA<Exception>()));
+    await expectLater(
+        client.prepare(peer: peer, files: files), throwsA(isA<Exception>()));
     await client.close();
     await spec.stop();
   });
@@ -285,11 +350,13 @@ void main() {
     expect(json.deviceType, LocalSendDeviceType.mobile);
     expect(json.protocol, 'https');
     expect(json.download, isTrue);
-    expect(LocalSendInfo.fromJson({'alias': 'x'}).deviceType, LocalSendDeviceType.desktop);
+    expect(LocalSendInfo.fromJson({'alias': 'x'}).deviceType,
+        LocalSendDeviceType.desktop);
   });
 }
 
 class _NoopObserver extends LocalSendObserver {}
+
 class _CaptureObserver extends LocalSendObserver {
   final errors = <Object>[];
   @override

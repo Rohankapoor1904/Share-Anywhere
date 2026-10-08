@@ -124,7 +124,8 @@ class LocalSendFile {
         sha256: json['sha256'] as String?,
         preview: json['preview'] as String?,
         metadata: json['metadata'] is Map
-            ? LocalSendFileMetadata.fromJson((json['metadata'] as Map).cast<String, Object?>())
+            ? LocalSendFileMetadata.fromJson(
+                (json['metadata'] as Map).cast<String, Object?>())
             : null,
       );
 }
@@ -139,7 +140,8 @@ class LocalSendFileMetadata {
         'accessed': accessed,
       };
 
-  factory LocalSendFileMetadata.fromJson(Map<String, Object?> json) => LocalSendFileMetadata(
+  factory LocalSendFileMetadata.fromJson(Map<String, Object?> json) =>
+      LocalSendFileMetadata(
         modified: json['modified'] as String?,
         accessed: json['accessed'] as String?,
       );
@@ -159,17 +161,21 @@ class LocalSendPrepareRequest {
         'files': files.map((k, v) => MapEntry(k, v.toJson())),
       };
 
-  factory LocalSendPrepareRequest.fromJson(Map<String, Object?> json) => LocalSendPrepareRequest(
-        info: LocalSendInfo.fromJson((json['info'] as Map).cast<String, Object?>()),
+  factory LocalSendPrepareRequest.fromJson(Map<String, Object?> json) =>
+      LocalSendPrepareRequest(
+        info: LocalSendInfo.fromJson(
+            (json['info'] as Map).cast<String, Object?>()),
         files: ((json['files'] as Map?) ?? const {}).map(
-          (k, v) => MapEntry(k as String, LocalSendFile.fromJson((v as Map).cast<String, Object?>())),
+          (k, v) => MapEntry(k as String,
+              LocalSendFile.fromJson((v as Map).cast<String, Object?>())),
         ),
       );
 }
 
 /// Body of the `POST /prepare-upload` 200 response.
 class LocalSendPrepareResponse {
-  const LocalSendPrepareResponse({required this.sessionId, required this.files});
+  const LocalSendPrepareResponse(
+      {required this.sessionId, required this.files});
 
   final String sessionId;
 
@@ -178,7 +184,8 @@ class LocalSendPrepareResponse {
 
   Map<String, Object?> toJson() => {'sessionId': sessionId, 'files': files};
 
-  factory LocalSendPrepareResponse.fromJson(Map<String, Object?> json) => LocalSendPrepareResponse(
+  factory LocalSendPrepareResponse.fromJson(Map<String, Object?> json) =>
+      LocalSendPrepareResponse(
         sessionId: (json['sessionId'] as String?) ?? '',
         files: ((json['files'] as Map?) ?? const {})
             .map((k, v) => MapEntry(k as String, v as String)),

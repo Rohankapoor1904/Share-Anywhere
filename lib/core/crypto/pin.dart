@@ -20,7 +20,8 @@ String generatePin({int length = 6}) {
 
 /// Generate a URL-safe random token used for session/resume auth.
 String generateToken({int byteLength = 24}) {
-  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  const alphabet =
+      'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   final buffer = StringBuffer();
   for (var i = 0; i < byteLength; i++) {
     buffer.write(alphabet[_secureRandom.nextInt(alphabet.length)]);

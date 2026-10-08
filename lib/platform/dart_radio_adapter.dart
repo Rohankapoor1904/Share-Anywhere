@@ -31,7 +31,8 @@ class DartMdnsRadioAdapter implements RadioAdapter {
 
   @override
   Future<RadioCapabilities> capabilities() async => RadioCapabilities(
-        mdnsAdvertise: Platform.isLinux || Platform.isMacOS || Platform.isWindows,
+        mdnsAdvertise:
+            Platform.isLinux || Platform.isMacOS || Platform.isWindows,
         mdnsDiscover: true,
         bleAdvertise: false,
         bleScan: false,
@@ -133,7 +134,8 @@ class DartMdnsRadioAdapter implements RadioAdapter {
   Future<void> stopBleAdvertising() async {}
 
   @override
-  Stream<Map<String, String>> scanBle({Duration timeout = const Duration(seconds: 5)}) =>
+  Stream<Map<String, String>> scanBle(
+          {Duration timeout = const Duration(seconds: 5)}) =>
       const Stream.empty();
 
   @override

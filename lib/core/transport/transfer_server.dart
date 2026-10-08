@@ -232,7 +232,9 @@ class TransferServer {
 
     await _replyJson(
       request.response,
-      SessionResponse(sessionId: session.sessionId, accepted: true, resume: resume).toJson(),
+      SessionResponse(
+              sessionId: session.sessionId, accepted: true, resume: resume)
+          .toJson(),
     );
   }
 
@@ -276,18 +278,23 @@ class TransferServer {
     await session.sinks.remove(fileId)?.close();
     final tempFile = File(_tempPathFor(sessionFile));
     if (!tempFile.existsSync()) {
-      await _replyJson(request.response, CommitResponse(verified: false, reason: 'missing_data').toJson());
+      await _replyJson(request.response,
+          CommitResponse(verified: false, reason: 'missing_data').toJson());
       return;
     }
     final length = tempFile.lengthSync();
     if (length != sessionFile.size) {
-      await _replyJson(request.response, CommitResponse(verified: false, reason: 'size_mismatch').toJson());
+      await _replyJson(request.response,
+          CommitResponse(verified: false, reason: 'size_mismatch').toJson());
       return;
     }
 
     final digest = await _hashFile(tempFile.path);
     if (digest != commit.sha256 || digest != sessionFile.sha256) {
-      await _replyJson(request.response, CommitResponse(verified: false, reason: 'checksum_mismatch').toJson());
+      await _replyJson(
+          request.response,
+          CommitResponse(verified: false, reason: 'checksum_mismatch')
+              .toJson());
       return;
     }
 
@@ -335,19 +342,23 @@ class TransferServer {
         '${file.sha256}$kPartialSuffix.$safeName';
   }
 
-  List<String> _safeSegments(FileDescriptor file) => (file.relativePath ?? file.fileName)
-      .split(RegExp(r'[/\\]'))
-      .where((s) => s.isNotEmpty && s != '.' && s != '..')
-      .map((s) => s.replaceAll(RegExp(r'[^\w\.\- ]'), '_'))
-      .toList();
+  List<String> _safeSegments(FileDescriptor file) =>
+      (file.relativePath ?? file.fileName)
+          .split(RegExp(r'[/\\]'))
+          .where((s) => s.isNotEmpty && s != '.' && s != '..')
+          .map((s) => s.replaceAll(RegExp(r'[^\w\.\- ]'), '_'))
+          .toList();
 
   /// Final destination, with traversal-safe segments and a unique name.
   String _finalPathFor(FileDescriptor file) {
     final segments = _safeSegments(file);
-    final safe = segments.isEmpty ? 'file_${file.id}' : segments.join(Platform.pathSeparator);
+    final safe = segments.isEmpty
+        ? 'file_${file.id}'
+        : segments.join(Platform.pathSeparator);
     var path = '${downloadDirectory.path}${Platform.pathSeparator}$safe';
     if (File(path).existsSync() && File(path).lengthSync() != file.size) {
-      path = '${downloadDirectory.path}${Platform.pathSeparator}${segments.isEmpty ? 'file' : segments.last}'
+      path =
+          '${downloadDirectory.path}${Platform.pathSeparator}${segments.isEmpty ? 'file' : segments.last}'
           '(${file.id})';
     }
     return path;
@@ -368,7 +379,8 @@ class TransferServer {
 
   Future<String> _hashFile(String path) => hashFile(path);
 
-  Future<void> _replyJson(HttpResponse response, Map<String, Object?> body) async {
+  Future<void> _replyJson(
+      HttpResponse response, Map<String, Object?> body) async {
     response.headers.contentType = ContentType.json;
     response.write(jsonEncode(body));
     await response.close();

@@ -40,7 +40,8 @@ class LocalSendDiscovery {
   /// Our compat listener port (where peers' `register` callbacks arrive).
   int callbackPort = kLocalSendPort;
 
-  final StreamController<LocalSendSighting> _sightings = StreamController.broadcast();
+  final StreamController<LocalSendSighting> _sightings =
+      StreamController.broadcast();
   RawDatagramSocket? _socket;
   Timer? _announcer;
 
@@ -48,7 +49,8 @@ class LocalSendDiscovery {
 
   Future<void> start() async {
     try {
-      final socket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, port);
+      final socket =
+          await RawDatagramSocket.bind(InternetAddress.anyIPv4, port);
       socket.broadcastEnabled = true;
       socket.multicastHops = 1;
       try {
@@ -72,7 +74,8 @@ class LocalSendDiscovery {
 
   /// Send the fallback unicast reply the spec allows.
   void replyUnicast(InternetAddress address, LocalSendInfo info) {
-    final datagram = utf8.encode(jsonEncode({...info.toJson(), 'announce': false}));
+    final datagram =
+        utf8.encode(jsonEncode({...info.toJson(), 'announce': false}));
     _socket?.send(datagram, address, port);
   }
 
@@ -93,13 +96,17 @@ class LocalSendDiscovery {
     if (datagram == null) return;
     final Map<String, Object?> json;
     try {
-      json = (jsonDecode(utf8.decode(datagram.data)) as Map).cast<String, Object?>();
+      json = (jsonDecode(utf8.decode(datagram.data)) as Map)
+          .cast<String, Object?>();
     } on Object {
       return;
     }
     // Ignore our own announcement: announce=true with our fingerprint.
     final info = LocalSendInfo.fromJson(json);
-    if (info.fingerprint.isNotEmpty && info.fingerprint == ownInfo?.fingerprint) return;
+    if (info.fingerprint.isNotEmpty &&
+        info.fingerprint == ownInfo?.fingerprint) {
+      return;
+    }
     if ((json['announce'] as bool?) ?? false) {
       // A peer is announcing; answer so it learns about us.
       replyUnicast(datagram.address, ownInfo ?? _defaultInfo);
@@ -117,7 +124,8 @@ class LocalSendDiscovery {
     final port = (json['port'] as num?)?.toInt() ?? kLocalSendPort;
     _sightings.add(LocalSendSighting(
       device: DeviceInfo(
-        deviceId: info.fingerprint.isEmpty ? '$address:$port' : info.fingerprint,
+        deviceId:
+            info.fingerprint.isEmpty ? '$address:$port' : info.fingerprint,
         displayName: info.alias,
         fingerprint: info.fingerprint,
         // A LocalSend http peer listens on its advertised port (default 53317).

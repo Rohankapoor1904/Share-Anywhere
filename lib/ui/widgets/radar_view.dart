@@ -33,7 +33,8 @@ class RadarView extends StatefulWidget {
   State<RadarView> createState() => _RadarViewState();
 }
 
-class _RadarViewState extends State<RadarView> with SingleTickerProviderStateMixin {
+class _RadarViewState extends State<RadarView>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
     duration: const Duration(seconds: 3),
@@ -114,8 +115,7 @@ class _BlipLayer extends StatelessWidget {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        for (var i = 0; i < devices.length; i++)
-          _positioned(devices[i], i),
+        for (var i = 0; i < devices.length; i++) _positioned(devices[i], i),
       ],
     );
   }
@@ -192,7 +192,8 @@ class _DeviceAvatar extends StatelessWidget {
                 : null,
             boxShadow: [
               BoxShadow(
-                color: AppColors.accent.withValues(alpha: focused ? 0.65 : 0.35),
+                color:
+                    AppColors.accent.withValues(alpha: focused ? 0.65 : 0.35),
                 blurRadius: focused ? 26 : 18,
                 spreadRadius: focused ? 3 : 1,
               ),
@@ -225,15 +226,20 @@ class _DeviceAvatar extends StatelessWidget {
       return platform.contains('tv') ? Icons.tv : Icons.smartphone;
     }
     if (platform.contains('ios')) return Icons.phone_iphone;
-    if (platform.contains('mac') || platform.contains('darwin')) return Icons.laptop_mac;
+    if (platform.contains('mac') || platform.contains('darwin')) {
+      return Icons.laptop_mac;
+    }
     if (platform.contains('win')) return Icons.laptop_windows;
     if (platform.contains('linux')) return Icons.laptop;
-    return device.discoveredVia == DiscoveryChannel.ble ? Icons.bluetooth : Icons.devices;
+    return device.discoveredVia == DiscoveryChannel.ble
+        ? Icons.bluetooth
+        : Icons.devices;
   }
 }
 
 class _RadarPainter extends CustomPainter {
-  _RadarPainter({required this.progress, required this.active, required this.blips});
+  _RadarPainter(
+      {required this.progress, required this.active, required this.blips});
 
   final double progress;
   final bool active;

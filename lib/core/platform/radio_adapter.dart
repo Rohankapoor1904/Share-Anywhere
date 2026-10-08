@@ -39,7 +39,8 @@ class RadioCapabilities {
         'wifiDirectJoin': wifiDirectJoin,
       };
 
-  factory RadioCapabilities.fromJson(Map<String, Object?> json) => RadioCapabilities(
+  factory RadioCapabilities.fromJson(Map<String, Object?> json) =>
+      RadioCapabilities(
         mdnsAdvertise: (json['mdnsAdvertise'] as bool?) ?? false,
         mdnsDiscover: (json['mdnsDiscover'] as bool?) ?? false,
         bleAdvertise: (json['bleAdvertise'] as bool?) ?? false,
@@ -73,14 +74,16 @@ abstract class RadioAdapter {
   Future<void> stopMdnsAdvertising();
 
   /// Emit discovery events until the subscription is cancelled.
-  Stream<Map<String, String>> discoverMdns({Duration interval = const Duration(seconds: 2)});
+  Stream<Map<String, String>> discoverMdns(
+      {Duration interval = const Duration(seconds: 2)});
 
   /// Advertise over BLE (best effort; some desktop stacks lack this).
   Future<void> startBleAdvertising(Map<String, String> payload);
   Future<void> stopBleAdvertising();
 
   /// Scan for BLE advertisements carrying our payload.
-  Stream<Map<String, String>> scanBle({Duration timeout = const Duration(seconds: 5)});
+  Stream<Map<String, String>> scanBle(
+      {Duration timeout = const Duration(seconds: 5)});
 
   /// Create / join a hotspot or Wi-Fi Direct group.
   Future<HotspotCredentials> createHotspot();
@@ -105,7 +108,8 @@ class NullRadioAdapter implements RadioAdapter {
   Future<void> stopMdnsAdvertising() async {}
 
   @override
-  Stream<Map<String, String>> discoverMdns({Duration interval = const Duration(seconds: 2)}) =>
+  Stream<Map<String, String>> discoverMdns(
+          {Duration interval = const Duration(seconds: 2)}) =>
       const Stream.empty();
 
   @override
@@ -115,7 +119,8 @@ class NullRadioAdapter implements RadioAdapter {
   Future<void> stopBleAdvertising() async {}
 
   @override
-  Stream<Map<String, String>> scanBle({Duration timeout = const Duration(seconds: 5)}) =>
+  Stream<Map<String, String>> scanBle(
+          {Duration timeout = const Duration(seconds: 5)}) =>
       const Stream.empty();
 
   @override

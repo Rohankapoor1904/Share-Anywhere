@@ -167,7 +167,8 @@ class TransferClient {
     if (res.statusCode != HttpStatus.ok) {
       final body = await utf8.decoder.bind(res).join();
       cancelled = true;
-      throw TransferInterrupted('chunk upload failed: ${res.statusCode} $body', start);
+      throw TransferInterrupted(
+          'chunk upload failed: ${res.statusCode} $body', start);
     }
     await res.drain<void>();
 
@@ -179,12 +180,14 @@ class TransferClient {
     );
     final commitReq = await _client!.postUrl(commitUri);
     commitReq.headers.contentType = ContentType.json;
-    commitReq.write(encodeJson(CommitRequest(sha256: file.descriptor.sha256).toJson()));
+    commitReq.write(
+        encodeJson(CommitRequest(sha256: file.descriptor.sha256).toJson()));
     final commitRes = await commitReq.close();
     final commitBody = await utf8.decoder.bind(commitRes).join();
     final commit = CommitResponse.fromJson(decodeJson(commitBody));
     if (!commit.verified) {
-      throw ChecksumMismatch(commit.reason ?? 'receiver reported checksum mismatch');
+      throw ChecksumMismatch(
+          commit.reason ?? 'receiver reported checksum mismatch');
     }
   }
 

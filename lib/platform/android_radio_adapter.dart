@@ -75,7 +75,8 @@ class AndroidRadioAdapter implements RadioAdapter {
   Future<void> stopBleAdvertising() async {}
 
   @override
-  Stream<Map<String, String>> scanBle({Duration timeout = const Duration(seconds: 5)}) =>
+  Stream<Map<String, String>> scanBle(
+          {Duration timeout = const Duration(seconds: 5)}) =>
       const Stream.empty();
 
   @override

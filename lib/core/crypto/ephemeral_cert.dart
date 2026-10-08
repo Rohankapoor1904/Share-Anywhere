@@ -39,7 +39,9 @@ class EphemeralCertificate {
   }
 
   static List<int> _pemToBytes(String pem) => base64.decode(
-        pem.replaceAll(RegExp(r'-----[A-Z ]+-----'), '').replaceAll(RegExp(r'\s'), ''),
+        pem
+            .replaceAll(RegExp(r'-----[A-Z ]+-----'), '')
+            .replaceAll(RegExp(r'\s'), ''),
       );
 
   /// DER bytes of the certificate (used to derive the fingerprint).

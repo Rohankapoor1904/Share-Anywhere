@@ -69,9 +69,8 @@ class LocalSendClient {
     String? pin,
   }) async {
     final scheme = peer.platform == 'localsend-https' ? 'https' : 'http';
-    _client = scheme == 'https'
-        ? pinnedHttpClient(peer.fingerprint)
-        : HttpClient();
+    _client =
+        scheme == 'https' ? pinnedHttpClient(peer.fingerprint) : HttpClient();
 
     final byId = <String, LocalSendFile>{};
     for (var i = 0; i < files.length; i++) {
@@ -88,10 +87,12 @@ class LocalSendClient {
     final query = <String, String>{
       if (pin != null && pin.isNotEmpty) 'pin': pin,
     };
-    final uri = _uri(peer, scheme, '$kLocalSendApiPrefix/prepare-upload', query);
+    final uri =
+        _uri(peer, scheme, '$kLocalSendApiPrefix/prepare-upload', query);
     final req = await _client!.postUrl(uri);
     req.headers.contentType = ContentType.json;
-    req.write(encodeJson(LocalSendPrepareRequest(info: localInfo, files: byId).toJson()));
+    req.write(encodeJson(
+        LocalSendPrepareRequest(info: localInfo, files: byId).toJson()));
     final res = await req.close();
     final body = await utf8.decoder.bind(res).join();
 
@@ -150,7 +151,9 @@ class LocalSendClient {
     LocalSendObserver observer,
   ) async {
     final address = peer.bestAddress;
-    if (address == null) throw const ProtocolError('peer has no dialable address');
+    if (address == null) {
+      throw const ProtocolError('peer has no dialable address');
+    }
     final scheme = peer.platform == 'localsend-https' ? 'https' : 'http';
 
     final uri = _uri(peer, scheme, '$kLocalSendApiPrefix/upload', {
@@ -193,7 +196,8 @@ class LocalSendClient {
     final scheme = peer.platform == 'localsend-https' ? 'https' : 'http';
     try {
       final req = await _client!.postUrl(
-        _uri(peer, scheme, '$kLocalSendApiPrefix/cancel', {'sessionId': sessionId}),
+        _uri(peer, scheme, '$kLocalSendApiPrefix/cancel',
+            {'sessionId': sessionId}),
       );
       await (await req.close()).drain<void>();
     } on Object {
@@ -201,7 +205,8 @@ class LocalSendClient {
     }
   }
 
-  Uri _uri(DeviceInfo peer, String scheme, String path, Map<String, String> query) {
+  Uri _uri(
+      DeviceInfo peer, String scheme, String path, Map<String, String> query) {
     return Uri(
       scheme: scheme,
       host: peer.bestAddress!,

@@ -13,7 +13,8 @@ class _FakeRadio implements RadioAdapter {
   bool mdnsError = false;
 
   @override
-  Stream<Map<String, String>> discoverMdns({Duration interval = const Duration(seconds: 2)}) {
+  Stream<Map<String, String>> discoverMdns(
+      {Duration interval = const Duration(seconds: 2)}) {
     if (mdnsError) {
       return Stream.error(const SocketException('no backend'));
     }
@@ -21,7 +22,9 @@ class _FakeRadio implements RadioAdapter {
   }
 
   @override
-  Stream<Map<String, String>> scanBle({Duration timeout = const Duration(seconds: 5)}) => ble.stream;
+  Stream<Map<String, String>> scanBle(
+          {Duration timeout = const Duration(seconds: 5)}) =>
+      ble.stream;
 
   @override
   Future<RadioCapabilities> capabilities() async => const RadioCapabilities();
@@ -43,7 +46,8 @@ class _FakeRadio implements RadioAdapter {
   Future<void> stopBleAdvertising() async {}
 
   @override
-  Future<HotspotCredentials> createHotspot() async => throw UnimplementedError();
+  Future<HotspotCredentials> createHotspot() async =>
+      throw UnimplementedError();
 
   @override
   Future<void> joinHotspot(HotspotCredentials credentials) async {}
@@ -75,7 +79,8 @@ void main() {
     await radio.ble.close();
   });
 
-  Future<void> settle() => Future<void>.delayed(const Duration(milliseconds: 20));
+  Future<void> settle() =>
+      Future<void>.delayed(const Duration(milliseconds: 20));
 
   test('adds an mDNS sighting to peers', () async {
     radio.mdns.add({
@@ -101,10 +106,19 @@ void main() {
     expect(orchestrator.peers, isEmpty);
   });
 
-  test('merges the same device seen over mDNS and BLE, unioning addresses', () async {
-    radio.mdns.add({'deviceId': 'peer-1', 'displayName': 'Pixel', 'address': '192.168.1.5'});
+  test('merges the same device seen over mDNS and BLE, unioning addresses',
+      () async {
+    radio.mdns.add({
+      'deviceId': 'peer-1',
+      'displayName': 'Pixel',
+      'address': '192.168.1.5'
+    });
     await settle();
-    radio.ble.add({'deviceId': 'peer-1', 'displayName': 'Pixel Pro', 'address': '10.0.0.9'});
+    radio.ble.add({
+      'deviceId': 'peer-1',
+      'displayName': 'Pixel Pro',
+      'address': '10.0.0.9'
+    });
     await settle();
 
     final peer = orchestrator.peers.single;

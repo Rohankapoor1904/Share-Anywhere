@@ -66,7 +66,8 @@ class NsdRadioAdapter implements RadioAdapter {
       'deviceModel': 'LocalShare',
       'deviceType': 'desktop',
     };
-    return fields.map((k, v) => MapEntry(k, Uint8List.fromList(utf8.encode(v))));
+    return fields
+        .map((k, v) => MapEntry(k, Uint8List.fromList(utf8.encode(v))));
   }
 
   @override
@@ -91,7 +92,8 @@ class NsdRadioAdapter implements RadioAdapter {
     _discovery = await nsd.startDiscovery(kMdnsServiceType);
     _discovery!.addServiceListener((service, status) async {
       if (status != nsd.ServiceStatus.found) return;
-      if (service.name == null || !service.name!.contains(kMdnsServiceNamePrefix)) {
+      if (service.name == null ||
+          !service.name!.contains(kMdnsServiceNamePrefix)) {
         return;
       }
       final resolved = await nsd.resolve(service);
@@ -132,7 +134,8 @@ class NsdRadioAdapter implements RadioAdapter {
     });
     record['displayName'] = record['alias'] ?? service.name ?? 'LocalSend';
     record['deviceId'] = record['fingerprint'] ?? service.name ?? '';
-    final addresses = service.addresses?.map((a) => a.address).toList() ?? const [];
+    final addresses =
+        service.addresses?.map((a) => a.address).toList() ?? const [];
     if (addresses.isNotEmpty) {
       record['addresses'] = addresses.join(',');
       record['address'] = addresses.first;
@@ -154,7 +157,8 @@ class NsdRadioAdapter implements RadioAdapter {
         // Non-UTF8 TXT values are opaque binary; skip them.
       }
     });
-    final addresses = service.addresses?.map((a) => a.address).toList() ?? const [];
+    final addresses =
+        service.addresses?.map((a) => a.address).toList() ?? const [];
     if (addresses.isNotEmpty) {
       record['addresses'] = addresses.join(',');
       record['address'] = addresses.first;
@@ -169,7 +173,8 @@ class NsdRadioAdapter implements RadioAdapter {
   Future<void> startBleAdvertising(Map<String, String> payload) async {}
 
   @override
-  Stream<Map<String, String>> scanBle({Duration timeout = const Duration(seconds: 5)}) =>
+  Stream<Map<String, String>> scanBle(
+          {Duration timeout = const Duration(seconds: 5)}) =>
       const Stream.empty();
 
   @override
@@ -182,7 +187,8 @@ class NsdRadioAdapter implements RadioAdapter {
 
   @override
   Future<void> connectWifiDirect(String deviceId) async =>
-      throw UnsupportedError('Wi-Fi Direct is handled by the native Android adapter');
+      throw UnsupportedError(
+          'Wi-Fi Direct is handled by the native Android adapter');
 
   @override
   Future<void> dispose() async {

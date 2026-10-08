@@ -45,7 +45,8 @@ class CompositeRadioAdapter implements RadioAdapter {
 
   /// Starts every adapter, swallowing failures so one unsupported radio cannot
   /// prevent the others (or the whole app) from coming up.
-  Future<void> _tolerantStart(Iterable<Future<void> Function()> starters) async {
+  Future<void> _tolerantStart(
+      Iterable<Future<void> Function()> starters) async {
     for (final start in starters) {
       try {
         await start();
@@ -74,7 +75,8 @@ class CompositeRadioAdapter implements RadioAdapter {
       Future.wait(parts.map((p) => p.stopBleAdvertising()));
 
   @override
-  Stream<Map<String, String>> scanBle({Duration timeout = const Duration(seconds: 5)}) =>
+  Stream<Map<String, String>> scanBle(
+          {Duration timeout = const Duration(seconds: 5)}) =>
       _merge(parts.map((p) => p.scanBle(timeout: timeout)));
 
   @override
@@ -106,7 +108,8 @@ class CompositeRadioAdapter implements RadioAdapter {
 
   /// Merge streams, dropping duplicate sightings of the same device within a
   /// short window so the UI does not flicker.
-  Stream<Map<String, String>> _merge(Iterable<Stream<Map<String, String>>> streams) {
+  Stream<Map<String, String>> _merge(
+      Iterable<Stream<Map<String, String>>> streams) {
     final controller = StreamController<Map<String, String>>();
     final seen = <String, DateTime>{};
     final subs = <StreamSubscription<Map<String, String>>>[];
@@ -117,7 +120,10 @@ class CompositeRadioAdapter implements RadioAdapter {
         final now = DateTime.now();
         if (id.isNotEmpty) {
           final last = seen[id];
-          if (last != null && now.difference(last) < const Duration(seconds: 1)) return;
+          if (last != null &&
+              now.difference(last) < const Duration(seconds: 1)) {
+            return;
+          }
           seen[id] = now;
         }
         controller.add(event);

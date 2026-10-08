@@ -59,20 +59,26 @@ class DiscoveryOrchestrator {
     );
   }
 
-  void Function(Map<String, String>) _ingest(DiscoveryChannel channel) => (record) {
+  void Function(Map<String, String>) _ingest(DiscoveryChannel channel) =>
+      (record) {
         final device = _fromRecord(record, channel);
         if (device == null) return;
         // Never report ourselves; dedupe by fingerprint as well as id.
         if (device.deviceId == localDeviceId) return;
-        if (device.fingerprint.isNotEmpty && device.fingerprint == localFingerprint) return;
+        if (device.fingerprint.isNotEmpty &&
+            device.fingerprint == localFingerprint) {
+          return;
+        }
         _merge(device);
       };
 
-  DeviceInfo? _fromRecord(Map<String, String> record, DiscoveryChannel channel) {
+  DeviceInfo? _fromRecord(
+      Map<String, String> record, DiscoveryChannel channel) {
     final id = record['deviceId'] ?? record['id'];
     if (id == null || id.isEmpty) return null;
     final addresses = <String>[
-      if (record['address'] != null && record['address']!.isNotEmpty) record['address']!,
+      if (record['address'] != null && record['address']!.isNotEmpty)
+        record['address']!,
       if (record['ip'] != null && record['ip']!.isNotEmpty) record['ip']!,
       if (record['addresses'] != null) ...record['addresses']!.split(','),
     ];
@@ -94,7 +100,8 @@ class DiscoveryOrchestrator {
       _events.add(DiscoveryEvent.added(incoming));
       return;
     }
-    final mergedAddresses = {...existing.device.addresses, ...incoming.addresses}.toList();
+    final mergedAddresses =
+        {...existing.device.addresses, ...incoming.addresses}.toList();
     final merged = existing.device.copyWith(
       addresses: mergedAddresses,
       discoveredVia: incoming.discoveredVia == DiscoveryChannel.mdns
@@ -127,7 +134,10 @@ class DiscoveryOrchestrator {
   /// into the same dedupe/staleness pipeline as the radios.
   void ingest(DeviceInfo device) {
     if (device.deviceId == localDeviceId) return;
-    if (device.fingerprint.isNotEmpty && device.fingerprint == localFingerprint) return;
+    if (device.fingerprint.isNotEmpty &&
+        device.fingerprint == localFingerprint) {
+      return;
+    }
     _merge(device);
   }
 

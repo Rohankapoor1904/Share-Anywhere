@@ -54,7 +54,8 @@ class BleRadioAdapter implements RadioAdapter {
     if (!supported) return;
     _scanSub = FlutterBluePlus.onScanResults.listen((results) {
       for (final result in results) {
-        final data = result.advertisementData.serviceData[Guid(kBleServiceUuid)];
+        final data =
+            result.advertisementData.serviceData[Guid(kBleServiceUuid)];
         if (data == null || data.isEmpty) continue;
         final record = _decode(data);
         if (record == null) continue;
@@ -116,7 +117,8 @@ class BleRadioAdapter implements RadioAdapter {
 
   @override
   Future<void> connectWifiDirect(String deviceId) async =>
-      throw UnsupportedError('Wi-Fi Direct is handled by the native Android adapter');
+      throw UnsupportedError(
+          'Wi-Fi Direct is handled by the native Android adapter');
 
   @override
   Future<void> dispose() async {

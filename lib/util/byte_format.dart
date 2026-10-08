@@ -14,7 +14,8 @@ String formatBytes(int bytes, {int decimals = 1}) {
   return '${value.toStringAsFixed(decimals)} ${units[unit]}';
 }
 
-String formatRate(double bytesPerSecond) => '${formatBytes(bytesPerSecond.round())}/s';
+String formatRate(double bytesPerSecond) =>
+    '${formatBytes(bytesPerSecond.round())}/s';
 
 String formatEta(Duration remaining) {
   if (remaining.inSeconds <= 0) return 'done';

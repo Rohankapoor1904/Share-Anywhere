@@ -154,7 +154,8 @@ class SessionRequest {
         displayName: (json['displayName'] as String?) ?? 'Unknown',
         fingerprint: (json['fingerprint'] as String?) ?? '',
         files: (json['files'] as List)
-            .map((e) => FileDescriptor.fromJson((e as Map).cast<String, Object?>()))
+            .map((e) =>
+                FileDescriptor.fromJson((e as Map).cast<String, Object?>()))
             .toList(),
         pin: json['pin'] as String?,
       );
@@ -183,10 +184,12 @@ class SessionResponse {
         if (reason != null) 'reason': reason,
       };
 
-  factory SessionResponse.fromJson(Map<String, Object?> json) => SessionResponse(
+  factory SessionResponse.fromJson(Map<String, Object?> json) =>
+      SessionResponse(
         sessionId: json['sessionId']! as String,
         accepted: json['accepted']! as bool,
-        resume: (json['resume'] as Map?)?.map((k, v) => MapEntry(k as String, (v as num).toInt())) ??
+        resume: (json['resume'] as Map?)
+                ?.map((k, v) => MapEntry(k as String, (v as num).toInt())) ??
             const {},
         reason: json['reason'] as String?,
       );

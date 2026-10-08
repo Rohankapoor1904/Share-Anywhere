@@ -59,7 +59,8 @@ ThemeData buildAppTheme() {
         fontWeight: FontWeight.w700,
         letterSpacing: -0.5,
       ),
-      titleMedium: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w600),
+      titleMedium:
+          TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w600),
       bodyMedium: TextStyle(color: AppColors.textMuted),
     ),
   );

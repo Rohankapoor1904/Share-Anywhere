@@ -36,7 +36,8 @@ class TrustedPeer {
         fingerprint: json['fingerprint']! as String,
         deviceId: (json['deviceId'] as String?) ?? '',
         displayName: (json['displayName'] as String?) ?? '',
-        lastSeen: DateTime.tryParse((json['lastSeen'] as String?) ?? '') ?? DateTime.now(),
+        lastSeen: DateTime.tryParse((json['lastSeen'] as String?) ?? '') ??
+            DateTime.now(),
         favorite: (json['favorite'] as bool?) ?? false,
       );
 }
@@ -60,7 +61,8 @@ class FileTrustPersistence implements TrustPersistence {
   FileTrustPersistence(this.file);
   final File file;
   @override
-  Future<String?> read() async => file.existsSync() ? file.readAsString() : null;
+  Future<String?> read() async =>
+      file.existsSync() ? file.readAsString() : null;
   @override
   Future<void> write(String contents) async {
     await file.parent.create(recursive: true);

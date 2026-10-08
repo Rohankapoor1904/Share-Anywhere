@@ -14,7 +14,8 @@ import 'localsend_models.dart';
 import 'localsend_receiver.dart';
 
 class LocalSendServer {
-  LocalSendServer({required this.receiver, this.preferredPort = kLocalSendPort});
+  LocalSendServer(
+      {required this.receiver, this.preferredPort = kLocalSendPort});
 
   final LocalSendReceiver receiver;
 
@@ -27,11 +28,13 @@ class LocalSendServer {
 
   Future<void> start() async {
     try {
-      _server = await HttpServer.bind(InternetAddress.anyIPv4, preferredPort, shared: false);
+      _server = await HttpServer.bind(InternetAddress.anyIPv4, preferredPort,
+          shared: false);
     } on SocketException {
       // Another LocalSend instance owns the default port; fall back to ephemeral
       // and advertise the real port through discovery.
-      _server = await HttpServer.bind(InternetAddress.anyIPv4, 0, shared: false);
+      _server =
+          await HttpServer.bind(InternetAddress.anyIPv4, 0, shared: false);
     }
     unawaited(_serve(_server!));
   }

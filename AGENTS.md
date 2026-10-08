@@ -62,6 +62,7 @@ style) built with Flutter. LAN-only; no third-party internet servers.
 
 ```bash
 flutter analyze            # must be clean
+dart format lib test       # must be clean (CI enforces it)
 flutter test               # 27 tests
 flutter build linux --debug
 flutter run -d linux
@@ -69,6 +70,11 @@ flutter run -d linux
 # Linux distributables (.deb, and .AppImage if appimagetool present)
 ./packaging/linux/build.sh
 ```
+
+CI is `.github/workflows/ci.yml` (analyze + format check + tests + Linux
+release build + headless smoke test, Flutter pinned to 3.27.1). For Google
+Jules, `tools/jules_setup.sh` installs the Flutter toolchain in the VM; paste
+its body into the repo's Jules environment-setup field.
 
 Headless UI smoke test: build, then `xvfb-run -a ./build/linux/x64/release/bundle/localshare`.
 Expect a couple of harmless GTK/ATK `CRITICAL` warnings; there must be no Dart

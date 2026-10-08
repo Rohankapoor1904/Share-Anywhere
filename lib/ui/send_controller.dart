@@ -134,10 +134,11 @@ class SendController extends Notifier<SendState> {
   /// Apply an engine event to the job table.
   void applyProgress(String fileId, TransferProgress progress) {
     final jobs = Map<String, OutboundJob>.from(state.jobs);
-    jobs[fileId] = OutboundJob(fileName: progress.fileName, total: progress.total)
-      ..transferred = progress.transferred
-      ..bytesPerSecond = progress.bytesPerSecond
-      ..status = 'sending';
+    jobs[fileId] =
+        OutboundJob(fileName: progress.fileName, total: progress.total)
+          ..transferred = progress.transferred
+          ..bytesPerSecond = progress.bytesPerSecond
+          ..status = 'sending';
     state = state.copyWith(jobs: jobs);
   }
 

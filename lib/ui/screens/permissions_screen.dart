@@ -39,7 +39,8 @@ class PermissionsScreen extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.wifi_tethering, size: 72, color: AppColors.accent),
+                const Icon(Icons.wifi_tethering,
+                    size: 72, color: AppColors.accent),
                 const SizedBox(height: 24),
                 Text('Find nearby devices',
                     style: Theme.of(context).textTheme.headlineMedium),

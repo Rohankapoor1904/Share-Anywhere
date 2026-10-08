@@ -44,7 +44,8 @@ class IncomingTransfer {
 sealed class EngineEvent {}
 
 class EngineReady extends EngineEvent {
-  EngineReady({required this.deviceId, required this.fingerprint, required this.port});
+  EngineReady(
+      {required this.deviceId, required this.fingerprint, required this.port});
   final String deviceId;
   final String fingerprint;
   final int port;
@@ -206,7 +207,8 @@ class LocalShareNode implements TransferTarget, LocalSendHost {
       _localSendDiscovery?.ingestRegister(json, address);
     };
 
-    final discovery = LocalSendDiscovery(port: server.boundPort)..ownInfo = info;
+    final discovery = LocalSendDiscovery(port: server.boundPort)
+      ..ownInfo = info;
     discovery.callbackPort = server.boundPort;
     await discovery.start();
     discovery.sightings.listen((s) => _discovery?.ingest(s.device));
@@ -285,7 +287,11 @@ class LocalShareNode implements TransferTarget, LocalSendHost {
           tokens = await client.prepare(peer: peer, files: outgoing, pin: pin);
           break;
         } on SessionRejected catch (e) {
-          if (e.message != 'pin_required' || requestPin == null || attempt >= 5) rethrow;
+          if (e.message != 'pin_required' ||
+              requestPin == null ||
+              attempt >= 5) {
+            rethrow;
+          }
           attempt++;
           pin = await requestPin(peer);
           if (pin == null || pin.isEmpty) {
@@ -366,7 +372,9 @@ class LocalShareNode implements TransferTarget, LocalSendHost {
         );
         response = await client.openSession(peer: peer, request: request);
         if (response.accepted) break;
-        if (response.reason == 'pin_required' && requestPin != null && attempt < 5) {
+        if (response.reason == 'pin_required' &&
+            requestPin != null &&
+            attempt < 5) {
           attempt++;
           pin = await requestPin(peer);
           if (pin == null || pin.isEmpty) {
@@ -374,7 +382,8 @@ class LocalShareNode implements TransferTarget, LocalSendHost {
           }
           continue;
         }
-        throw SessionRejected(response.reason ?? 'receiver rejected the session');
+        throw SessionRejected(
+            response.reason ?? 'receiver rejected the session');
       }
       await client.sendAll(
         peer: peer,
@@ -399,7 +408,8 @@ class LocalShareNode implements TransferTarget, LocalSendHost {
     final decision = pairingManager.evaluate(request);
     if (decision.accepted) {
       _events.add(IncomingSessionRequested(
-        IncomingTransfer(sessionId: sessionId, request: request, files: request.files),
+        IncomingTransfer(
+            sessionId: sessionId, request: request, files: request.files),
       ));
       pairingManager.clearChallenge(request.deviceId);
     }
@@ -428,14 +438,16 @@ class LocalShareNode implements TransferTarget, LocalSendHost {
   }
 
   /// Approve a pending session on the receiver, delivering trust on success.
-  Future<void> approve(IncomingTransfer transfer, {bool favorite = false}) async {
+  Future<void> approve(IncomingTransfer transfer,
+      {bool favorite = false}) async {
     await pairingManager.trustStore.remember(
       fingerprint: transfer.request.fingerprint,
       deviceId: transfer.request.deviceId,
       displayName: transfer.request.displayName,
     );
     if (favorite) {
-      await pairingManager.trustStore.setFavorite(transfer.request.fingerprint, true);
+      await pairingManager.trustStore
+          .setFavorite(transfer.request.fingerprint, true);
     }
   }
 
@@ -474,7 +486,8 @@ class _SendObserver implements SendObserver {
   void onFileDone(String fileId) => _events.add(SendFinished(fileId));
 
   @override
-  void onError(String fileId, Object error) => _events.add(SendFailed(fileId, error));
+  void onError(String fileId, Object error) =>
+      _events.add(SendFailed(fileId, error));
 }
 
 /// Bridges LocalSend upload progress onto the same engine event stream.
@@ -490,5 +503,6 @@ class _LocalSendObserver implements ls.LocalSendObserver {
   void onFileDone(String fileId) => _events.add(SendFinished(fileId));
 
   @override
-  void onError(String fileId, Object error) => _events.add(SendFailed(fileId, error));
+  void onError(String fileId, Object error) =>
+      _events.add(SendFailed(fileId, error));
 }

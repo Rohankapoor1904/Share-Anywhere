@@ -151,7 +151,8 @@ class LocalSendReceiver {
 
     await _replyJson(
       request.response,
-      LocalSendPrepareResponse(sessionId: sessionId, files: session.tokens).toJson(),
+      LocalSendPrepareResponse(sessionId: sessionId, files: session.tokens)
+          .toJson(),
     );
   }
 
@@ -234,7 +235,8 @@ class LocalSendReceiver {
     await request.response.close();
   }
 
-  SessionRequest _toSessionRequest(LocalSendPrepareRequest prepare, String? pin) {
+  SessionRequest _toSessionRequest(
+      LocalSendPrepareRequest prepare, String? pin) {
     final files = prepare.files.values.map((f) {
       return FileDescriptor(
         id: f.id,
@@ -246,7 +248,9 @@ class LocalSendReceiver {
     }).toList();
     return SessionRequest(
       protocolVersion: 2,
-      deviceId: prepare.info.fingerprint.isEmpty ? prepare.info.alias : prepare.info.fingerprint,
+      deviceId: prepare.info.fingerprint.isEmpty
+          ? prepare.info.alias
+          : prepare.info.fingerprint,
       displayName: prepare.info.alias,
       fingerprint: prepare.info.fingerprint,
       files: files,
@@ -258,16 +262,19 @@ class LocalSendReceiver {
     final path = _tempPathFor(file);
     final existing = File(path).existsSync() ? File(path).lengthSync() : 0;
     File(path).parent.createSync(recursive: true);
-    return File(path).openWrite(mode: existing > 0 ? FileMode.append : FileMode.write);
+    return File(path)
+        .openWrite(mode: existing > 0 ? FileMode.append : FileMode.write);
   }
 
   String _tempPathFor(FileDescriptor file) => '${downloadDirectory.path}'
       '${Platform.pathSeparator}${_safeName(file)}$kPartialSuffix';
 
   String _finalPathFor(FileDescriptor file) {
-    var path = '${downloadDirectory.path}${Platform.pathSeparator}${_safeName(file)}';
+    var path =
+        '${downloadDirectory.path}${Platform.pathSeparator}${_safeName(file)}';
     if (File(path).existsSync()) {
-      path = '${downloadDirectory.path}${Platform.pathSeparator}${_dedupeName(file)}';
+      path =
+          '${downloadDirectory.path}${Platform.pathSeparator}${_dedupeName(file)}';
     }
     return path;
   }
@@ -299,7 +306,8 @@ class LocalSendReceiver {
     return base64Url.encode(data);
   }
 
-  Future<void> _replyJson(HttpResponse response, Map<String, Object?> body) async {
+  Future<void> _replyJson(
+      HttpResponse response, Map<String, Object?> body) async {
     response.headers.contentType = ContentType.json;
     response.write(jsonEncode(body));
     await response.close();

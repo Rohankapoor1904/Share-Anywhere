@@ -78,7 +78,8 @@ class _PinDialogState extends State<_PinDialog> {
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text('Ask ${widget.deviceName} for the 6-digit code shown on its screen.'),
+          Text(
+              'Ask ${widget.deviceName} for the 6-digit code shown on its screen.'),
           const SizedBox(height: 16),
           TextField(
             controller: _controller,
@@ -145,7 +146,8 @@ Future<void> showReceiverPinDialog(
 }
 
 /// Bottom sheet for choosing a peer on phones.
-Future<DeviceInfo?> showDevicePicker(BuildContext context, List<DeviceInfo> peers) {
+Future<DeviceInfo?> showDevicePicker(
+    BuildContext context, List<DeviceInfo> peers) {
   return showModalBottomSheet<DeviceInfo>(
     context: context,
     showDragHandle: true,

@@ -18,7 +18,10 @@ import 'nsd_radio_adapter.dart';
 
 bool get _nsdSupported =>
     !kIsWeb &&
-    (Platform.isAndroid || Platform.isIOS || Platform.isMacOS || Platform.isWindows);
+    (Platform.isAndroid ||
+        Platform.isIOS ||
+        Platform.isMacOS ||
+        Platform.isWindows);
 
 /// BLE is enabled where `flutter_blue_plus` has a reliable backend. Linux is
 /// excluded: the plugin's BlueZ path crashes on hosts without D-Bus/BlueZ
@@ -26,7 +29,10 @@ bool get _nsdSupported =>
 /// LAN discovery there.
 bool get _bleSupported =>
     !kIsWeb &&
-    (Platform.isAndroid || Platform.isIOS || Platform.isMacOS || Platform.isWindows);
+    (Platform.isAndroid ||
+        Platform.isIOS ||
+        Platform.isMacOS ||
+        Platform.isWindows);
 
 RadioAdapter createRadioAdapter() {
   final parts = <RadioAdapter>[
