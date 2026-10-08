@@ -91,14 +91,21 @@ class NsdRadioAdapter implements RadioAdapter {
     unawaited(_discoverLocalSend());
     _discovery = await nsd.startDiscovery(kMdnsServiceType);
     _discovery!.addServiceListener((service, status) async {
-      if (status != nsd.ServiceStatus.found) return;
+      if (status != nsd.ServiceStatus.found) {
+        return;
+      }
       if (service.name == null ||
           !service.name!.contains(kMdnsServiceNamePrefix)) {
         return;
       }
-      final resolved = await nsd.resolve(service);
-      if (_controller.isClosed) return;
-      _controller.add(_toRecord(resolved));
+      try {
+        final resolved = await nsd.resolve(service);
+        if (_controller.isClosed) return;
+        _controller.add(_toRecord(resolved));
+      } catch (_) {
+        if (_controller.isClosed) return;
+        _controller.add(_toRecord(service));
+      }
     });
     yield* _controller.stream;
   }
@@ -109,10 +116,17 @@ class NsdRadioAdapter implements RadioAdapter {
     try {
       final discovery = await nsd.startDiscovery(kLocalSendMdnsService);
       discovery.addServiceListener((service, status) async {
-        if (status != nsd.ServiceStatus.found || _controller.isClosed) return;
-        final resolved = await nsd.resolve(service);
-        if (_controller.isClosed) return;
-        _controller.add(_localSendRecord(resolved));
+        if (status != nsd.ServiceStatus.found || _controller.isClosed) {
+          return;
+        }
+        try {
+          final resolved = await nsd.resolve(service);
+          if (_controller.isClosed) return;
+          _controller.add(_localSendRecord(resolved));
+        } catch (_) {
+          if (_controller.isClosed) return;
+          _controller.add(_localSendRecord(service));
+        }
       });
     } on Object {
       // No LocalSend services on this network, or discovery unsupported here.
@@ -144,10 +158,18 @@ class NsdRadioAdapter implements RadioAdapter {
   }
 
   Map<String, String> _toRecord(nsd.Service service) {
+    final name = service.name ?? '';
+    String deviceId = '';
+    if (name.startsWith(kMdnsServiceNamePrefix)) {
+      deviceId = name.substring(kMdnsServiceNamePrefix.length);
+    }
+
     final record = <String, String>{
-      'name': service.name ?? '',
+      'name': name,
       'host': service.host ?? '',
       'port': '${service.port ?? kDefaultPort}',
+      if (deviceId.isNotEmpty) 'deviceId': deviceId,
+      if (deviceId.isNotEmpty) 'displayName': name,
     };
     service.txt?.forEach((key, value) {
       if (value == null) return;

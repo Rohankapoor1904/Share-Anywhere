@@ -1,10 +1,8 @@
-/// LocalSend multicast discovery (protocol §3.1).
+/// LocalSend multicast & broadcast discovery (protocol §3.1).
 ///
-/// Announcements are JSON datagrams sent to `224.0.0.167:53317`. Peers answer
-/// with a unicast datagram or, more commonly, an HTTP `register` callback we
-/// receive on our own compat listener. We listen for both here and surface a
-/// [DeviceInfo] per peer; deduplication with our mDNS/BLE radios happens in
-/// [DiscoveryOrchestrator].
+/// Announcements are JSON datagrams sent to `224.0.0.167:53317`, `255.255.255.255`,
+/// and local interface subnet broadcast addresses. Peers answer with a unicast
+/// datagram or an HTTP `register` callback.
 library;
 
 import 'dart:async';
@@ -64,10 +62,11 @@ class LocalSendDiscovery {
       // Port busy (another LocalSend instance). Discovery degrades to mDNS/BLE.
       _socket = null;
     }
-    _announcer = Timer.periodic(const Duration(seconds: 15), (_) => announce());
+    announce();
+    _announcer = Timer.periodic(const Duration(seconds: 4), (_) => announce());
   }
 
-  /// Broadcast our identity to the multicast group.
+  /// Broadcast our identity to multicast, global broadcast and subnet broadcast.
   void announce() {
     _send({...?ownInfo?.toJson(), 'announce': true});
   }
@@ -76,18 +75,50 @@ class LocalSendDiscovery {
   void replyUnicast(InternetAddress address, LocalSendInfo info) {
     final datagram =
         utf8.encode(jsonEncode({...info.toJson(), 'announce': false}));
-    _socket?.send(datagram, address, port);
+    try {
+      _socket?.send(datagram, address, port);
+    } catch (_) {}
   }
 
   void _send(Map<String, Object?> payload) {
     final socket = _socket;
     if (socket == null) return;
     final datagram = utf8.encode(jsonEncode(payload));
+
+    // 1. Multicast
     try {
       socket.send(datagram, InternetAddress(kLocalSendMulticastAddress), port);
-    } on Object {
-      // Transient send failure; the periodic announcer retries.
-    }
+    } catch (_) {}
+
+    // 2. Global Broadcast
+    try {
+      socket.send(datagram, InternetAddress('255.255.255.255'), port);
+    } catch (_) {}
+
+    // 3. Interface Subnet Broadcasts
+    _sendInterfaceBroadcasts(socket, datagram);
+  }
+
+  Future<void> _sendInterfaceBroadcasts(
+      RawDatagramSocket socket, List<int> datagram) async {
+    try {
+      final interfaces = await NetworkInterface.list(
+        includeLinkLocal: false,
+        type: InternetAddressType.IPv4,
+      );
+      for (final iface in interfaces) {
+        for (final addr in iface.addresses) {
+          final ip = addr.address;
+          final parts = ip.split('.');
+          if (parts.length == 4) {
+            final subnetBroadcast = '${parts[0]}.${parts[1]}.${parts[2]}.255';
+            try {
+              socket.send(datagram, InternetAddress(subnetBroadcast), port);
+            } catch (_) {}
+          }
+        }
+      }
+    } catch (_) {}
   }
 
   void _onEvent(RawSocketEvent event) {
@@ -128,7 +159,6 @@ class LocalSendDiscovery {
             info.fingerprint.isEmpty ? '$address:$port' : info.fingerprint,
         displayName: info.alias,
         fingerprint: info.fingerprint,
-        // A LocalSend http peer listens on its advertised port (default 53317).
         port: port,
         platform: info.protocol == 'https' ? 'localsend-https' : 'localsend',
         addresses: [address],
