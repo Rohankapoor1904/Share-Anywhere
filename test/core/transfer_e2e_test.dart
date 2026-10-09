@@ -25,7 +25,8 @@ class _RecordingTarget implements TransferTarget {
   final progress = <String, int>{};
 
   @override
-  Future<SessionDecision> onSessionRequest(SessionRequest request) async =>
+  Future<SessionDecision> onSessionRequest(
+          String sessionId, SessionRequest request) async =>
       const SessionDecision.accept();
 
   @override
@@ -231,6 +232,55 @@ void main() {
     }
   });
 
+  test(
+      'cancelSession causes in-flight chunk upload on sender to fail with Receiver declined',
+      () async {
+    final r = await _startReceiver();
+    try {
+      final bytes = List<int>.generate(1024 * 1024, (i) => i % 256);
+      final file = await _makeOutgoing(work.path, 'data.bin', bytes);
+      final peer = DeviceInfo(
+        deviceId: 'receiver',
+        displayName: 'Receiver',
+        fingerprint: r.cert.fingerprint,
+        port: r.server.boundPort,
+        addresses: const ['127.0.0.1'],
+      );
+
+      final client = TransferClient(expectedFingerprint: r.cert.fingerprint);
+      final response = await client.openSession(
+        peer: peer,
+        request: SessionRequest(
+          protocolVersion: kProtocolVersion,
+          deviceId: 'sender',
+          displayName: 'Sender',
+          fingerprint: 'sender-fp',
+          files: [file.descriptor],
+        ),
+      );
+      expect(response.accepted, isTrue);
+
+      // Cancel session on receiver (simulates user clicking Decline)
+      await r.server.cancelSession(response.sessionId, reason: 'declined');
+
+      final errors = <Object>[];
+      final done = <String>[];
+      await client.sendAll(
+        peer: peer,
+        files: [file],
+        session: response,
+        observer: _CollectWithErrors(done, errors),
+      );
+      await client.close();
+
+      expect(errors, hasLength(1));
+      expect(errors.first.toString(), contains('Receiver declined'));
+    } finally {
+      await r.server.stop();
+      await r.dir.delete(recursive: true);
+    }
+  });
+
   test('invokes onProgress callback on receiver during transfer', () async {
     final r = await _startReceiver();
     try {
@@ -390,6 +440,20 @@ void main() {
       expect(decisionCorrect.accepted, isTrue);
     });
   });
+}
+
+class _CollectWithErrors implements SendObserver {
+  _CollectWithErrors(this.done, this.errors);
+  final List<String> done;
+  final List<Object> errors;
+  @override
+  void onSessionEstablished(String sessionId) {}
+  @override
+  void onProgress(_) {}
+  @override
+  void onFileDone(String fileId) => done.add(fileId);
+  @override
+  void onError(String fileId, Object error) => errors.add(error);
 }
 
 class _Collect implements SendObserver {

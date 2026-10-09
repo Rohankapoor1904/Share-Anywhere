@@ -113,7 +113,7 @@ final pairingSettingsProvider =
 final localShareNodeProvider = FutureProvider<LocalShareNode>((ref) async {
   final dir = await ref.watch(storageDirProvider.future);
   final initialName = ref.read(deviceNameProvider);
-  final pairingSettings = ref.watch(pairingSettingsProvider);
+  final initialPairingSettings = ref.read(pairingSettingsProvider);
   final node = LocalShareNode(
     config: NodeConfig(
       displayName: initialName,
@@ -123,10 +123,14 @@ final localShareNodeProvider = FutureProvider<LocalShareNode>((ref) async {
     trustPersistence: FileTrustPersistence(
       File('${dir.path}${Platform.pathSeparator}trust.json'),
     ),
-    pairingSettings: pairingSettings,
+    pairingSettings: initialPairingSettings,
   );
   ref.listen(deviceNameProvider, (_, next) {
     node.setDisplayName(next);
+  });
+  ref.listen(pairingSettingsProvider, (_, next) {
+    node.pairingManager.settings.autoAcceptTrusted = next.autoAcceptTrusted;
+    node.pairingManager.settings.autoAcceptAll = next.autoAcceptAll;
   });
   ref.onDispose(() => unawaited(node.stop()));
   return node;

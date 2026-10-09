@@ -524,8 +524,10 @@ class LocalShareNode implements TransferTarget, LocalSendHost {
 
   // ── TransferTarget (receiver side) ──────────────────────────────
   @override
-  Future<SessionDecision> onSessionRequest(SessionRequest request) async {
-    final sessionId = generateToken(byteLength: 12);
+  Future<SessionDecision> onSessionRequest(
+    String sessionId,
+    SessionRequest request,
+  ) async {
     _activeSessions[sessionId] = IncomingTransfer(
       sessionId: sessionId,
       request: request,
@@ -538,7 +540,10 @@ class LocalShareNode implements TransferTarget, LocalSendHost {
     if (decision.accepted) {
       _events.add(IncomingSessionRequested(
         IncomingTransfer(
-            sessionId: sessionId, request: request, files: request.files),
+          sessionId: sessionId,
+          request: request,
+          files: request.files,
+        ),
       ));
       pairingManager.clearChallenge(request.deviceId);
     }
