@@ -154,7 +154,8 @@ class _PairingPolicyCard extends ConsumerWidget {
           const SizedBox(height: 12),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
-            activeThumbColor: AppColors.accent,
+            // ignore: deprecated_member_use
+            activeColor: AppColors.accent,
             title: const Text(
               'Auto-accept trusted peers',
               style: TextStyle(
@@ -175,7 +176,8 @@ class _PairingPolicyCard extends ConsumerWidget {
           const Divider(color: AppColors.glassBorder),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
-            activeThumbColor: AppColors.warning,
+            // ignore: deprecated_member_use
+            activeColor: AppColors.warning,
             title: const Text(
               'Auto-accept all transfers',
               style: TextStyle(
