@@ -210,8 +210,9 @@ class LocalSendDiscovery {
     if (targetAddress.startsWith('::ffff:')) {
       targetAddress = targetAddress.substring(7);
     }
-    if (ownAddresses.contains(targetAddress) || targetAddress == '127.0.0.1')
+    if (ownAddresses.contains(targetAddress) || targetAddress == '127.0.0.1') {
       return;
+    }
     try {
       final client = HttpClient()
         ..connectionTimeout = const Duration(milliseconds: 1500);
@@ -232,8 +233,9 @@ class LocalSendDiscovery {
     if (cleanAddress.startsWith('::ffff:')) {
       cleanAddress = cleanAddress.substring(7);
     }
-    if (ownAddresses.contains(cleanAddress) || cleanAddress == '127.0.0.1')
+    if (ownAddresses.contains(cleanAddress) || cleanAddress == '127.0.0.1') {
       return;
+    }
     final info = LocalSendInfo.fromJson(json);
     if (info.fingerprint.isNotEmpty &&
         info.fingerprint == ownInfo?.fingerprint) {
@@ -248,8 +250,9 @@ class LocalSendDiscovery {
     if (cleanAddress.startsWith('::ffff:')) {
       cleanAddress = cleanAddress.substring(7);
     }
-    if (ownAddresses.contains(cleanAddress) || cleanAddress == '127.0.0.1')
+    if (ownAddresses.contains(cleanAddress) || cleanAddress == '127.0.0.1') {
       return;
+    }
     if (info.fingerprint.isNotEmpty &&
         info.fingerprint == ownInfo?.fingerprint) {
       return;

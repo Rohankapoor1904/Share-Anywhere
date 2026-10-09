@@ -1,39 +1,86 @@
-/// Design tokens for the LocalShare UI.
+/// Design tokens and theme for the LocalShare Spatial & Liquid Glass UI.
 ///
-/// A dark, high-contrast palette so the radar glow reads well on phones, TV and
-/// desktop, with rich accents for visual hierarchy, status cues and vibrant UI components.
+/// A futuristic, dark spatial aesthetic featuring translucent frosted glass,
+/// electric neon gradients, subtle specular edge reflections, and modular Bento tiles.
 library;
 
 import 'package:flutter/material.dart';
 
 abstract final class AppColors {
-  static const background = Color(0xFF0B1020);
-  static const surface = Color(0xFF141B2E);
-  static const surfaceHigh = Color(0xFF1D2740);
-  static const surfaceBorder = Color(0xFF283556);
-  static const accent = Color(0xFF4FC3F7);
-  static const accentDeep = Color(0xFF2979FF);
-  static const success = Color(0xFF43D9AD);
-  static const warning = Color(0xFFFFB74D);
-  static const danger = Color(0xFFFF5252);
-  static const textPrimary = Color(0xFFF4F7FF);
-  static const textSecondary = Color(0xFFC5CEE0);
-  static const textMuted = Color(0xFF8F9BB3);
+  // Spatial Cosmic Dark Palette
+  static const background = Color(0xFF070B14);
+  static const backgroundSecondary = Color(0xFF0B1020);
+  static const surface = Color(0xFF10172B);
+  static const surfaceGlass = Color(0xCC111930);
+  static const surfaceHigh = Color(0xFF18233D);
+  static const surfaceBorder = Color(0xFF233152);
 
-  // Gradients for cards, avatars and headers
+  // Liquid Glass Edge & Sheen
+  static const glassBorder = Color(0x2EFFFFFF);
+  static const glassBorderHighlight = Color(0x55FFFFFF);
+  static const glassSurfaceHighlight = Color(0x1AFFFFFF);
+
+  // Radiant Spatial Accents
+  static const accent = Color(0xFF00E5FF); // Electric Cyan
+  static const accentDeep = Color(0xFF2979FF); // Hyper Blue
+  static const accentPurple = Color(0xFF8B5CF6); // Spatial Violet
+  static const accentPink = Color(0xFFEC4899); // Neon Pink
+  static const success = Color(0xFF10B981); // Emerald Neon
+  static const warning = Color(0xFFF59E0B); // Amber Glow
+  static const danger = Color(0xFFEF4444); // Crimson Ember
+
+  // High-legibility Typography
+  static const textPrimary = Color(0xFFF8FAFC);
+  static const textSecondary = Color(0xFFCBD5E1);
+  static const textMuted = Color(0xFF64748B);
+
+  // Ambient Glows
+  static const accentGlow = Color(0x4D00E5FF);
+  static const purpleGlow = Color(0x4D8B5CF6);
+  static const successGlow = Color(0x4D10B981);
+
+  // Gradients for cards, spatial buttons, and headers
   static const primaryGradient = LinearGradient(
-    colors: [Color(0xFF00B0FF), Color(0xFF2979FF)],
+    colors: [Color(0xFF00E5FF), Color(0xFF2979FF)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+
+  static const spatialGradient = LinearGradient(
+    colors: [Color(0xFF00E5FF), Color(0xFF8B5CF6)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+
+  static const purplePinkGradient = LinearGradient(
+    colors: [Color(0xFF8B5CF6), Color(0xFFEC4899)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
 
   static const cardGradient = LinearGradient(
-    colors: [Color(0xFF182238), Color(0xFF12192A)],
+    colors: [Color(0xFF162038), Color(0xFF0E1528)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
 
-  static const accentGlow = Color(0x3300B0FF);
+  static const glassCardGradient = LinearGradient(
+    colors: [
+      Color(0xE6141D34),
+      Color(0xD90E1426),
+    ],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+
+  static const specularHighlightGradient = LinearGradient(
+    colors: [
+      Color(0x33FFFFFF),
+      Color(0x05FFFFFF),
+    ],
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+  );
 }
 
 ThemeData buildAppTheme() {
@@ -45,7 +92,8 @@ ThemeData buildAppTheme() {
     surfaceContainer: AppColors.surface,
     surfaceContainerHigh: AppColors.surfaceHigh,
     primary: AppColors.accent,
-    secondary: AppColors.success,
+    secondary: AppColors.accentPurple,
+    tertiary: AppColors.success,
     error: AppColors.danger,
     onSurface: AppColors.textPrimary,
   );
@@ -57,36 +105,36 @@ ThemeData buildAppTheme() {
     fontFamily: 'Roboto',
     visualDensity: VisualDensity.adaptivePlatformDensity,
     appBarTheme: const AppBarTheme(
-      backgroundColor: AppColors.background,
+      backgroundColor: Colors.transparent,
       elevation: 0,
       scrolledUnderElevation: 0,
       centerTitle: false,
       titleTextStyle: TextStyle(
         color: AppColors.textPrimary,
-        fontWeight: FontWeight.w700,
+        fontWeight: FontWeight.w800,
         fontSize: 20,
         letterSpacing: -0.5,
       ),
     ),
     cardTheme: CardThemeData(
-      color: AppColors.surface,
+      color: AppColors.surfaceGlass,
       elevation: 0,
       margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
-        borderRadius: const BorderRadius.all(Radius.circular(20)),
-        side: BorderSide(
-          color: AppColors.surfaceBorder.withValues(alpha: 0.5),
+        borderRadius: const BorderRadius.all(Radius.circular(22)),
+        side: const BorderSide(
+          color: AppColors.glassBorder,
           width: 1,
         ),
       ),
     ),
     dialogTheme: DialogThemeData(
       backgroundColor: AppColors.surface,
-      elevation: 8,
+      elevation: 16,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(24),
-        side: BorderSide(
-          color: AppColors.surfaceBorder.withValues(alpha: 0.8),
+        side: const BorderSide(
+          color: AppColors.glassBorder,
           width: 1,
         ),
       ),
@@ -94,6 +142,7 @@ ThemeData buildAppTheme() {
         color: AppColors.textPrimary,
         fontWeight: FontWeight.bold,
         fontSize: 20,
+        letterSpacing: -0.3,
       ),
       contentTextStyle: const TextStyle(
         color: AppColors.textSecondary,
@@ -103,9 +152,10 @@ ThemeData buildAppTheme() {
     bottomSheetTheme: const BottomSheetThemeData(
       backgroundColor: AppColors.surface,
       modalBackgroundColor: AppColors.surface,
-      elevation: 12,
+      elevation: 16,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        side: BorderSide(color: AppColors.glassBorder, width: 1),
       ),
       dragHandleColor: AppColors.textMuted,
     ),
@@ -113,7 +163,7 @@ ThemeData buildAppTheme() {
       style: FilledButton.styleFrom(
         backgroundColor: AppColors.accent,
         foregroundColor: AppColors.background,
-        elevation: 2,
+        elevation: 3,
         shadowColor: AppColors.accentGlow,
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
         textStyle: const TextStyle(
@@ -139,7 +189,7 @@ ThemeData buildAppTheme() {
       ),
     ),
     chipTheme: ChipThemeData(
-      backgroundColor: AppColors.surfaceHigh,
+      backgroundColor: AppColors.surfaceHigh.withValues(alpha: 0.7),
       disabledColor: AppColors.surface,
       selectedColor: AppColors.accent.withValues(alpha: 0.2),
       secondarySelectedColor: AppColors.accent,
@@ -152,44 +202,43 @@ ThemeData buildAppTheme() {
       secondaryLabelStyle: const TextStyle(color: AppColors.accent),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: AppColors.surfaceBorder.withValues(alpha: 0.6)),
+        side: const BorderSide(color: AppColors.glassBorder, width: 0.8),
       ),
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: AppColors.surfaceHigh,
+      fillColor: AppColors.surfaceHigh.withValues(alpha: 0.6),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide.none,
+        borderSide: const BorderSide(color: AppColors.glassBorder),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide(
-          color: AppColors.surfaceBorder.withValues(alpha: 0.6),
-        ),
+        borderSide: const BorderSide(color: AppColors.glassBorder),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: AppColors.accent, width: 2),
+        borderSide: const BorderSide(color: AppColors.accent, width: 1.8),
       ),
       hintStyle: const TextStyle(color: AppColors.textMuted),
       labelStyle: const TextStyle(color: AppColors.textSecondary),
     ),
-    dividerTheme: DividerThemeData(
-      color: AppColors.surfaceBorder.withValues(alpha: 0.5),
+    dividerTheme: const DividerThemeData(
+      color: AppColors.glassBorder,
       thickness: 1,
       space: 1,
     ),
     textTheme: const TextTheme(
       headlineMedium: TextStyle(
         color: AppColors.textPrimary,
-        fontWeight: FontWeight.w700,
-        letterSpacing: -0.5,
+        fontWeight: FontWeight.w800,
+        letterSpacing: -0.6,
       ),
       titleLarge: TextStyle(
         color: AppColors.textPrimary,
         fontWeight: FontWeight.w700,
         fontSize: 18,
+        letterSpacing: -0.3,
       ),
       titleMedium: TextStyle(
         color: AppColors.textPrimary,

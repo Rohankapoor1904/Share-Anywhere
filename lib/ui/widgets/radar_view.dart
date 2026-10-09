@@ -1,13 +1,10 @@
-/// The signature "radar" — a pulsing ripple that communicates live discovery.
+/// The signature spatial radar — a holographic liquid scanner communicating live network discovery.
 ///
-/// Three staggered rings expand outward from the centre while a faint sweep
-/// rotates, and discovered peers sit as glowing blips on the rim. Everything is
-/// one [CustomPainter] fed by a single [AnimationController], so it stays at
-/// 60/120fps even with many peers.
+/// Features concentric sonar waves, rotating conic sweep with electric cyan & spatial violet glow,
+/// and discovered peers placed on glowing orbital tracks.
 library;
 
 import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 
 import '../../core/protocol/models.dart';
@@ -37,7 +34,7 @@ class _RadarViewState extends State<RadarView>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(seconds: 3),
+    duration: const Duration(milliseconds: 3200),
   )..repeat();
 
   @override
@@ -65,12 +62,12 @@ class _RadarViewState extends State<RadarView>
         animation: _controller,
         builder: (context, _) {
           return CustomPaint(
-            painter: _RadarPainter(
+            painter: _SpatialRadarPainter(
               progress: _controller.value,
               active: widget.active,
               blips: _blipsFor(widget.devices),
             ),
-            child: _BlipLayer(
+            child: _SpatialBlipLayer(
               devices: widget.devices,
               radius: widget.size / 2,
               onTap: widget.onDeviceTap,
@@ -81,15 +78,14 @@ class _RadarViewState extends State<RadarView>
     );
   }
 
-  /// Deterministically place each peer on the rim. We hash the device id so a
-  /// peer keeps a stable position across rebuilds instead of jumping around.
+  /// Deterministically place each peer on orbital rings based on deviceId hash.
   List<_Blip> _blipsFor(List<DeviceInfo> devices) {
     final blips = <_Blip>[];
     for (var i = 0; i < devices.length; i++) {
       final device = devices[i];
       final hash = device.deviceId.codeUnits.fold<int>(7, (a, c) => a * 31 + c);
       final angle = (hash % 360) * math.pi / 180;
-      final ring = 0.62 + (i % 2) * 0.12;
+      final ring = 0.60 + (i % 2) * 0.16;
       blips.add(_Blip(angle: angle, ring: ring, id: device.deviceId));
     }
     return blips;
@@ -103,9 +99,13 @@ class _Blip {
   final String id;
 }
 
-/// Avatars placed on the rim, tappable to start a transfer.
-class _BlipLayer extends StatelessWidget {
-  const _BlipLayer({required this.devices, required this.radius, this.onTap});
+/// Floating glass nodes placed on orbital tracks, tappable to initiate instant transfer.
+class _SpatialBlipLayer extends StatelessWidget {
+  const _SpatialBlipLayer({
+    required this.devices,
+    required this.radius,
+    this.onTap,
+  });
 
   final List<DeviceInfo> devices;
   final double radius;
@@ -123,21 +123,21 @@ class _BlipLayer extends StatelessWidget {
   Widget _positioned(DeviceInfo device, int index) {
     final hash = device.deviceId.codeUnits.fold<int>(7, (a, c) => a * 31 + c);
     final angle = (hash % 360) * math.pi / 180;
-    final ring = radius * (0.62 + (index % 2) * 0.12);
-    const avatar = 64.0;
-    final left = radius + math.cos(angle) * ring - avatar / 2;
-    final top = radius + math.sin(angle) * ring - avatar / 2;
+    final ring = radius * (0.60 + (index % 2) * 0.16);
+    const avatarWidth = 72.0;
+    final left = radius + math.cos(angle) * ring - avatarWidth / 2;
+    final top = radius + math.sin(angle) * ring - avatarWidth / 2;
 
     return Positioned(
       left: left,
       top: top,
-      child: _DeviceAvatar(device: device, onTap: onTap),
+      child: _SpatialDeviceAvatar(device: device, onTap: onTap),
     );
   }
 }
 
-class _DeviceAvatar extends StatelessWidget {
-  const _DeviceAvatar({required this.device, this.onTap});
+class _SpatialDeviceAvatar extends StatelessWidget {
+  const _SpatialDeviceAvatar({required this.device, this.onTap});
   final DeviceInfo device;
   final void Function(DeviceInfo device)? onTap;
 
@@ -184,29 +184,38 @@ class _DeviceAvatar extends StatelessWidget {
           clipBehavior: Clip.none,
           children: [
             Container(
-              width: 58,
-              height: 58,
+              width: 56,
+              height: 56,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                gradient: AppColors.primaryGradient,
+                gradient: AppColors.spatialGradient,
                 border: Border.all(
-                  color: focused ? Colors.white : AppColors.surfaceBorder,
-                  width: focused ? 3 : 2,
+                  color: focused
+                      ? Colors.white
+                      : AppColors.glassBorderHighlight.withValues(alpha: 0.6),
+                  width: focused ? 2.5 : 1.5,
                 ),
                 boxShadow: [
                   BoxShadow(
                     color: AppColors.accent.withValues(
-                      alpha: focused ? 0.7 : 0.4,
+                      alpha: focused ? 0.75 : 0.45,
                     ),
-                    blurRadius: focused ? 24 : 14,
+                    blurRadius: focused ? 26 : 16,
                     spreadRadius: focused ? 3 : 1,
+                  ),
+                  BoxShadow(
+                    color: AppColors.accentPurple.withValues(alpha: 0.35),
+                    blurRadius: 18,
+                    offset: const Offset(2, 4),
                   ),
                 ],
               ),
-              child: Icon(
-                _iconFor(device),
-                color: Colors.white,
-                size: 26,
+              child: Center(
+                child: Icon(
+                  _iconFor(device),
+                  color: Colors.white,
+                  size: 24,
+                ),
               ),
             ),
             if (isLocalSend)
@@ -219,10 +228,16 @@ class _DeviceAvatar extends StatelessWidget {
                     color: AppColors.warning,
                     shape: BoxShape.circle,
                     border: Border.all(color: AppColors.background, width: 2),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.warning.withValues(alpha: 0.5),
+                        blurRadius: 6,
+                      ),
+                    ],
                   ),
                   child: const Icon(
-                    Icons.sync,
-                    size: 10,
+                    Icons.sync_rounded,
+                    size: 11,
                     color: AppColors.background,
                   ),
                 ),
@@ -231,17 +246,23 @@ class _DeviceAvatar extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
           decoration: BoxDecoration(
-            color: AppColors.surface.withValues(alpha: 0.85),
-            borderRadius: BorderRadius.circular(8),
+            color: AppColors.surfaceGlass.withValues(alpha: 0.9),
+            borderRadius: BorderRadius.circular(10),
             border: Border.all(
-              color: AppColors.surfaceBorder.withValues(alpha: 0.5),
-              width: 0.5,
+              color: AppColors.glassBorder,
+              width: 0.8,
             ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.35),
+                blurRadius: 6,
+              ),
+            ],
           ),
           child: SizedBox(
-            width: 76,
+            width: 70,
             child: Text(
               device.displayName,
               maxLines: 1,
@@ -250,7 +271,8 @@ class _DeviceAvatar extends StatelessWidget {
               style: const TextStyle(
                 color: AppColors.textPrimary,
                 fontSize: 11,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.2,
               ),
             ),
           ),
@@ -278,9 +300,12 @@ class _DeviceAvatar extends StatelessWidget {
   }
 }
 
-class _RadarPainter extends CustomPainter {
-  _RadarPainter(
-      {required this.progress, required this.active, required this.blips});
+class _SpatialRadarPainter extends CustomPainter {
+  _SpatialRadarPainter({
+    required this.progress,
+    required this.active,
+    required this.blips,
+  });
 
   final double progress;
   final bool active;
@@ -291,114 +316,147 @@ class _RadarPainter extends CustomPainter {
     final center = size.center(Offset.zero);
     final maxRadius = size.shortestSide / 2;
 
-    _paintBackground(canvas, center, maxRadius);
-    _paintGrid(canvas, center, maxRadius);
+    _paintCosmicBackdrop(canvas, center, maxRadius);
+    _paintOrbitalGrid(canvas, center, maxRadius);
     if (active) {
-      _paintRipples(canvas, center, maxRadius);
-      _paintSweep(canvas, center, maxRadius);
+      _paintSpatialRipples(canvas, center, maxRadius);
+      _paintHolographicSweep(canvas, center, maxRadius);
     }
-    _paintCore(canvas, center, maxRadius);
+    _paintLiquidCore(canvas, center, maxRadius);
   }
 
-  void _paintBackground(Canvas canvas, Offset center, double maxRadius) {
-    final bgGlow = Paint()
-      ..shader = RadialGradient(
-        colors: [
-          AppColors.surfaceHigh.withValues(alpha: 0.4),
-          AppColors.background.withValues(alpha: 0.0),
-        ],
-      ).createShader(Rect.fromCircle(center: center, radius: maxRadius));
-    canvas.drawCircle(center, maxRadius, bgGlow);
+  void _paintCosmicBackdrop(Canvas canvas, Offset center, double maxRadius) {
+    final ambientShader = RadialGradient(
+      colors: [
+        AppColors.accent.withValues(alpha: 0.12),
+        AppColors.accentPurple.withValues(alpha: 0.05),
+        Colors.transparent,
+      ],
+      stops: const [0.0, 0.55, 1.0],
+    ).createShader(Rect.fromCircle(center: center, radius: maxRadius));
+
+    canvas.drawCircle(center, maxRadius, Paint()..shader = ambientShader);
   }
 
-  void _paintGrid(Canvas canvas, Offset center, double maxRadius) {
-    final grid = Paint()
+  void _paintOrbitalGrid(Canvas canvas, Offset center, double maxRadius) {
+    final ringPaint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1
-      ..color = AppColors.accent.withValues(alpha: 0.12);
-    for (final factor in [0.35, 0.62, 0.9]) {
-      canvas.drawCircle(center, maxRadius * factor, grid);
+      ..strokeWidth = 1.0
+      ..color = AppColors.glassBorder.withValues(alpha: 0.25);
+
+    // Orbital concentric tracks
+    for (final factor in [0.32, 0.60, 0.88]) {
+      canvas.drawCircle(center, maxRadius * factor, ringPaint);
     }
 
-    final crossPaint = Paint()
+    // High-tech subtle crosshairs
+    final crossHairPaint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.5
-      ..color = AppColors.accent.withValues(alpha: 0.08);
+      ..strokeWidth = 0.6
+      ..color = AppColors.accent.withValues(alpha: 0.15);
 
     canvas.drawLine(
-      Offset(center.dx - maxRadius * 0.9, center.dy),
-      Offset(center.dx + maxRadius * 0.9, center.dy),
-      crossPaint,
+      Offset(center.dx - maxRadius * 0.88, center.dy),
+      Offset(center.dx + maxRadius * 0.88, center.dy),
+      crossHairPaint,
     );
     canvas.drawLine(
-      Offset(center.dx, center.dy - maxRadius * 0.9),
-      Offset(center.dx, center.dy + maxRadius * 0.9),
-      crossPaint,
+      Offset(center.dx, center.dy - maxRadius * 0.88),
+      Offset(center.dx, center.dy + maxRadius * 0.88),
+      crossHairPaint,
     );
+
+    // Small tick marks on 45 degree angles
+    final tickPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2
+      ..color = AppColors.accentPurple.withValues(alpha: 0.25);
+
+    for (var i = 0; i < 4; i++) {
+      final angle = (i * 90 + 45) * math.pi / 180;
+      final startR = maxRadius * 0.84;
+      final endR = maxRadius * 0.88;
+      canvas.drawLine(
+        Offset(center.dx + math.cos(angle) * startR,
+            center.dy + math.sin(angle) * startR),
+        Offset(center.dx + math.cos(angle) * endR,
+            center.dy + math.sin(angle) * endR),
+        tickPaint,
+      );
+    }
   }
 
-  /// Three staggered rings that expand and fade, like sonar.
-  void _paintRipples(Canvas canvas, Offset center, double maxRadius) {
+  /// Three expanding fluid sonar rings
+  void _paintSpatialRipples(Canvas canvas, Offset center, double maxRadius) {
     const rings = 3;
     for (var i = 0; i < rings; i++) {
       final t = (progress + i / rings) % 1.0;
-      final radius = maxRadius * (0.2 + 0.8 * t);
-      final alpha = (1 - t) * 0.4;
+      final radius = maxRadius * (0.18 + 0.80 * t);
+      final alpha = (1 - t) * 0.55;
       final paint = Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.5 * (1 - t)
-        ..color = AppColors.accent.withValues(alpha: alpha);
+        ..strokeWidth = 2.2 * (1 - t) + 0.5
+        ..color = Color.lerp(AppColors.accent, AppColors.accentPurple, t)!
+            .withValues(alpha: alpha);
       canvas.drawCircle(center, radius, paint);
     }
   }
 
-  /// A rotating conic sweep for that classic radar feel.
-  void _paintSweep(Canvas canvas, Offset center, double maxRadius) {
+  /// Conic holographic sweep with cyan-to-violet trail
+  void _paintHolographicSweep(Canvas canvas, Offset center, double maxRadius) {
     final angle = progress * 2 * math.pi;
     final sweep = Paint()
       ..shader = SweepGradient(
         startAngle: angle,
-        endAngle: angle + 0.9,
+        endAngle: angle + 0.95,
         colors: [
-          AppColors.accent.withValues(alpha: 0.0),
-          AppColors.accent.withValues(alpha: 0.28),
+          Colors.transparent,
+          AppColors.accentPurple.withValues(alpha: 0.12),
+          AppColors.accent.withValues(alpha: 0.32),
         ],
-        transform: GradientRotation(0),
+        stops: const [0.0, 0.45, 1.0],
+        transform: const GradientRotation(0),
       ).createShader(Rect.fromCircle(center: center, radius: maxRadius));
-    canvas.drawCircle(center, maxRadius * 0.9, sweep);
+
+    canvas.drawCircle(center, maxRadius * 0.88, sweep);
   }
 
-  void _paintCore(Canvas canvas, Offset center, double maxRadius) {
-    final glow = Paint()
-      ..shader = RadialGradient(
-        colors: [
-          AppColors.accent.withValues(alpha: 0.6),
-          AppColors.accentDeep.withValues(alpha: 0.0),
-        ],
-      ).createShader(Rect.fromCircle(center: center, radius: maxRadius * 0.45));
-    canvas.drawCircle(center, maxRadius * 0.45, glow);
+  /// Central spatial liquid core with radiant glow
+  void _paintLiquidCore(Canvas canvas, Offset center, double maxRadius) {
+    final auraShader = RadialGradient(
+      colors: [
+        AppColors.accent.withValues(alpha: 0.7),
+        AppColors.accentPurple.withValues(alpha: 0.25),
+        Colors.transparent,
+      ],
+      stops: const [0.0, 0.55, 1.0],
+    ).createShader(Rect.fromCircle(center: center, radius: maxRadius * 0.42));
 
-    final coreGradient = Paint()
-      ..shader = RadialGradient(
-        colors: [
-          AppColors.accent,
-          AppColors.accentDeep,
-        ],
-      ).createShader(Rect.fromCircle(center: center, radius: maxRadius * 0.16));
+    canvas.drawCircle(center, maxRadius * 0.42, Paint()..shader = auraShader);
 
-    canvas.drawCircle(center, maxRadius * 0.16, coreGradient);
-    canvas.drawCircle(
-      center,
-      maxRadius * 0.16,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.5
-        ..color = Colors.white.withValues(alpha: 0.8),
-    );
+    // Inner liquid glass sphere
+    final coreGradient = RadialGradient(
+      colors: const [
+        Color(0xFFE0F7FA),
+        AppColors.accent,
+        AppColors.accentDeep,
+      ],
+      stops: const [0.0, 0.45, 1.0],
+    ).createShader(Rect.fromCircle(center: center, radius: maxRadius * 0.15));
+
+    canvas.drawCircle(center, maxRadius * 0.15, Paint()..shader = coreGradient);
+
+    // Specular glass rim
+    final rimPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0
+      ..color = Colors.white.withValues(alpha: 0.85);
+
+    canvas.drawCircle(center, maxRadius * 0.15, rimPaint);
   }
 
   @override
-  bool shouldRepaint(_RadarPainter oldDelegate) =>
+  bool shouldRepaint(_SpatialRadarPainter oldDelegate) =>
       oldDelegate.progress != progress ||
       oldDelegate.active != active ||
       oldDelegate.blips.length != blips.length;
