@@ -145,8 +145,8 @@ class _MyDeviceCard extends ConsumerWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const GlowAvatar(
-            icon: Icons.smartphone_rounded,
+          GlowAvatar(
+            icon: selfDeviceIcon(),
             size: 52,
             iconSize: 24,
           ),

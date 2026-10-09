@@ -9,10 +9,14 @@ import 'dart:io';
 import 'package:localshare/core/crypto/ephemeral_cert.dart';
 import 'package:localshare/core/crypto/hashing.dart';
 import 'package:localshare/core/crypto/pin.dart';
+import 'package:localshare/core/node.dart';
 import 'package:localshare/core/protocol/models.dart';
 import 'package:localshare/core/protocol/protocol.dart';
+import 'package:localshare/core/session/pairing_manager.dart';
+import 'package:localshare/core/session/trust_store.dart';
 import 'package:localshare/core/transport/transfer_client.dart';
 import 'package:localshare/core/transport/transfer_server.dart';
+import 'package:localshare/platform/create_adapter.dart';
 import 'package:test/test.dart';
 
 /// A receiver that accepts everything and records what it got.
@@ -225,6 +229,166 @@ void main() {
       await r.server.stop();
       await r.dir.delete(recursive: true);
     }
+  });
+
+  test('invokes onProgress callback on receiver during transfer', () async {
+    final r = await _startReceiver();
+    try {
+      final bytes = List<int>.generate(100 * 1024, (i) => i % 256);
+      final file = await _makeOutgoing(work.path, 'sample.bin', bytes);
+      final peer = DeviceInfo(
+        deviceId: 'receiver',
+        displayName: 'Receiver',
+        fingerprint: r.cert.fingerprint,
+        port: r.server.boundPort,
+        addresses: const ['127.0.0.1'],
+      );
+
+      final client = TransferClient(expectedFingerprint: r.cert.fingerprint);
+      final response = await client.openSession(
+        peer: peer,
+        request: SessionRequest(
+          protocolVersion: kProtocolVersion,
+          deviceId: 'sender',
+          displayName: 'Sender',
+          fingerprint: 'sender-fp',
+          files: [file.descriptor],
+        ),
+      );
+      expect(response.accepted, isTrue);
+
+      final done = <String>[];
+      await client.sendAll(
+        peer: peer,
+        files: [file],
+        session: response,
+        observer: _Collect(done),
+      );
+      await client.close();
+
+      expect(done, [file.descriptor.id]);
+      expect(r.target.progress[file.descriptor.id], equals(bytes.length));
+    } finally {
+      await r.server.stop();
+      await r.dir.delete(recursive: true);
+    }
+  });
+
+  test(
+      'send propagates FileSystemException when file does not exist without retrying',
+      () async {
+    final dir = await Directory.systemTemp.createTemp('ls-node-test');
+    try {
+      final node = LocalShareNode(
+        config: NodeConfig(
+          displayName: 'TestNode',
+          downloadDirectory: dir,
+        ),
+        adapter: createRadioAdapter(),
+        trustPersistence: MemoryTrustPersistence(),
+        localSendCompat: false,
+      );
+
+      final peer = DeviceInfo(
+        deviceId: 'peer1',
+        displayName: 'Peer 1',
+        fingerprint: 'some-fp',
+        port: 50000,
+        addresses: const ['127.0.0.1'],
+      );
+
+      final nonExistentFile = IncomingFile(
+        path: '${dir.path}/non_existent_file_xyz_123.bin',
+        fileName: 'non_existent_file_xyz_123.bin',
+      );
+
+      await expectLater(
+        node.send(peer: peer, files: [nonExistentFile]),
+        throwsA(isA<FileSystemException>()),
+      );
+    } finally {
+      await dir.delete(recursive: true);
+    }
+  });
+
+  group('PairingManager PIN challenge policy', () {
+    test(
+        'unknown peer requires PIN challenge, accepts correct PIN, rejects after 3 wrong attempts',
+        () async {
+      final trustPersistence = MemoryTrustPersistence();
+      final trustStore = TrustStore(trustPersistence);
+      final pairingManager = PairingManager(
+        trustStore: trustStore,
+        settings:
+            PairingSettings(autoAcceptAll: false, autoAcceptTrusted: true),
+      );
+
+      String? challengedPin;
+      pairingManager.onChallenge = (id, name, pin) {
+        challengedPin = pin;
+      };
+
+      final reqNoPin = SessionRequest(
+        protocolVersion: kProtocolVersion,
+        deviceId: 'unknown-1',
+        displayName: 'Unknown Device',
+        fingerprint: 'fp-unknown-1',
+        files: const [],
+      );
+
+      // 1. First evaluation with no PIN: triggers challenge and calls onChallenge
+      final decision1 = pairingManager.evaluate(reqNoPin);
+      expect(decision1.accepted, isFalse);
+      expect(decision1.challengePin, isTrue);
+      expect(decision1.reason, 'pin_required');
+      expect(challengedPin, isNotNull);
+      expect(challengedPin, hasLength(6));
+
+      // 2. Wrong PIN attempt 1
+      final reqWrong = SessionRequest(
+        protocolVersion: kProtocolVersion,
+        deviceId: 'unknown-1',
+        displayName: 'Unknown Device',
+        fingerprint: 'fp-unknown-1',
+        files: const [],
+        pin: '000000',
+      );
+      final decisionWrong1 = pairingManager.evaluate(reqWrong);
+      expect(decisionWrong1.accepted, isFalse);
+      expect(decisionWrong1.challengePin, isTrue);
+
+      // 3. Wrong PIN attempt 2
+      final decisionWrong2 = pairingManager.evaluate(reqWrong);
+      expect(decisionWrong2.accepted, isFalse);
+      expect(decisionWrong2.challengePin, isTrue);
+
+      // 4. Wrong PIN attempt 3 -> rejected with too_many_attempts
+      final decisionWrong3 = pairingManager.evaluate(reqWrong);
+      expect(decisionWrong3.accepted, isFalse);
+      expect(decisionWrong3.reason, 'too_many_attempts');
+
+      // Test correct PIN
+      final reqNoPin2 = SessionRequest(
+        protocolVersion: kProtocolVersion,
+        deviceId: 'unknown-2',
+        displayName: 'Unknown Device 2',
+        fingerprint: 'fp-unknown-2',
+        files: const [],
+      );
+      pairingManager.evaluate(reqNoPin2);
+      final pin2 = challengedPin!;
+
+      final reqCorrect = SessionRequest(
+        protocolVersion: kProtocolVersion,
+        deviceId: 'unknown-2',
+        displayName: 'Unknown Device 2',
+        fingerprint: 'fp-unknown-2',
+        files: const [],
+        pin: pin2,
+      );
+      final decisionCorrect = pairingManager.evaluate(reqCorrect);
+      expect(decisionCorrect.accepted, isTrue);
+    });
   });
 }
 

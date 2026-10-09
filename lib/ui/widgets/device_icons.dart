@@ -1,10 +1,23 @@
 /// Shared icon resolution so every surface shows the same device / file glyph.
 library;
 
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/protocol/models.dart';
 import '../theme.dart';
+
+/// Glyph for this device depending on host OS.
+IconData selfDeviceIcon() {
+  if (kIsWeb) return Icons.web_rounded;
+  if (Platform.isLinux) return Icons.laptop_rounded;
+  if (Platform.isWindows) return Icons.laptop_windows_rounded;
+  if (Platform.isMacOS) return Icons.laptop_mac_rounded;
+  if (Platform.isIOS) return Icons.phone_iphone_rounded;
+  return Icons.smartphone_rounded;
+}
 
 /// Canonical device glyph for a discovered peer.
 IconData deviceIconFor(DeviceInfo device) {
