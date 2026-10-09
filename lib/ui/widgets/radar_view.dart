@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/protocol/models.dart';
 import '../theme.dart';
+import 'device_icons.dart';
 
 class RadarView extends StatefulWidget {
   const RadarView({
@@ -34,7 +35,7 @@ class _RadarViewState extends State<RadarView>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 3200),
+    duration: AppMotion.radarSweep,
   )..repeat();
 
   @override
@@ -55,25 +56,36 @@ class _RadarViewState extends State<RadarView>
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: widget.size,
-      height: widget.size,
-      child: AnimatedBuilder(
-        animation: _controller,
-        builder: (context, _) {
-          return CustomPaint(
-            painter: _SpatialRadarPainter(
-              progress: _controller.value,
-              active: widget.active,
-              blips: _blipsFor(widget.devices),
-            ),
-            child: _SpatialBlipLayer(
-              devices: widget.devices,
-              radius: widget.size / 2,
-              onTap: widget.onDeviceTap,
-            ),
-          );
-        },
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    final effectiveActive = widget.active && !reduceMotion;
+    if (effectiveActive && !_controller.isAnimating) {
+      _controller.repeat();
+    } else if (!effectiveActive && _controller.isAnimating) {
+      _controller.stop();
+    }
+    return Semantics(
+      label:
+          'Nearby device radar, ${widget.devices.length} device${widget.devices.length == 1 ? '' : 's'} in range',
+      child: SizedBox(
+        width: widget.size,
+        height: widget.size,
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, _) {
+            return CustomPaint(
+              painter: _SpatialRadarPainter(
+                progress: _controller.value,
+                active: effectiveActive,
+                blips: _blipsFor(widget.devices),
+              ),
+              child: _SpatialBlipLayer(
+                devices: widget.devices,
+                radius: widget.size / 2,
+                onTap: widget.onDeviceTap,
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -83,7 +95,7 @@ class _RadarViewState extends State<RadarView>
     final blips = <_Blip>[];
     for (var i = 0; i < devices.length; i++) {
       final device = devices[i];
-      final hash = device.deviceId.codeUnits.fold<int>(7, (a, c) => a * 31 + c);
+      final hash = _stableHash(device.deviceId);
       final angle = (hash % 360) * math.pi / 180;
       final ring = 0.60 + (i % 2) * 0.16;
       blips.add(_Blip(angle: angle, ring: ring, id: device.deviceId));
@@ -97,6 +109,14 @@ class _Blip {
   final double angle;
   final double ring;
   final String id;
+}
+
+int _stableHash(String input) {
+  var hash = 7;
+  for (final unit in input.codeUnits) {
+    hash = hash * 31 + unit;
+  }
+  return hash;
 }
 
 /// Floating glass nodes placed on orbital tracks, tappable to initiate instant transfer.
@@ -121,7 +141,7 @@ class _SpatialBlipLayer extends StatelessWidget {
   }
 
   Widget _positioned(DeviceInfo device, int index) {
-    final hash = device.deviceId.codeUnits.fold<int>(7, (a, c) => a * 31 + c);
+    final hash = _stableHash(device.deviceId);
     final angle = (hash % 360) * math.pi / 180;
     final ring = radius * (0.60 + (index % 2) * 0.16);
     const avatarWidth = 72.0;
@@ -159,13 +179,16 @@ class _SpatialDeviceAvatar extends StatelessWidget {
           return Semantics(
             button: true,
             label: 'Send to ${device.displayName}',
-            child: GestureDetector(
-              onTap: onTap == null ? null : () => onTap!(device),
-              child: AnimatedScale(
-                scale: focused ? 1.15 : 1.0,
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeOutCubic,
-                child: _avatarBody(context, focused),
+            child: Tooltip(
+              message: 'Send to ${device.displayName}',
+              child: GestureDetector(
+                onTap: onTap == null ? null : () => onTap!(device),
+                child: AnimatedScale(
+                  scale: focused ? 1.15 : 1.0,
+                  duration: AppMotion.normal,
+                  curve: AppMotion.easeOut,
+                  child: _avatarBody(context, focused),
+                ),
               ),
             ),
           );
@@ -281,23 +304,7 @@ class _SpatialDeviceAvatar extends StatelessWidget {
     );
   }
 
-  IconData _iconFor(DeviceInfo device) {
-    final platform = device.platform?.toLowerCase() ?? '';
-    if (platform.contains('android') || platform.contains('tv')) {
-      return platform.contains('tv')
-          ? Icons.tv_rounded
-          : Icons.smartphone_rounded;
-    }
-    if (platform.contains('ios')) return Icons.phone_iphone_rounded;
-    if (platform.contains('mac') || platform.contains('darwin')) {
-      return Icons.laptop_mac_rounded;
-    }
-    if (platform.contains('win')) return Icons.laptop_windows_rounded;
-    if (platform.contains('linux')) return Icons.laptop_rounded;
-    return device.discoveredVia == DiscoveryChannel.ble
-        ? Icons.bluetooth_rounded
-        : Icons.devices_rounded;
-  }
+  IconData _iconFor(DeviceInfo device) => deviceIconFor(device);
 }
 
 class _SpatialRadarPainter extends CustomPainter {
@@ -404,18 +411,15 @@ class _SpatialRadarPainter extends CustomPainter {
 
   /// Conic holographic sweep with cyan-to-violet trail
   void _paintHolographicSweep(Canvas canvas, Offset center, double maxRadius) {
-    final angle = progress * 2 * math.pi;
     final sweep = Paint()
       ..shader = SweepGradient(
-        startAngle: angle,
-        endAngle: angle + 0.95,
         colors: [
           Colors.transparent,
           AppColors.accentPurple.withValues(alpha: 0.12),
           AppColors.accent.withValues(alpha: 0.32),
         ],
         stops: const [0.0, 0.45, 1.0],
-        transform: const GradientRotation(0),
+        transform: GradientRotation(progress * 2 * math.pi),
       ).createShader(Rect.fromCircle(center: center, radius: maxRadius));
 
     canvas.drawCircle(center, maxRadius * 0.88, sweep);
@@ -456,8 +460,14 @@ class _SpatialRadarPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_SpatialRadarPainter oldDelegate) =>
-      oldDelegate.progress != progress ||
-      oldDelegate.active != active ||
-      oldDelegate.blips.length != blips.length;
+  bool shouldRepaint(_SpatialRadarPainter oldDelegate) {
+    if (oldDelegate.progress != progress || oldDelegate.active != active) {
+      return true;
+    }
+    if (oldDelegate.blips.length != blips.length) return true;
+    for (var i = 0; i < blips.length; i++) {
+      if (oldDelegate.blips[i].id != blips[i].id) return true;
+    }
+    return false;
+  }
 }

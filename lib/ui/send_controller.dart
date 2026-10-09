@@ -13,9 +13,15 @@ import 'providers.dart';
 
 /// A file queued by the user.
 class SelectedFile {
-  const SelectedFile({required this.path, required this.fileName});
+  const SelectedFile(
+      {required this.path, required this.fileName, this.sizeBytes});
+
   final String path;
   final String fileName;
+
+  /// Known size in bytes, when the picker or the filesystem reported it.
+  /// Null means "unknown" — the UI degrades to a count-only summary.
+  final int? sizeBytes;
 }
 
 /// One in-flight (or finished) outbound file.
@@ -65,6 +71,19 @@ class SendState {
         error: clearError ? null : (error ?? this.error),
         busy: busy ?? this.busy,
       );
+
+  /// Total known staged bytes, or null when no file reported a size.
+  int? get totalStagedBytes {
+    var total = 0;
+    var known = false;
+    for (final file in files) {
+      if (file.sizeBytes != null) {
+        total += file.sizeBytes!;
+        known = true;
+      }
+    }
+    return known ? total : null;
+  }
 }
 
 class SendController extends Notifier<SendState> {
@@ -78,7 +97,12 @@ class SendController extends Notifier<SendState> {
     if (result == null) return;
     final picked = result.files
         .where((f) => f.path != null)
-        .map((f) => SelectedFile(path: f.path!, fileName: f.name))
+        .map(
+          (f) => SelectedFile(
+              path: f.path!,
+              fileName: f.name,
+              sizeBytes: f.size >= 0 ? f.size : null),
+        )
         .toList();
     state = state.copyWith(files: [...state.files, ...picked]);
   }

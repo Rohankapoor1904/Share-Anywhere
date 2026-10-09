@@ -7,6 +7,39 @@ import 'package:flutter/services.dart';
 import '../../core/protocol/models.dart';
 import '../format.dart';
 import '../theme.dart';
+import 'device_icons.dart';
+
+/// Consistent gradient icon header shared by every dialog in the app.
+class DialogHeaderIcon extends StatelessWidget {
+  const DialogHeaderIcon({
+    super.key,
+    required this.icon,
+    this.color = AppColors.accent,
+  });
+
+  final IconData icon;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            color.withValues(alpha: 0.28),
+            color.withValues(alpha: 0.10),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        shape: BoxShape.circle,
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Icon(icon, color: color, size: 22),
+    );
+  }
+}
 
 /// Asks the user to accept an incoming transfer.
 Future<bool> showIncomingRequestDialog(
@@ -102,8 +135,8 @@ Future<bool> showIncomingRequestDialog(
                     padding: const EdgeInsets.symmetric(vertical: 3),
                     child: Row(
                       children: [
-                        const Icon(
-                          Icons.insert_drive_file_outlined,
+                        Icon(
+                          fileIconFor(f.fileName),
                           size: 16,
                           color: AppColors.textMuted,
                         ),
@@ -352,6 +385,7 @@ class _ManualConnectDialogState extends State<_ManualConnectDialog> {
   final _portController = TextEditingController(text: '53317');
   final _nameController = TextEditingController();
   bool _isLocalSend = false;
+  String? _error;
 
   @override
   void dispose() {
@@ -363,8 +397,15 @@ class _ManualConnectDialogState extends State<_ManualConnectDialog> {
 
   void _submit() {
     final ip = _ipController.text.trim();
-    if (ip.isEmpty) return;
-    final port = int.tryParse(_portController.text.trim()) ?? 53317;
+    if (ip.isEmpty) {
+      setState(() => _error = 'Enter an IP address, e.g. 192.168.1.50.');
+      return;
+    }
+    final port = int.tryParse(_portController.text.trim()) ?? -1;
+    if (port < 1 || port > 65535) {
+      setState(() => _error = 'Port must be between 1 and 65535.');
+      return;
+    }
     final name = _nameController.text.trim();
 
     Navigator.pop(
@@ -382,22 +423,11 @@ class _ManualConnectDialogState extends State<_ManualConnectDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       scrollable: true,
-      title: Row(
+      title: const Row(
         children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: AppColors.accent.withValues(alpha: 0.15),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.lan_rounded,
-              color: AppColors.accent,
-              size: 22,
-            ),
-          ),
-          const SizedBox(width: 12),
-          const Text('Connect via IP'),
+          DialogHeaderIcon(icon: Icons.lan_rounded),
+          SizedBox(width: 12),
+          Text('Connect via IP'),
         ],
       ),
       content: Column(
@@ -413,6 +443,10 @@ class _ManualConnectDialogState extends State<_ManualConnectDialog> {
             controller: _ipController,
             autofocus: true,
             keyboardType: TextInputType.text,
+            textInputAction: TextInputAction.next,
+            onChanged: (_) {
+              if (_error != null) setState(() => _error = null);
+            },
             decoration: const InputDecoration(
               labelText: 'IP Address',
               hintText: 'e.g. 192.168.1.50',
@@ -440,6 +474,8 @@ class _ManualConnectDialogState extends State<_ManualConnectDialog> {
                 flex: 3,
                 child: TextField(
                   controller: _nameController,
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: (_) => _submit(),
                   decoration: const InputDecoration(
                     labelText: 'Name (Optional)',
                     hintText: 'Living Room TV',
@@ -449,12 +485,35 @@ class _ManualConnectDialogState extends State<_ManualConnectDialog> {
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          if (_error != null) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                const Icon(
+                  Icons.error_outline_rounded,
+                  size: 16,
+                  color: AppColors.danger,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    _error!,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.danger,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 4),
           CheckboxListTile(
             value: _isLocalSend,
             onChanged: (val) => setState(() => _isLocalSend = val ?? false),
             activeColor: AppColors.accent,
             contentPadding: EdgeInsets.zero,
+            controlAffinity: ListTileControlAffinity.leading,
             title: const Text(
               'Target runs LocalSend app',
               style: TextStyle(fontSize: 13, color: AppColors.textPrimary),
@@ -510,6 +569,11 @@ Future<DeviceInfo?> showDevicePicker(
                 separatorBuilder: (_, __) => const SizedBox(height: 8),
                 itemBuilder: (context, i) {
                   final peer = peers[i];
+                  final address = peer.bestAddress;
+                  final subtitle = [
+                    if (address != null) '$address:${peer.port}',
+                    peer.platform ?? peer.discoveredVia.name,
+                  ].join(' • ');
                   return Container(
                     decoration: BoxDecoration(
                       color: AppColors.surfaceHigh,
@@ -523,26 +587,25 @@ Future<DeviceInfo?> showDevicePicker(
                         horizontal: 16,
                         vertical: 4,
                       ),
-                      leading: Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: AppColors.accent.withValues(alpha: 0.15),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.devices_rounded,
-                          color: AppColors.accent,
-                        ),
+                      leading: IconBadge(
+                        icon: deviceIconFor(peer),
+                        color: AppColors.accent,
+                        size: 20,
+                        padding: 10,
                       ),
                       title: Text(
                         peer.displayName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           color: AppColors.textPrimary,
                         ),
                       ),
                       subtitle: Text(
-                        peer.platform ?? peer.discoveredVia.name,
+                        subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: AppColors.textMuted,
                           fontSize: 12,

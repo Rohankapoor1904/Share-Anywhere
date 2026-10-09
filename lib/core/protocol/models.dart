@@ -50,6 +50,7 @@ class DeviceInfo {
     for (final a in addresses) {
       if (a.contains('.') && !a.contains(':')) return a;
     }
+
     return addresses.first;
   }
 
@@ -77,6 +78,40 @@ class DeviceInfo {
 
   @override
   int get hashCode => deviceId.hashCode;
+}
+
+/// A path exposed by a paired peer's file browser.
+class RemoteFileEntry {
+  const RemoteFileEntry({
+    required this.name,
+    required this.relativePath,
+    required this.size,
+    required this.modified,
+    required this.isDirectory,
+  });
+
+  final String name;
+  final String relativePath;
+  final int size;
+  final DateTime modified;
+  final bool isDirectory;
+
+  Map<String, Object?> toJson() => {
+        'name': name,
+        'relativePath': relativePath,
+        'size': size,
+        'modified': modified.toUtc().toIso8601String(),
+        'isDirectory': isDirectory,
+      };
+
+  factory RemoteFileEntry.fromJson(Map<String, Object?> json) =>
+      RemoteFileEntry(
+        name: json['name']! as String,
+        relativePath: json['relativePath']! as String,
+        size: (json['size'] as num?)?.toInt() ?? 0,
+        modified: DateTime.parse(json['modified']! as String),
+        isDirectory: json['isDirectory'] as bool? ?? false,
+      );
 }
 
 /// How a peer was found.

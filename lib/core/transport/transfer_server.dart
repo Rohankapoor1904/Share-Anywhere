@@ -152,12 +152,100 @@ class TransferServer {
         await _replyJson(request.response, {
           'protocolVersion': kProtocolVersion,
           'service': 'localshare',
+          'capabilities': {
+            'remoteFiles': true,
+            'fileDownload': true,
+            'clipboardSync': false,
+            'notificationSync': false,
+            'keyboardMouseSync': false,
+          },
         });
+        return;
+      case 'GET /v1/files':
+        await _handleFiles(request);
+        return;
+      case 'GET /v1/files/download':
+        await _handleFileDownload(request);
         return;
       default:
         request.response.statusCode = HttpStatus.notFound;
         await request.response.close();
     }
+  }
+
+  Future<void> _handleFiles(HttpRequest request) async {
+    final relative = request.uri.queryParameters['path'] ?? '';
+    final path = _safePath(relative);
+    final directory = path == null ? null : Directory(path);
+    if (directory == null || !directory.existsSync()) {
+      request.response.statusCode = HttpStatus.badRequest;
+      await request.response.close();
+      return;
+    }
+    if (directory.statSync().type != FileSystemEntityType.directory) {
+      request.response.statusCode = HttpStatus.badRequest;
+      await request.response.close();
+      return;
+    }
+    final entries = <RemoteFileEntry>[];
+    await for (final entity in directory.list(followLinks: false)) {
+      final stat = await entity.stat();
+      final name = entity.uri.pathSegments.isEmpty
+          ? entity.path
+          : entity.uri.pathSegments.last;
+      final childRelative = relative.isEmpty ? name : '$relative/$name';
+      entries.add(RemoteFileEntry(
+        name: name,
+        relativePath: childRelative,
+        size: stat.type == FileSystemEntityType.file ? stat.size : 0,
+        modified: stat.modified,
+        isDirectory: stat.type == FileSystemEntityType.directory,
+      ));
+    }
+    entries.sort((a, b) {
+      if (a.isDirectory != b.isDirectory) return a.isDirectory ? -1 : 1;
+      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    });
+    await _replyJson(request.response, {
+      'protocolVersion': kControlProtocolVersion,
+      'path': relative,
+      'entries': entries.map((entry) => entry.toJson()).toList(),
+    });
+  }
+
+  Future<void> _handleFileDownload(HttpRequest request) async {
+    final relative = request.uri.queryParameters['path'];
+    final path = relative == null ? null : _safePath(relative);
+    final file = path == null ? null : File(path);
+    if (file == null ||
+        !file.existsSync() ||
+        file.statSync().type != FileSystemEntityType.file) {
+      request.response.statusCode = HttpStatus.notFound;
+      await request.response.close();
+      return;
+    }
+    request.response.headers.contentType = ContentType.binary;
+    request.response.contentLength = await file.length();
+    await request.response.addStream(file.openRead());
+    await request.response.close();
+  }
+
+  String? _safePath(String relative) {
+    final normalized = relative.replaceAll('\\', '/');
+    if (normalized.startsWith('/') ||
+        normalized.split('/').any((part) => part == '..')) {
+      return null;
+    }
+    final root = downloadDirectory.absolute;
+    final candidate =
+        File('${root.path}${Platform.pathSeparator}$normalized').absolute;
+    final rootPath = root.path.endsWith(Platform.pathSeparator)
+        ? root.path
+        : '${root.path}${Platform.pathSeparator}';
+    if (candidate.path != root.path && !candidate.path.startsWith(rootPath)) {
+      return null;
+    }
+    return candidate.path;
   }
 
   Future<void> _handleSession(HttpRequest request) async {

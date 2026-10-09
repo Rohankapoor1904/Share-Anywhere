@@ -7,6 +7,7 @@ library;
 
 /// Current protocol version negotiated in the `/session` request.
 const int kProtocolVersion = 1;
+const int kControlProtocolVersion = 1;
 
 /// mDNS service type used to advertise and browse this app.
 const String kMdnsServiceType = '_localshare._tcp';
@@ -40,3 +41,6 @@ const String kHeaderSessionId = 'x-localshare-session-id';
 
 /// Files are written with this suffix until verified, then renamed.
 const String kPartialSuffix = '.localshare.part';
+
+const String kFilesRoute = '/v1/files';
+const String kFileDownloadRoute = '/v1/files/download';

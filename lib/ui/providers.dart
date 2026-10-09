@@ -6,6 +6,7 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/node.dart';
 import '../core/platform/radio_adapter.dart';
@@ -16,11 +17,24 @@ import '../platform/create_adapter.dart';
 /// The device's display name; later this becomes user-editable.
 final deviceNameProvider = StateProvider<String>((ref) => 'My Device');
 
+const _storagePathKey = 'download_directory';
+
+final storagePathProvider = FutureProvider<String?>((ref) async {
+  final prefs = await SharedPreferences.getInstance();
+  return prefs.getString(_storagePathKey);
+});
+
 /// Where received files land and where the trust store is persisted.
 ///
 /// Falls back to a temp directory when the platform cannot report a documents
 /// directory (e.g. a headless Linux session without XDG user dirs).
 final storageDirProvider = FutureProvider<Directory>((ref) async {
+  final configuredPath = await ref.watch(storagePathProvider.future);
+  if (configuredPath != null && configuredPath.trim().isNotEmpty) {
+    final configured = Directory(configuredPath);
+    await configured.create(recursive: true);
+    return configured;
+  }
   Directory base;
   try {
     base = await getApplicationDocumentsDirectory();
@@ -31,6 +45,19 @@ final storageDirProvider = FutureProvider<Directory>((ref) async {
   await dir.create(recursive: true);
   return dir;
 });
+
+Future<void> saveStorageDirectory(WidgetRef ref, String path) async {
+  final directory = Directory(path);
+  await directory.create(recursive: true);
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setString(_storagePathKey, directory.path);
+  ref.invalidate(storagePathProvider);
+  ref.invalidate(storageDirProvider);
+  ref.invalidate(localShareNodeProvider);
+  ref.invalidate(nodeStartedProvider);
+  ref.invalidate(peersProvider);
+  ref.invalidate(capabilitiesProvider);
+}
 
 /// The engine node, constructed once the storage directory is known.
 final localShareNodeProvider = FutureProvider<LocalShareNode>((ref) async {
@@ -74,4 +101,19 @@ final peersProvider = StreamProvider<List<DeviceInfo>>((ref) async* {
 final capabilitiesProvider = FutureProvider<RadioCapabilities>((ref) async {
   final node = await ref.watch(localShareNodeProvider.future);
   return node.adapter.capabilities();
+});
+
+/// This device's LAN identity for the Devices tab pairing card.
+///
+/// Addresses exclude loopback aliases that are useless to a peer; the port
+/// and fingerprint are what a sender needs for manual connect + PIN trust.
+final myDeviceInfoProvider =
+    FutureProvider<({List<String> addresses, int port, String fingerprint})>(
+        (ref) async {
+  final node = await ref.watch(nodeStartedProvider.future);
+  final ips = (await node.getLocalIpAddresses())
+      .where((ip) => ip != '0.0.0.0' && ip != 'localhost')
+      .toList()
+    ..sort();
+  return (addresses: ips, port: node.port, fingerprint: node.fingerprint);
 });

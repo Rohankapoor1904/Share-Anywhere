@@ -22,6 +22,7 @@ class GlassCard extends StatelessWidget {
     this.gradient,
     this.onTap,
     this.borderWidth = 1.0,
+    this.enableBlur = true,
   });
 
   final Widget child;
@@ -35,19 +36,35 @@ class GlassCard extends StatelessWidget {
   final Gradient? gradient;
   final VoidCallback? onTap;
   final double borderWidth;
+  final bool enableBlur;
 
   @override
   Widget build(BuildContext context) {
     final effectiveBorderRadius = BorderRadius.circular(borderRadius);
+    final highContrast = MediaQuery.highContrastOf(context);
+    final reduceEffects = MediaQuery.of(context).disableAnimations;
+    final effectiveBlur = reduceEffects ? 0.0 : blur.clamp(0.0, 8.0);
+    final effectiveBorderColor = borderColor ??
+        (highContrast ? AppColors.glassBorderHighlight : AppColors.glassBorder);
+
+    // Resolve the background without painting a dead `color` underneath an
+    // opaque gradient. Explicit backgroundColor wins; otherwise fall back to
+    // the shared glass gradient. When both are supplied the color acts as a
+    // tint beneath the gradient.
+    final Gradient? resolvedGradient = gradient ??
+        (backgroundColor == null ? AppColors.glassCardGradient : null);
+    final Color? resolvedColor = resolvedGradient == null
+        ? (backgroundColor ?? AppColors.surfaceGlass)
+        : backgroundColor;
 
     Widget content = Container(
       padding: padding ?? const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: backgroundColor ?? AppColors.surfaceGlass,
+        color: resolvedColor,
         borderRadius: effectiveBorderRadius,
-        gradient: gradient ?? AppColors.glassCardGradient,
+        gradient: resolvedGradient,
         border: Border.all(
-          color: borderColor ?? AppColors.glassBorder,
+          color: effectiveBorderColor,
           width: borderWidth,
         ),
         boxShadow: [
@@ -69,11 +86,44 @@ class GlassCard extends StatelessWidget {
       child: child,
     );
 
-    if (blur > 0) {
+    // Top specular sheen — the "liquid" highlight. Overlaid outside the
+    // content layout so `Expanded` children inside `child` keep their
+    // bounded constraints.
+    content = Stack(
+      children: [
+        content,
+        Positioned(
+          top: 0,
+          left: 12,
+          right: 12,
+          child: IgnorePointer(
+            child: Container(
+              height: 1.2,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.transparent,
+                    Colors.white.withValues(
+                      alpha: highContrast ? 0.35 : 0.22,
+                    ),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+
+    if (enableBlur && effectiveBlur > 0) {
       content = ClipRRect(
         borderRadius: effectiveBorderRadius,
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+          filter: ImageFilter.blur(
+            sigmaX: effectiveBlur,
+            sigmaY: effectiveBlur,
+          ),
           child: content,
         ),
       );
@@ -101,7 +151,7 @@ class GlassCard extends StatelessWidget {
       );
     }
 
-    return content;
+    return RepaintBoundary(child: content);
   }
 }
 
@@ -144,14 +194,80 @@ class BentoTile extends StatelessWidget {
       glowColor: glowColor,
       onTap: onTap,
       padding: padding ?? const EdgeInsets.all(18),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header row
-          Row(
-            children: [
-              if (icon != null) ...[
-                Container(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compactHeader =
+              constraints.maxWidth.isFinite && constraints.maxWidth < 430;
+          final titleBlock = Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.2,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ),
+                    if (badgeText != null) ...[
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: (badgeColor ?? AppColors.accent)
+                                .withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: (badgeColor ?? AppColors.accent)
+                                  .withValues(alpha: 0.35),
+                              width: 0.8,
+                            ),
+                          ),
+                          child: Text(
+                            badgeText!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: badgeColor ?? AppColors.accent,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                if (subtitle != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle!,
+                    maxLines: compactHeader ? 2 : 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.textMuted,
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          );
+          final iconWidget = icon == null
+              ? null
+              : Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
@@ -166,94 +282,58 @@ class BentoTile extends StatelessWidget {
                     border: Border.all(
                       color: (iconColor ?? AppColors.accent)
                           .withValues(alpha: 0.4),
-                      width: 1,
                     ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: (iconColor ?? AppColors.accent)
-                            .withValues(alpha: 0.25),
-                        blurRadius: 10,
-                      ),
-                    ],
                   ),
-                  child: Icon(
-                    icon,
-                    size: 18,
-                    color: iconColor ?? AppColors.accent,
-                  ),
-                ),
-                const SizedBox(width: 12),
-              ],
-              Expanded(
-                child: Column(
+                  child: Icon(icon,
+                      size: 18, color: iconColor ?? AppColors.accent),
+                );
+
+          final header = compactHeader
+              ? Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Row(
                       children: [
-                        Flexible(
-                          child: Text(
-                            title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: -0.2,
-                              color: AppColors.textPrimary,
-                            ),
-                          ),
-                        ),
-                        if (badgeText != null) ...[
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: (badgeColor ?? AppColors.accent)
-                                  .withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
-                                color: (badgeColor ?? AppColors.accent)
-                                    .withValues(alpha: 0.35),
-                                width: 0.8,
-                              ),
-                            ),
-                            child: Text(
-                              badgeText!,
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                                color: badgeColor ?? AppColors.accent,
-                              ),
-                            ),
-                          ),
+                        if (iconWidget != null) ...[
+                          iconWidget,
+                          const SizedBox(width: 10),
                         ],
+                        titleBlock,
                       ],
                     ),
-                    if (subtitle != null) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        subtitle!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: AppColors.textMuted,
-                          fontWeight: FontWeight.w400,
+                    if (trailing != null)
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: trailing,
                         ),
                       ),
+                  ],
+                )
+              : Row(
+                  children: [
+                    if (iconWidget != null) ...[
+                      iconWidget,
+                      const SizedBox(width: 12),
+                    ],
+                    titleBlock,
+                    if (trailing != null) ...[
+                      const SizedBox(width: 8),
+                      Flexible(child: trailing!),
                     ],
                   ],
-                ),
-              ),
-              if (trailing != null) trailing!,
+                );
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              header,
+              const SizedBox(height: 14),
+              Expanded(child: child),
             ],
-          ),
-          const SizedBox(height: 14),
-          // Content
-          Expanded(child: child),
-        ],
+          );
+        },
       ),
     );
   }
@@ -315,12 +395,16 @@ class SpatialStatusPill extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textPrimary,
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
                 ),
               ),
               if (sublabel != null) ...[

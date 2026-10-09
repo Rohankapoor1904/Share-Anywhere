@@ -6,6 +6,13 @@ analyzer:
     strict-raw-types: true
   errors:
     todo: ignore
+  exclude:
+    - build/**
+    - android/**
+    - ios/**
+    - windows/**
+    - macos/**
+    - linux/**
 
 linter:
   rules:

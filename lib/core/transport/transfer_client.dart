@@ -220,4 +220,46 @@ class TransferClient {
     _client?.close(force: true);
     _client = null;
   }
+
+  Future<List<RemoteFileEntry>> listRemoteFiles({
+    required DeviceInfo peer,
+    String path = '',
+  }) async {
+    final client = pinnedHttpClient(expectedFingerprint);
+    Object? lastError;
+    try {
+      final addresses = <String>[
+        ...peer.addresses,
+        if (peer.bestAddress != null &&
+            !peer.addresses.contains(peer.bestAddress))
+          peer.bestAddress!,
+      ];
+      for (final address in addresses) {
+        try {
+          final uri = Uri.https(
+            '$address:${peer.port}',
+            kFilesRoute,
+            {'path': path},
+          );
+          final request = await client.getUrl(uri);
+          final response = await request.close();
+          final body = await utf8.decoder.bind(response).join();
+          if (response.statusCode != HttpStatus.ok) {
+            throw ProtocolError(
+                'remote file listing failed: ${response.statusCode}');
+          }
+          final json = decodeJson(body);
+          return (json['entries'] as List)
+              .map((entry) => RemoteFileEntry.fromJson(
+                  (entry as Map).cast<String, Object?>()))
+              .toList();
+        } on Object catch (error) {
+          lastError = error;
+        }
+      }
+      throw lastError ?? const ProtocolError('peer has no dialable address');
+    } finally {
+      client.close(force: true);
+    }
+  }
 }

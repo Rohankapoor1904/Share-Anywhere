@@ -25,17 +25,31 @@ Future<String> getHardwareDeviceName() async {
           : (info.model.isNotEmpty ? info.model : 'iPhone');
     } else if (Platform.isWindows) {
       final info = await plugin.windowsInfo;
-      final name = info.computerName;
-      return (name.isNotEmpty && name.toLowerCase() != 'localhost')
-          ? name
-          : 'Windows PC';
+      return _desktopName(await _hostName(), info.computerName, 'Windows PC');
     } else if (Platform.isMacOS) {
       final info = await plugin.macOsInfo;
-      return info.computerName.isNotEmpty ? info.computerName : 'Mac';
+      return _desktopName(info.computerName, 'Mac');
     } else if (Platform.isLinux) {
       final info = await plugin.linuxInfo;
-      return info.prettyName.isNotEmpty ? info.prettyName : 'Linux PC';
+      return _desktopName(await _hostName(), info.prettyName, 'Linux PC');
     }
-  } catch (_) {}
+  } on Object {
+    // Device metadata is optional; use the OS hostname below.
+  }
+  try {
+    final hostName = await _hostName();
+    if (hostName.isNotEmpty) return hostName;
+  } on Object {
+    // Keep the stable platform fallback when hostname lookup is unavailable.
+  }
   return Platform.operatingSystem;
+}
+
+Future<String> _hostName() async => Platform.localHostname.trim();
+
+String _desktopName(String preferred, String fallback, [String? lastResort]) {
+  final name = preferred.trim();
+  return name.isNotEmpty && name.toLowerCase() != 'localhost'
+      ? name
+      : (fallback.trim().isNotEmpty ? fallback : (lastResort ?? 'Unknown PC'));
 }

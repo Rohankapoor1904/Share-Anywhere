@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../../core/protocol/models.dart';
 import '../format.dart';
 import '../theme.dart';
+import 'device_icons.dart';
 
 /// A single row in the received-files list with liquid glass card styling.
 class ReceivedFileTile extends StatelessWidget {
@@ -16,6 +17,8 @@ class ReceivedFileTile extends StatelessWidget {
     this.size,
     this.onTap,
     this.onCopy,
+    this.onOpen,
+    this.onOpenFolder,
   });
 
   final String fileName;
@@ -23,6 +26,8 @@ class ReceivedFileTile extends StatelessWidget {
   final int? size;
   final VoidCallback? onTap;
   final VoidCallback? onCopy;
+  final VoidCallback? onOpen;
+  final VoidCallback? onOpenFolder;
 
   @override
   Widget build(BuildContext context) {
@@ -84,7 +89,7 @@ class ReceivedFileTile extends StatelessWidget {
           padding: const EdgeInsets.only(top: 2),
           child: Text(
             size != null ? '${formatBytes(size!)} • $path' : path,
-            maxLines: 1,
+            maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: AppColors.textMuted,
@@ -92,14 +97,40 @@ class ReceivedFileTile extends StatelessWidget {
             ),
           ),
         ),
-        trailing: onCopy != null
-            ? IconButton(
-                tooltip: 'Copy path',
-                icon: const Icon(Icons.copy_rounded,
-                    size: 18, color: AppColors.textSecondary),
-                onPressed: onCopy,
-              )
-            : null,
+        trailing: PopupMenuButton<String>(
+          tooltip: 'File actions',
+          onSelected: (action) {
+            if (action == 'open') onOpen?.call();
+            if (action == 'folder') onOpenFolder?.call();
+            if (action == 'copy') onCopy?.call();
+          },
+          itemBuilder: (context) => [
+            if (onOpen != null)
+              const PopupMenuItem(
+                value: 'open',
+                child: ListTile(
+                  leading: Icon(Icons.open_in_new_rounded),
+                  title: Text('Open file'),
+                ),
+              ),
+            if (onOpenFolder != null)
+              const PopupMenuItem(
+                value: 'folder',
+                child: ListTile(
+                  leading: Icon(Icons.folder_open_rounded),
+                  title: Text('Open containing folder'),
+                ),
+              ),
+            if (onCopy != null)
+              const PopupMenuItem(
+                value: 'copy',
+                child: ListTile(
+                  leading: Icon(Icons.copy_rounded),
+                  title: Text('Copy path'),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -280,24 +311,29 @@ class TransferTile extends StatelessWidget {
           ),
           if (!isDone && !isFailed) ...[
             const SizedBox(height: 12),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Stack(
-                children: [
-                  Container(
-                    height: 6,
-                    color: AppColors.surfaceHigh,
-                  ),
-                  FractionallySizedBox(
-                    widthFactor: fraction,
-                    child: Container(
+            TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0, end: fraction),
+              duration: AppMotion.fast,
+              curve: AppMotion.easeOut,
+              builder: (context, value, _) => ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Stack(
+                  children: [
+                    Container(
                       height: 6,
-                      decoration: const BoxDecoration(
-                        gradient: AppColors.spatialGradient,
+                      color: AppColors.surfaceHigh,
+                    ),
+                    FractionallySizedBox(
+                      widthFactor: value.clamp(0.0, 1.0),
+                      child: Container(
+                        height: 6,
+                        decoration: const BoxDecoration(
+                          gradient: AppColors.spatialGradient,
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
             const SizedBox(height: 8),
@@ -334,24 +370,7 @@ class TransferTile extends StatelessWidget {
     );
   }
 
-  IconData _fileIcon(String name) {
-    final ext = name.split('.').last.toLowerCase();
-    return switch (ext) {
-      'jpg' ||
-      'jpeg' ||
-      'png' ||
-      'gif' ||
-      'webp' ||
-      'svg' =>
-        Icons.image_rounded,
-      'mp4' || 'mkv' || 'avi' || 'mov' || 'webm' => Icons.movie_rounded,
-      'mp3' || 'wav' || 'flac' || 'aac' || 'ogg' => Icons.music_note_rounded,
-      'pdf' => Icons.picture_as_pdf_rounded,
-      'zip' || 'tar' || 'gz' || '7z' || 'rar' => Icons.folder_zip_rounded,
-      'apk' => Icons.android_rounded,
-      _ => Icons.insert_drive_file_rounded,
-    };
-  }
+  IconData _fileIcon(String name) => fileIconFor(name);
 }
 
 /// Small frosted badge chip describing how a peer was discovered.
