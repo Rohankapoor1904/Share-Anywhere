@@ -91,6 +91,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     switch (event) {
       case IncomingSessionRequested(:final transfer):
         unawaited(_promptIncoming(transfer));
+      case PinChallengeRequested(:final displayName, :final pin):
+        if (mounted) {
+          unawaited(showReceiverPinDialog(
+            context,
+            deviceName: displayName,
+            pin: pin,
+          ));
+        }
       case ReceiveProgress(:final progress):
         ref.read(receiveProgressProvider.notifier).update(progress);
       case SendProgress(:final fileId, :final progress):
@@ -102,6 +110,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ref.read(sentHistoryProvider.notifier).add(
                 fileName: job.fileName,
                 size: job.total,
+                peerName: job.peerName,
               );
         }
         if (mounted) {
@@ -120,6 +129,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       case SendFailed(:final fileId, :final error):
         send.markFailed(fileId, error);
       case FileReceived(:final file, :final path):
+        ref.read(receiveProgressProvider.notifier).remove(file.id);
         ref.read(receivedFilesHistoryProvider.notifier).add(file, path);
         if (mounted) {
           showTransferNotice(
@@ -150,6 +160,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final node = await ref.read(nodeStartedProvider.future);
     if (accepted) {
       await node.approve(transfer);
+    } else {
+      await node.reject(transfer, reason: 'declined');
     }
   }
 
@@ -172,9 +184,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         });
       }
       if (next.error != null && next.error != prev?.error) {
+        final displayMsg = next.error!.contains('declined')
+            ? 'Receiver declined'
+            : 'Transfer failed: ${next.error}';
         showTransferNotice(
           context,
-          'Transfer failed: ${next.error}',
+          displayMsg,
           icon: Icons.error_outline_rounded,
           color: AppColors.danger,
           duration: const Duration(seconds: 5),

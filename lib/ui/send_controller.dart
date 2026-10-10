@@ -26,9 +26,10 @@ class SelectedFile {
 
 /// One in-flight (or finished) outbound file.
 class OutboundJob {
-  OutboundJob({required this.fileName, required this.total});
+  OutboundJob({required this.fileName, required this.total, this.peerName});
   final String fileName;
   final int total;
+  final String? peerName;
   int transferred = 0;
   double bytesPerSecond = 0;
   String status = 'queued';
@@ -47,6 +48,7 @@ class SendState {
     this.pinRequest,
     this.error,
     this.busy = false,
+    this.peerName,
   });
 
   final List<SelectedFile> files;
@@ -54,6 +56,7 @@ class SendState {
   final PinRequest? pinRequest;
   final String? error;
   final bool busy;
+  final String? peerName;
 
   SendState copyWith({
     List<SelectedFile>? files,
@@ -63,6 +66,7 @@ class SendState {
     String? error,
     bool clearError = false,
     bool? busy,
+    String? peerName,
   }) =>
       SendState(
         files: files ?? this.files,
@@ -70,6 +74,7 @@ class SendState {
         pinRequest: clearPin ? null : (pinRequest ?? this.pinRequest),
         error: clearError ? null : (error ?? this.error),
         busy: busy ?? this.busy,
+        peerName: peerName ?? this.peerName,
       );
 
   /// Total known staged bytes, or null when no file reported a size.
@@ -122,7 +127,8 @@ class SendController extends Notifier<SendState> {
     final node = await ref.read(nodeStartedProvider.future);
     if (state.files.isEmpty) return;
 
-    state = state.copyWith(busy: true, clearError: true);
+    state = state.copyWith(
+        busy: true, clearError: true, peerName: peer.displayName);
     try {
       await node.send(
         peer: peer,
@@ -158,11 +164,15 @@ class SendController extends Notifier<SendState> {
   /// Apply an engine event to the job table.
   void applyProgress(String fileId, TransferProgress progress) {
     final jobs = Map<String, OutboundJob>.from(state.jobs);
-    jobs[fileId] =
-        OutboundJob(fileName: progress.fileName, total: progress.total)
-          ..transferred = progress.transferred
-          ..bytesPerSecond = progress.bytesPerSecond
-          ..status = 'sending';
+    final existing = jobs[fileId];
+    jobs[fileId] = OutboundJob(
+      fileName: progress.fileName,
+      total: progress.total,
+      peerName: existing?.peerName ?? state.peerName,
+    )
+      ..transferred = progress.transferred
+      ..bytesPerSecond = progress.bytesPerSecond
+      ..status = 'sending';
     state = state.copyWith(jobs: jobs);
   }
 

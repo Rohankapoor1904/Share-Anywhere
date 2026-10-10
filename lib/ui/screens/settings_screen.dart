@@ -45,6 +45,8 @@ class SettingsScreen extends ConsumerWidget {
           const SizedBox(height: 18),
           _DeviceNameCard(name: name),
           const SizedBox(height: 14),
+          const _PairingPolicyCard(),
+          const SizedBox(height: 14),
           if (storageDir != null) ...[
             _DownloadDirCard(
               path: storageDir.path,
@@ -129,6 +131,72 @@ class _SettingsCardHeader extends StatelessWidget {
         ),
         if (trailing != null) trailing!,
       ],
+    );
+  }
+}
+
+class _PairingPolicyCard extends ConsumerWidget {
+  const _PairingPolicyCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final pairingSettings = ref.watch(pairingSettingsProvider);
+
+    return GlassCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _SettingsCardHeader(
+            icon: Icons.shield_outlined,
+            color: AppColors.accent,
+            title: 'Pairing & Security Policy',
+          ),
+          const SizedBox(height: 12),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            // ignore: deprecated_member_use
+            activeColor: AppColors.accent,
+            title: const Text(
+              'Auto-accept trusted peers',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            subtitle: const Text(
+              'Automatically accept transfers from devices previously paired or saved in trusted store',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+            ),
+            value: pairingSettings.autoAcceptTrusted,
+            onChanged: (val) => ref
+                .read(pairingSettingsProvider.notifier)
+                .setAutoAcceptTrusted(val),
+          ),
+          const Divider(color: AppColors.glassBorder),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            // ignore: deprecated_member_use
+            activeColor: AppColors.warning,
+            title: const Text(
+              'Auto-accept all transfers',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            subtitle: const Text(
+              'Skip PIN verification for unknown devices (less secure)',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+            ),
+            value: pairingSettings.autoAcceptAll,
+            onChanged: (val) => ref
+                .read(pairingSettingsProvider.notifier)
+                .setAutoAcceptAll(val),
+          ),
+        ],
+      ),
     );
   }
 }

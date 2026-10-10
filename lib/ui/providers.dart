@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../core/node.dart';
 import '../core/platform/radio_adapter.dart';
 import '../core/protocol/models.dart';
+import '../core/session/pairing_manager.dart';
 import '../core/session/trust_store.dart';
 import '../platform/create_adapter.dart';
 
@@ -59,10 +60,60 @@ Future<void> saveStorageDirectory(WidgetRef ref, String path) async {
   ref.invalidate(capabilitiesProvider);
 }
 
+class PairingSettingsController extends Notifier<PairingSettings> {
+  static const _trustedKey = 'pairing_auto_accept_trusted';
+  static const _allKey = 'pairing_auto_accept_all';
+
+  @override
+  PairingSettings build() {
+    final settings = PairingSettings();
+    unawaited(_load(settings));
+    return settings;
+  }
+
+  Future<void> _load(PairingSettings settings) async {
+    final prefs = await SharedPreferences.getInstance();
+    final autoAcceptTrusted = prefs.getBool(_trustedKey) ?? true;
+    final autoAcceptAll = prefs.getBool(_allKey) ?? false;
+    settings.autoAcceptTrusted = autoAcceptTrusted;
+    settings.autoAcceptAll = autoAcceptAll;
+    state = PairingSettings(
+      autoAcceptTrusted: autoAcceptTrusted,
+      autoAcceptAll: autoAcceptAll,
+    );
+  }
+
+  Future<void> setAutoAcceptTrusted(bool value) async {
+    state.autoAcceptTrusted = value;
+    state = PairingSettings(
+      autoAcceptTrusted: value,
+      autoAcceptAll: state.autoAcceptAll,
+    );
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_trustedKey, value);
+  }
+
+  Future<void> setAutoAcceptAll(bool value) async {
+    state.autoAcceptAll = value;
+    state = PairingSettings(
+      autoAcceptTrusted: state.autoAcceptTrusted,
+      autoAcceptAll: value,
+    );
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_allKey, value);
+  }
+}
+
+final pairingSettingsProvider =
+    NotifierProvider<PairingSettingsController, PairingSettings>(
+  PairingSettingsController.new,
+);
+
 /// The engine node, constructed once the storage directory is known.
 final localShareNodeProvider = FutureProvider<LocalShareNode>((ref) async {
   final dir = await ref.watch(storageDirProvider.future);
   final initialName = ref.read(deviceNameProvider);
+  final initialPairingSettings = ref.read(pairingSettingsProvider);
   final node = LocalShareNode(
     config: NodeConfig(
       displayName: initialName,
@@ -72,9 +123,14 @@ final localShareNodeProvider = FutureProvider<LocalShareNode>((ref) async {
     trustPersistence: FileTrustPersistence(
       File('${dir.path}${Platform.pathSeparator}trust.json'),
     ),
+    pairingSettings: initialPairingSettings,
   );
   ref.listen(deviceNameProvider, (_, next) {
     node.setDisplayName(next);
+  });
+  ref.listen(pairingSettingsProvider, (_, next) {
+    node.pairingManager.settings.autoAcceptTrusted = next.autoAcceptTrusted;
+    node.pairingManager.settings.autoAcceptAll = next.autoAcceptAll;
   });
   ref.onDispose(() => unawaited(node.stop()));
   return node;

@@ -16,7 +16,7 @@ import 'trust_store.dart';
 class PairingSettings {
   PairingSettings({
     this.autoAcceptTrusted = true,
-    this.autoAcceptAll = true,
+    this.autoAcceptAll = false,
     this.pinLength = 6,
     this.maxPinAttempts = 3,
   });
@@ -76,6 +76,10 @@ class PairingManager {
     challenge.attempts++;
 
     if (!constantTimeEquals(challenge.pin, request.pin!)) {
+      if (challenge.attempts >= settings.maxPinAttempts) {
+        _challenges.remove(request.deviceId);
+        return const SessionDecision.reject('too_many_attempts');
+      }
       return const SessionDecision.challenge();
     }
     return const SessionDecision.accept();

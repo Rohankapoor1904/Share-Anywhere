@@ -56,6 +56,17 @@ class IncomingSessionRequested extends EngineEvent {
   final IncomingTransfer transfer;
 }
 
+class PinChallengeRequested extends EngineEvent {
+  PinChallengeRequested({
+    required this.deviceId,
+    required this.displayName,
+    required this.pin,
+  });
+  final String deviceId;
+  final String displayName;
+  final String pin;
+}
+
 class ReceiveProgress extends EngineEvent {
   ReceiveProgress(this.progress);
   final TransferProgress progress;
@@ -108,7 +119,15 @@ class LocalShareNode implements TransferTarget, LocalSendHost {
           trustStore: TrustStore(trustPersistence),
           settings: pairingSettings,
         ),
-        _events = StreamController.broadcast();
+        _events = StreamController.broadcast() {
+    pairingManager.onChallenge = (deviceId, displayName, pin) {
+      _events.add(PinChallengeRequested(
+        deviceId: deviceId,
+        displayName: displayName,
+        pin: pin,
+      ));
+    };
+  }
 
   final NodeConfig config;
   final RadioAdapter adapter;
@@ -126,6 +145,8 @@ class LocalShareNode implements TransferTarget, LocalSendHost {
   LocalSendDiscovery? _localSendDiscovery;
   String _deviceId = '';
   final Map<String, IncomingTransfer> _activeSessions = {};
+  final Map<String, RateMeter> _receiveRateMeters = {};
+  final Map<String, String> _incomingFileNames = {};
 
   Stream<EngineEvent> get events => _events.stream;
   Stream<DiscoveryEvent>? get discoveryEvents => _discovery?.events;
@@ -478,35 +499,51 @@ class LocalShareNode implements TransferTarget, LocalSendHost {
       } finally {
         await client.close();
       }
-    } on Object catch (_) {
-      // If native TLS fails or is rejected, automatically fallback to LocalSend protocol
-      try {
-        final fallbackPeer = peer.copyWith(
-          platform: 'localsend',
-          port: kLocalSendPort,
-        );
-        await _sendLocalSend(
-            peer: fallbackPeer, files: files, requestPin: requestPin);
-      } catch (_) {
-        rethrow;
+    } on Exception catch (e) {
+      final isNetworkError = e is SocketException ||
+          e is HandshakeException ||
+          e is TlsException ||
+          e is HttpException ||
+          (e is ProtocolError && e.message.contains('Failed to connect'));
+      if (isNetworkError) {
+        try {
+          final fallbackPeer = peer.copyWith(
+            platform: 'localsend',
+            port: kLocalSendPort,
+          );
+          await _sendLocalSend(
+              peer: fallbackPeer, files: files, requestPin: requestPin);
+          return;
+        } catch (_) {
+          rethrow;
+        }
       }
+      rethrow;
     }
   }
 
   // ── TransferTarget (receiver side) ──────────────────────────────
   @override
-  Future<SessionDecision> onSessionRequest(SessionRequest request) async {
-    final sessionId = generateToken(byteLength: 12);
+  Future<SessionDecision> onSessionRequest(
+    String sessionId,
+    SessionRequest request,
+  ) async {
     _activeSessions[sessionId] = IncomingTransfer(
       sessionId: sessionId,
       request: request,
       files: request.files,
     );
+    for (final file in request.files) {
+      _incomingFileNames[file.id] = file.fileName;
+    }
     final decision = pairingManager.evaluate(request);
     if (decision.accepted) {
       _events.add(IncomingSessionRequested(
         IncomingTransfer(
-            sessionId: sessionId, request: request, files: request.files),
+          sessionId: sessionId,
+          request: request,
+          files: request.files,
+        ),
       ));
       pairingManager.clearChallenge(request.deviceId);
     }
@@ -515,12 +552,15 @@ class LocalShareNode implements TransferTarget, LocalSendHost {
 
   @override
   void onProgress(String fileId, int received, int total) {
+    final rateMeter = _receiveRateMeters.putIfAbsent(fileId, RateMeter.new);
+    rateMeter.add(received);
+    final fileName = _incomingFileNames[fileId] ?? fileId;
     _events.add(ReceiveProgress(TransferProgress(
       fileId: fileId,
-      fileName: fileId,
+      fileName: fileName,
       transferred: received,
       total: total,
-      bytesPerSecond: 0,
+      bytesPerSecond: rateMeter.rate,
     )));
   }
 
@@ -531,7 +571,24 @@ class LocalShareNode implements TransferTarget, LocalSendHost {
 
   @override
   void onSessionEnd(String sessionId, {String? error}) {
-    _activeSessions.remove(sessionId);
+    final transfer = _activeSessions.remove(sessionId);
+    if (transfer != null) {
+      for (final file in transfer.files) {
+        _receiveRateMeters.remove(file.id);
+        _incomingFileNames.remove(file.id);
+      }
+    }
+  }
+
+  /// Reject a pending or active session on the receiver, cleaning up and notifying peer.
+  Future<void> reject(IncomingTransfer transfer,
+      {String reason = 'declined'}) async {
+    _activeSessions.remove(transfer.sessionId);
+    for (final file in transfer.files) {
+      _receiveRateMeters.remove(file.id);
+      _incomingFileNames.remove(file.id);
+    }
+    await _server?.cancelSession(transfer.sessionId, reason: reason);
   }
 
   /// Approve a pending session on the receiver, delivering trust on success.

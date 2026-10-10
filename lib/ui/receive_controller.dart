@@ -30,6 +30,11 @@ class ReceiveController extends Notifier<Map<String, TransferProgress>> {
     state = {...state, progress.fileId: progress};
   }
 
+  void remove(String fileId) {
+    final updated = Map<String, TransferProgress>.from(state)..remove(fileId);
+    state = updated;
+  }
+
   void clear() => state = {};
 }
 

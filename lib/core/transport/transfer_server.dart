@@ -26,7 +26,10 @@ import '../util/errors.dart';
 /// manager) to decide whether to accept, and to observe progress.
 abstract class TransferTarget {
   /// Called for each new session request. Return the decision.
-  Future<SessionDecision> onSessionRequest(SessionRequest request);
+  Future<SessionDecision> onSessionRequest(
+    String sessionId,
+    SessionRequest request,
+  );
 
   /// Bytes appended for [fileId] (cumulative from 0, not from offset).
   void onProgress(String fileId, int received, int total) {}
@@ -266,7 +269,8 @@ class TransferServer {
       return;
     }
 
-    final decision = await target.onSessionRequest(sessionRequest);
+    final sessionId = _newSessionId();
+    final decision = await target.onSessionRequest(sessionId, sessionRequest);
     if (decision.challengePin) {
       await _replyJson(request.response, {
         'sessionId': '',
@@ -293,7 +297,6 @@ class TransferServer {
       return;
     }
 
-    final sessionId = _newSessionId();
     final session = _ActiveSession(sessionRequest, sessionId);
     _sessions[session.sessionId] = session;
 
@@ -395,6 +398,15 @@ class TransferServer {
     await _replyJson(request.response, CommitResponse(verified: true).toJson());
   }
 
+  Future<void> cancelSession(String sessionId,
+      {String reason = 'declined'}) async {
+    final session = _sessions[sessionId];
+    if (session != null) {
+      await _closeSession(session);
+      target.onSessionEnd(sessionId, error: reason);
+    }
+  }
+
   Future<void> _handleCancel(HttpRequest request) async {
     final session = _requireSession(request);
     await _closeSession(session);
@@ -409,7 +421,7 @@ class TransferServer {
         request.headers.value(kHeaderSessionId);
     final session = id == null ? null : _sessions[id];
     if (session == null) throw ProtocolError('unknown or expired session');
-    if (session.cancelled) throw ProtocolError('session cancelled');
+    if (session.cancelled) throw ProtocolError('Receiver declined');
     return session;
   }
 

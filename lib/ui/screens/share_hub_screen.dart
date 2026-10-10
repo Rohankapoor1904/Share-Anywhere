@@ -328,19 +328,20 @@ class ShareHubScreen extends ConsumerWidget {
   Widget _telemetryTile(WidgetRef ref) {
     final send = ref.watch(sendControllerProvider);
     final inFlightJobs = send.jobs.values.toList();
+    final receiveProgresses =
+        ref.watch(receiveProgressProvider).values.toList();
     final history = ref.watch(receivedFilesHistoryProvider);
+    final totalActive = inFlightJobs.length + receiveProgresses.length;
 
     return BentoTile(
       title: 'Transfer Telemetry',
-      subtitle: inFlightJobs.isNotEmpty
-          ? '${inFlightJobs.length} active transfer(s) in progress'
+      subtitle: totalActive > 0
+          ? '$totalActive active transfer(s) in progress'
           : 'High-speed local encrypted pipeline active',
       icon: Icons.speed_rounded,
       iconColor: AppColors.success,
-      badgeText:
-          inFlightJobs.isNotEmpty ? '${inFlightJobs.length} Active' : 'Standby',
-      badgeColor:
-          inFlightJobs.isNotEmpty ? AppColors.accent : AppColors.success,
+      badgeText: totalActive > 0 ? '$totalActive Active' : 'Standby',
+      badgeColor: totalActive > 0 ? AppColors.accent : AppColors.success,
       trailing: TextButton(
         style: TextButton.styleFrom(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -352,7 +353,7 @@ class ShareHubScreen extends ConsumerWidget {
           style: TextStyle(fontSize: 11, color: AppColors.accent),
         ),
       ),
-      child: inFlightJobs.isNotEmpty
+      child: totalActive > 0
           ? ListView(
               padding: EdgeInsets.zero,
               children: [
@@ -363,6 +364,17 @@ class ShareHubScreen extends ConsumerWidget {
                     total: job.total,
                     speed: job.bytesPerSecond,
                     status: job.status,
+                  ),
+                for (final progress in receiveProgresses)
+                  TransferTile(
+                    fileName: progress.fileName,
+                    transferred: progress.transferred,
+                    total: progress.total,
+                    speed: progress.bytesPerSecond,
+                    status: progress.transferred >= progress.total &&
+                            progress.total > 0
+                        ? 'done'
+                        : 'receiving',
                   ),
               ],
             )
