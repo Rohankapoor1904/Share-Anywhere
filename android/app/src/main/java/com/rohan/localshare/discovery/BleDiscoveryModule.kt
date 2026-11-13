@@ -202,3 +202,4 @@ class BleDiscoveryModule(reactContext: ReactApplicationContext) : ReactContextBa
         }
     }
 }
+

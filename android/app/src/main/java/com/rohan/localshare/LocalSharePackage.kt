@@ -38,3 +38,4 @@ class LocalSharePackage : ReactPackage {
         return emptyList()
     }
 }
+

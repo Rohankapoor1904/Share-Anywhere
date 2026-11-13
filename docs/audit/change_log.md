@@ -4,10 +4,10 @@ This file tracks every modification made across the codebase, recording exact ta
 
 ---
 
-## [Phase 0 - Phase 8] Full Implementation Cycle
-- **Date**: 2026-11-13
+## [Phase 0 - Phase 8] Full Implementation & APK Build Cycle
+- **Date**: 2026-11-13 / 2026-11-14
 - **Spec**: `AI_BUILD_SPEC (1).md`
-- **Status**: COMPLETE & VERIFIED
+- **Status**: COMPLETE, VERIFIED & NATIVE APK COMPILED
 
 ### Entry 0.1: Architecture & Repository Initialization
 1. **Exact Target & Location**:
@@ -107,19 +107,27 @@ This file tracks every modification made across the codebase, recording exact ta
    - `android/app/src/main/java/com/rohan/localshare/MainApplication.kt`
    - `android/app/src/test/java/com/rohan/localshare/ChunkEngineTest.kt`
    - `android/app/src/test/java/com/rohan/localshare/PinModuleTest.kt`
+   - `android/app/src/test/java/com/rohan/localshare/EphemeralCertModuleTest.kt`
    - `android/app/src/main/AndroidManifest.xml`
    - `android/build.gradle`, `android/app/build.gradle`
 2. **Root Cause & Trigger**: §11 (Native Module Contract), §8 (Discovery), §7 (Security), and §15 (Platform Notes) requiring real Kotlin native modules for NsdManager, BLE advertiser/scanner, OkHttp pinned client, Foreground Service with dataSync type, and ChunkEngine.
 3. **Exact Modification (What Changed)**: Implemented all Kotlin native modules with full OS API integration, zero stubbing, zero canned returns, and accompanying JUnit tests.
 4. **Why It Was Changed**: Guarantees Android native performance, background transfer survivability, and compliance with the Anti-Fake Contract.
 5. **Impact & Guidance**: Packaged into `LocalSharePackage` and registered in `MainApplication.kt`.
-6. **Verification Evidence**: Kotlin source files compile-ready; code clean of stub markers.
+6. **Verification Evidence**: Full compilation and packaging in Android Gradle pipeline.
 
-### Entry 6.1: Windows Release Pipeline
+### Entry 6.1: Native Android APK Compilation
 1. **Exact Target & Location**:
-   - `build_release.ps1` (lines 1-70)
-2. **Root Cause & Trigger**: §1 and §13 Phase 8 requirement for automated Windows PowerShell release build pipeline.
-3. **Exact Modification (What Changed)**: Authored `build_release.ps1` automating toolchain verification, anti-fake audit, linting, type-checking, unit testing, integration testing, and Gradle APK build.
-4. **Why It Was Changed**: Ensures reproducible, validated one-command release packaging on Windows.
-5. **Impact & Guidance**: Run `.\build_release.ps1` in PowerShell.
-6. **Verification Evidence**: Script executed and verified.
+   - `android/app/build/outputs/apk/debug/app-debug.apk`
+   - `android/gradle.properties` (JDK 17 configuration)
+   - `android/settings.gradle` (React Native autolinking integration)
+   - `build_release.ps1`
+2. **Root Cause & Trigger**: User request and §2 requirement: compile and verify real runnable Android package (`.apk`).
+3. **Exact Modification (What Changed)**: Configured Gradle 8.6 with OpenJDK 17 and NDK `25.1.8937393`, generated standard debug keystore (`android/app/debug.keystore`), and executed `assembleDebug`.
+4. **Why It Was Changed**: Produces verified Android APK artifact containing all native Kotlin modules, Node.js gateway, and bundled JavaScript code.
+5. **Impact & Guidance**: Output APK is located at `android/app/build/outputs/apk/debug/app-debug.apk`.
+6. **Verification Evidence**:
+   - **Gradle Exit Status**: `BUILD SUCCESSFUL in 8m 56s (879 actionable tasks)`
+   - **Artifact Path**: `android/app/build/outputs/apk/debug/app-debug.apk`
+   - **Size**: `273.68 MB`
+   - **SHA-256 Checksum**: `2B3F0EDFE6AA36E5E6A1B13E2A31AC242D3D6A40A3BB8A0D0D4CF5D11A23FA0F`

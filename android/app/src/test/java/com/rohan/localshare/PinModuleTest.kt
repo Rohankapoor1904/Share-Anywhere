@@ -24,3 +24,4 @@ class PinModuleTest {
         assertTrue(pin.all { it.isDigit() })
     }
 }
+

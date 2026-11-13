@@ -45,3 +45,4 @@ class StorageModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
         }
     }
 }
+

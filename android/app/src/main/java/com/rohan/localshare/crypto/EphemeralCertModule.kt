@@ -79,3 +79,4 @@ class EphemeralCertModule(reactContext: ReactApplicationContext) : ReactContextB
         return cachedKeyPair
     }
 }
+

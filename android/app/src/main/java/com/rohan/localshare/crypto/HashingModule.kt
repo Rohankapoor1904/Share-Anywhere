@@ -80,3 +80,4 @@ class HashingModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
         }
     }
 }
+

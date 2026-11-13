@@ -18,3 +18,4 @@ class MainActivity : ReactActivity() {
         return DefaultReactActivityDelegate(this, mainComponentName, fabricEnabled)
     }
 }
+

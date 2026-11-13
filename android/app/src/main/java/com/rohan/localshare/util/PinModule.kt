@@ -53,3 +53,4 @@ class PinModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaMod
         }
     }
 }
+
