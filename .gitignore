@@ -1,0 +1,34 @@
+# Node / npm
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Expo
+.expo/
+dist/
+web-build/
+
+# Native builds
+android/app/build/
+android/.gradle/
+android/build/
+android/local.properties
+android/app/*.keystore
+android/app/*.jks
+ios/build/
+ios/Pods/
+
+# Temporary / OS
+.DS_Store
+Thumbs.db
+*.local
+*.log
+*.tmp
+*.part
+*.localshare.part
+
+# Coverage / Tests
+coverage/
+.jest/

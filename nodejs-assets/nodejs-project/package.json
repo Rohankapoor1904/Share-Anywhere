@@ -1,0 +1,7 @@
+{
+  "name": "localshare-node-gateway",
+  "version": "1.2.84",
+  "description": "Embedded LocalShare and LocalSend v2.2 transfer gateway",
+  "main": "main.js",
+  "dependencies": {}
+}

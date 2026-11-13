@@ -1,0 +1,31 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  js:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 18, cache: npm }
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run type-check
+      - run: npm test -- --ci
+      - run: npm run test:integration -- --ci
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 17 }
+      - run: cd android && ./gradlew test lint assembleDebug
+  anti-fake:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Guard against fake code
+        run: |
+          ! grep -rnE "TODO|FIXME|not implemented|placeholder" \
+            src/ nodejs-assets/ android/app/src/main/java/ \
+            --include=*.js --include=*.jsx --include=*.kt \
+            | grep -v "// justified:"

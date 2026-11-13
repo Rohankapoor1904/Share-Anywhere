@@ -1,0 +1,72 @@
+{
+  "expo": {
+    "name": "LocalShare",
+    "slug": "localshare",
+    "version": "1.2.84",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0f172a"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.rohan.localshare",
+      "infoPlist": {
+        "NSLocalNetworkUsageDescription": "LocalShare requires local network access to discover nearby devices and transfer files directly.",
+        "NSBonjourServices": [
+          "_localshare._tcp",
+          "_localsend._tcp"
+        ],
+        "NSBluetoothAlwaysUsageDescription": "LocalShare uses Bluetooth Low Energy for nearby peer discovery.",
+        "NSBluetoothPeripheralUsageDescription": "LocalShare uses Bluetooth to advertise its presence to nearby devices.",
+        "NSCameraUsageDescription": "LocalShare requires camera access to scan pairing QR codes."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0f172a"
+      },
+      "package": "com.rohan.localshare",
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.CHANGE_NETWORK_STATE",
+        "android.permission.ACCESS_WIFI_STATE",
+        "android.permission.CHANGE_WIFI_MULTICAST_STATE",
+        "android.permission.NEARBY_WIFI_DEVICES",
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_SCAN",
+        "android.permission.BLUETOOTH_ADVERTISE",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_AUDIO",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_DATA_SYNC",
+        "android.permission.WAKE_LOCK",
+        "android.permission.POST_NOTIFICATIONS"
+      ]
+    },
+    "plugins": [
+      [
+        "react-native-vision-camera",
+        {
+          "cameraPermissionText": "LocalShare requires camera access to scan pairing QR codes."
+        }
+      ]
+    ]
+  }
+}
