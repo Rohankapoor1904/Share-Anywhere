@@ -15,3 +15,4 @@
 3. **Documentation Lockstep**:
    - Maintain `docs/audit/change_log.md` with granular line-level details on every edit.
    - Sync `BRAIN.md` and `docs/` in the same turn.
+

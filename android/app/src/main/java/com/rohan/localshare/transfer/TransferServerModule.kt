@@ -245,5 +245,15 @@ class TransferServerModule(
                 .emit(eventName, params)
         }
     }
+
+    @ReactMethod
+    fun addListener(eventName: String) {
+        // Required for React Native NativeEventEmitter
+    }
+
+    @ReactMethod
+    fun removeListeners(count: Int) {
+        // Required for React Native NativeEventEmitter
+    }
 }
 

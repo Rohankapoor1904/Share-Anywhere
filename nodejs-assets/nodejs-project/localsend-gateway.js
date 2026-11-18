@@ -15,6 +15,7 @@ class LocalSendGateway {
    * @param {string} [options.alias='LocalShare Device']
    * @param {string} [options.deviceType='mobile']
    * @param {string} [options.fingerprint]
+   * @param {boolean} [options.enableMulticast]
    * @param {(peer: object) => void} [options.onPeerFound]
    * @param {(req: object) => Promise<{ accepted: boolean }>} [options.onUploadRequest]
    */

@@ -45,3 +45,4 @@ export function sanitizeDeviceName(rawName) {
   const cleaned = rawName.trim().replace(/[^\w\s-]/g, '').slice(0, 32);
   return cleaned.length > 0 ? cleaned : 'LocalShare-Device';
 }
+

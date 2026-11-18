@@ -12,3 +12,4 @@ Authoritative documentation for **LocalShare**: a serverless cross-platform loca
 - `docs/architecture/` - System architecture, data flow, protocols, security model.
 - `docs/audit/` - Cause-level and line-level audit trails of all modifications.
 - `docs/features/` - Detailed specifications of individual modules and screens.
+

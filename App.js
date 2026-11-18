@@ -1,11 +1,15 @@
 import React, { useMemo } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { NavigationContainer, DarkTheme } from '@react-navigation/native';
+import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AppNavigator from './src/navigation/AppNavigator';
 import { LocalShareProvider, useLocalShare } from './src/engine/providers';
 import { LocalShareNode } from './src/engine/LocalShareNode';
 import PinDialog from './src/components/PinDialog';
+import { ThemeProvider, useTheme } from './src/theme';
+import { defaultLogger } from './src/utils/logger';
+
+const logger = defaultLogger;
 
 function GlobalPinChallengeModal() {
   const { activeChallenge, respondPinChallenge, dismissPinChallenge } = useLocalShare();
@@ -20,36 +24,34 @@ function GlobalPinChallengeModal() {
   );
 }
 
+function MainNavigationShell() {
+  const { navTheme, theme } = useTheme();
+
+  return (
+    <NavigationContainer theme={navTheme}>
+      <StatusBar style={theme.colors.statusBarStyle} />
+      <AppNavigator />
+      <GlobalPinChallengeModal />
+    </NavigationContainer>
+  );
+}
+
 export default function App() {
   const nodeInstance = useMemo(() => {
     const node = new LocalShareNode();
     node.start().catch((err) => {
-      // eslint-disable-next-line no-console
-      console.error('Failed to start LocalShareNode:', err);
+      logger.error('Failed to start LocalShareNode:', err);
     });
     return node;
   }, []);
 
-  const navTheme = {
-    ...DarkTheme,
-    colors: {
-      ...DarkTheme.colors,
-      background: '#0f172a',
-      card: '#0f172a',
-      text: '#f8fafc',
-      border: 'rgba(255, 255, 255, 0.1)'
-    }
-  };
-
   return (
     <SafeAreaProvider>
-      <LocalShareProvider nodeInstance={nodeInstance}>
-        <NavigationContainer theme={navTheme}>
-          <StatusBar style="light" />
-          <AppNavigator />
-          <GlobalPinChallengeModal />
-        </NavigationContainer>
-      </LocalShareProvider>
+      <ThemeProvider>
+        <LocalShareProvider nodeInstance={nodeInstance}>
+          <MainNavigationShell />
+        </LocalShareProvider>
+      </ThemeProvider>
     </SafeAreaProvider>
   );
 }

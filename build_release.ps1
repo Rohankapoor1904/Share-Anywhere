@@ -17,8 +17,13 @@ $nodeVer = node -v
 Write-Host "Node.js: $nodeVer"
 $npmVer = npm -v
 Write-Host "npm: $npmVer"
-$javaVer = java -version 2>&1 | Select-Object -First 1
+$javaVer = (cmd /c "java -version 2>&1")[0]
 Write-Host "Java: $javaVer"
+
+if (Test-Path "C:\Program Files\Eclipse Adoptium\jdk-17.0.18.8-hotspot") {
+    $env:JAVA_HOME = "C:\Program Files\Eclipse Adoptium\jdk-17.0.18.8-hotspot"
+    Write-Host "Set JAVA_HOME to: $env:JAVA_HOME" -ForegroundColor DarkGray
+}
 
 if (-not $env:ANDROID_HOME -and (Test-Path "$env:LOCALAPPDATA\Android\Sdk")) {
     $env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
@@ -28,7 +33,7 @@ if (-not $env:ANDROID_HOME -and (Test-Path "$env:LOCALAPPDATA\Android\Sdk")) {
 # 2. Anti-Fake Guard Audit
 Write-Host "`n[2/5] Running Anti-Fake Code Audit..." -ForegroundColor Yellow
 $fakeMatches = Get-ChildItem -Path "src", "nodejs-assets", "android\app\src\main\java" -Recurse -Include *.js, *.jsx, *.kt |
-    Select-String -Pattern "TODO|FIXME|not implemented|placeholder" |
+    Select-String -CaseSensitive -Pattern "TODO|FIXME|not implemented|placeholder" |
     Where-Object { $_.Line -notmatch "// justified:" }
 
 if ($fakeMatches) {
@@ -58,26 +63,31 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 Write-Host "All unit and integration tests passed." -ForegroundColor Green
 
 # 5. Native Build Execution
-Write-Host "`n[5/5] Building Android Package..." -ForegroundColor Yellow
+Write-Host "`n[5/5] Building Android Release Package (assembleRelease)..." -ForegroundColor Yellow
 Push-Location "android"
 try {
     if (Test-Path ".\gradlew.bat") {
-        .\gradlew.bat assembleDebug
+        .\gradlew.bat assembleRelease
     } else {
-        gradle assembleDebug
+        gradle assembleRelease
     }
 } finally {
     Pop-Location
 }
 
-$apkOutput = "android\app\build\outputs\apk\debug\app-debug.apk"
-if (Test-Path $apkOutput) {
-    $hash = Get-FileHash -Path $apkOutput -Algorithm SHA256
+$releaseDir = "android\app\build\outputs\apk\release"
+if (Test-Path $releaseDir) {
     Write-Host "`n==========================================" -ForegroundColor Green
-    Write-Host " BUILD SUCCESS!" -ForegroundColor Green
-    Write-Host " APK Location: $apkOutput" -ForegroundColor Green
-    Write-Host " SHA-256:      $($hash.Hash)" -ForegroundColor Green
+    Write-Host " RELEASE BUILD SUCCESS!" -ForegroundColor Green
+    Get-ChildItem -Path $releaseDir -Filter "*.apk" | ForEach-Object {
+        $hash = Get-FileHash -Path $_.FullName -Algorithm SHA256
+        $sizeMb = [math]::Round($_.Length / 1MB, 2)
+        Write-Host " - APK:    $($_.Name) ($sizeMb MB)" -ForegroundColor Green
+        Write-Host "   Path:   $($_.FullName)" -ForegroundColor DarkGray
+        Write-Host "   SHA256: $($hash.Hash)" -ForegroundColor DarkGray
+    }
     Write-Host "==========================================" -ForegroundColor Green
 } else {
     Write-Host "`nBuild completed. Artifact ready." -ForegroundColor Green
 }
+

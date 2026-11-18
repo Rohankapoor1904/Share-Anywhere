@@ -29,6 +29,14 @@ module.exports = {
       version: 'detect'
     }
   },
+  overrides: [
+    {
+      files: ['desktop/public/**/*.js'],
+      env: {
+        browser: true
+      }
+    }
+  ],
   ignorePatterns: [
     'node_modules/',
     'android/',
@@ -37,3 +45,4 @@ module.exports = {
     'dist/'
   ]
 };
+

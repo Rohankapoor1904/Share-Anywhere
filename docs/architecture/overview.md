@@ -37,3 +37,11 @@ LocalShare consists of three cooperating layers:
 - **Trust Store (`src/engine/trustStore.js`)**: TOFU (Trust On First Use) store mapping `deviceId -> fingerprint`.
 - **Pairing Engine (`src/engine/pairing.js`)**: Evaluates trusted vs unknown peers, manages 6-digit PIN challenges, and enforces a 3-attempt reject policy.
 - **Adaptive UI**: Responsive layout supporting phone bottom-tabs and tablet/TV side rail with full keyboard/D-pad navigation.
+
+### 4. Pure Standalone Windows Desktop Layer (`desktop/`)
+- **Electron Main Window (`desktop/main.js`)**: Native desktop window with single instance lock, lifecycle management, and native IPC handlers for file dialogs (`dialog:openFiles`, `dialog:openFolder`) and Windows Explorer reveals (`shell:showInFolder`).
+- **Preload Bridge (`desktop/preload.js`)**: Secure context isolation exposing `window.electronAPI` to the desktop interface.
+- **Desktop Engine (`desktop/engine/desktop-node.js`)**: TransferGateway on port 53318, LocalSend on port 53317, UDP multicast discovery, full chunked file upload/streaming via `/api/send`, and internal control API on port 53319.
+- **Desktop UI (`desktop/public/`)**: Glassmorphic UI supporting 4 themes (Midnight, Obsidian, Cyber Neon, Daylight), radar sweep, drag-and-drop file staging, live transfer progress tracking, and received files manager.
+- **Packaging Pipeline (`scripts/build_desktop.js` & `build_pc.ps1`)**: Packages the client into a self-contained standalone executable `dist/LocalShare-win32-x64/LocalShare.exe` (168.84 MB) requiring no external browser or live server.
+

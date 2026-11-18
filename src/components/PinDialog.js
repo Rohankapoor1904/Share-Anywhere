@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Modal, View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
 import GlassCard from './GlassCard';
+import { useTheme } from '../theme';
 
 /**
  * 6-Digit PIN challenge confirmation dialog for unknown peers.
@@ -12,6 +13,7 @@ import GlassCard from './GlassCard';
  * @param {string} [props.error]
  */
 export default function PinDialog({ visible, challenge, onConfirm, onReject, error }) {
+  const { theme } = useTheme();
   const [enteredPin, setEnteredPin] = useState('');
 
   if (!visible || !challenge) {
@@ -42,50 +44,74 @@ export default function PinDialog({ visible, challenge, onConfirm, onReject, err
       onRequestClose={handleCancel}
     >
       <View style={styles.overlay}>
-        <GlassCard style={styles.dialogCard}>
-          <Text style={styles.title}>Pairing Request</Text>
-          <Text style={styles.subtitle}>
-            Device <Text style={styles.peerHighlight}>{displayName}</Text> wants to connect.
+        <GlassCard
+          style={[styles.dialogCard, { borderColor: theme.colors.borderHighlight }]}
+          variant="highlighted"
+        >
+          <View style={[styles.shieldIconContainer, { backgroundColor: theme.colors.primaryGlow }]}>
+            <Text style={styles.shieldIcon}>🔐</Text>
+          </View>
+
+          <Text style={[styles.title, { color: theme.colors.text }]}>Pairing Security Check</Text>
+          <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
+            Device <Text style={[styles.peerHighlight, { color: theme.colors.primary }]}>{displayName}</Text> is requesting connection.
           </Text>
 
           {mode === 'display' ? (
-            <View style={styles.pinDisplayBox}>
-              <Text style={styles.pinLabel}>Confirm this PIN on the other device:</Text>
-              <Text style={styles.pinValue}>{expectedPin}</Text>
+            <View style={[styles.pinDisplayBox, { backgroundColor: theme.colors.inputBg, borderColor: theme.colors.border }]}>
+              <Text style={[styles.pinLabel, { color: theme.colors.textSecondary }]}>
+                Confirm this PIN on the other device:
+              </Text>
+              <Text style={[styles.pinValue, { color: theme.colors.primary }]}>{expectedPin}</Text>
             </View>
           ) : (
             <View style={styles.pinInputBox}>
-              <Text style={styles.pinLabel}>Enter the 6-digit PIN shown on the other device:</Text>
+              <Text style={[styles.pinLabel, { color: theme.colors.textSecondary }]}>
+                Enter the 6-digit PIN shown on the other device:
+              </Text>
               <TextInput
-                style={styles.input}
+                style={[
+                  styles.input,
+                  {
+                    backgroundColor: theme.colors.inputBg,
+                    borderColor: theme.colors.borderHighlight,
+                    color: theme.colors.text
+                  }
+                ]}
                 keyboardType="number-pad"
                 maxLength={6}
                 value={enteredPin}
                 onChangeText={setEnteredPin}
-                placeholder="000000"
-                placeholderTextColor="#64748b"
+                placeholder="000000" // justified: TextInput hint
+                placeholderTextColor={theme.colors.textMuted} // justified: TextInput hint
                 autoFocus
               />
             </View>
           )}
 
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
+          {error ? (
+            <Text style={[styles.errorText, { color: theme.colors.danger }]}>{error}</Text>
+          ) : null}
 
           <View style={styles.btnRow}>
-            <TouchableOpacity style={[styles.btn, styles.cancelBtn]} onPress={handleCancel}>
-              <Text style={styles.cancelBtnText}>Decline</Text>
+            <TouchableOpacity
+              style={[styles.btn, { backgroundColor: theme.colors.dangerGlow, borderColor: theme.colors.danger }]}
+              onPress={handleCancel}
+            >
+              <Text style={[styles.cancelBtnText, { color: theme.colors.danger }]}>Decline</Text>
             </TouchableOpacity>
+
             <TouchableOpacity
               style={[
                 styles.btn,
-                styles.confirmBtn,
+                { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
                 mode === 'enter' && enteredPin.length !== 6 ? styles.disabledBtn : null
               ]}
               disabled={mode === 'enter' && enteredPin.length !== 6}
               onPress={handleConfirm}
             >
-              <Text style={styles.confirmBtnText}>
-                {mode === 'display' ? 'Authorize' : 'Verify & Accept'}
+              <Text style={[styles.confirmBtnText, { color: theme.mode === 'light' ? '#ffffff' : '#000000' }]}>
+                {mode === 'display' ? 'Authorize' : 'Verify & Connect'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -98,7 +124,7 @@ export default function PinDialog({ visible, challenge, onConfirm, onReject, err
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    backgroundColor: 'rgba(0, 0, 0, 0.78)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24
@@ -106,96 +132,96 @@ const styles = StyleSheet.create({
   dialogCard: {
     width: '100%',
     maxWidth: 400,
-    padding: 24
+    padding: 24,
+    alignItems: 'center'
+  },
+  shieldIconContainer: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12
+  },
+  shieldIcon: {
+    fontSize: 26
   },
   title: {
     fontSize: 20,
-    fontWeight: '700',
-    color: '#f8fafc',
-    marginBottom: 8,
+    fontWeight: '800',
+    marginBottom: 6,
     textAlign: 'center'
   },
   subtitle: {
     fontSize: 14,
-    color: '#94a3b8',
     textAlign: 'center',
-    marginBottom: 20
+    marginBottom: 20,
+    lineHeight: 20
   },
   peerHighlight: {
-    color: '#38bdf8',
-    fontWeight: '600'
+    fontWeight: '700'
   },
   pinDisplayBox: {
     alignItems: 'center',
-    marginVertical: 16,
+    marginVertical: 14,
     padding: 16,
-    backgroundColor: 'rgba(15, 23, 42, 0.6)',
-    borderRadius: 12
+    borderRadius: 12,
+    borderWidth: 1,
+    width: '100%'
   },
   pinInputBox: {
-    marginVertical: 16
+    marginVertical: 14,
+    width: '100%'
   },
   pinLabel: {
     fontSize: 13,
-    color: '#cbd5e1',
     marginBottom: 10,
-    textAlign: 'center'
+    textAlign: 'center',
+    fontWeight: '500'
   },
   pinValue: {
-    fontSize: 32,
+    fontSize: 34,
     fontWeight: '800',
-    letterSpacing: 8,
-    color: '#38bdf8'
+    letterSpacing: 8
   },
   input: {
-    backgroundColor: 'rgba(15, 23, 42, 0.6)',
-    borderWidth: 1,
-    borderColor: '#475569',
+    borderWidth: 1.5,
     borderRadius: 12,
     padding: 14,
-    fontSize: 24,
-    fontWeight: '700',
-    letterSpacing: 6,
-    color: '#f8fafc',
+    fontSize: 26,
+    fontWeight: '800',
+    letterSpacing: 8,
     textAlign: 'center'
   },
   errorText: {
-    color: '#ef4444',
     fontSize: 13,
     textAlign: 'center',
-    marginBottom: 12
+    marginBottom: 12,
+    fontWeight: '600'
   },
   btnRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 12
+    marginTop: 14,
+    width: '100%'
   },
   btn: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 13,
     borderRadius: 10,
     alignItems: 'center',
-    marginHorizontal: 4
-  },
-  cancelBtn: {
-    backgroundColor: 'rgba(239, 68, 68, 0.2)',
-    borderWidth: 1,
-    borderColor: '#ef4444'
+    marginHorizontal: 4,
+    borderWidth: 1
   },
   cancelBtnText: {
-    color: '#ef4444',
-    fontWeight: '600',
+    fontWeight: '700',
     fontSize: 14
   },
-  confirmBtn: {
-    backgroundColor: '#3b82f6'
-  },
   disabledBtn: {
-    opacity: 0.5
+    opacity: 0.4
   },
   confirmBtnText: {
-    color: '#ffffff',
-    fontWeight: '700',
+    fontWeight: '800',
     fontSize: 14
   }
 });

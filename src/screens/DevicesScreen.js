@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { useLocalShare } from '../engine/providers';
+import { useTheme } from '../theme';
 import PeerCard from '../components/PeerCard';
 import GlassCard from '../components/GlassCard';
 import EmptyState from '../components/EmptyState';
@@ -25,11 +26,14 @@ export default function DevicesScreen({ navigation }) {
     addManualPeer
   } = useLocalShare();
 
+  const { theme } = useTheme();
+
   const [qrModalVisible, setQrModalVisible] = useState(false);
   const [manualModalVisible, setManualModalVisible] = useState(false);
   const [manualIp, setManualIp] = useState('');
   const [manualPort, setManualPort] = useState('53318');
   const [manualFingerprint, setManualFingerprint] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const qrData = JSON.stringify({
     deviceId: selfDevice.deviceId,
@@ -39,6 +43,16 @@ export default function DevicesScreen({ navigation }) {
     fingerprint: selfDevice.fingerprint,
     platform: selfDevice.platform
   });
+
+  const filteredPeers = useMemo(() => {
+    if (!searchQuery.trim()) return peers;
+    const q = searchQuery.toLowerCase();
+    return peers.filter(
+      (p) =>
+        (p.displayName && p.displayName.toLowerCase().includes(q)) ||
+        (p.address && p.address.includes(q))
+    );
+  }, [peers, searchQuery]);
 
   const handleManualAdd = () => {
     if (manualIp.trim().length > 0) {
@@ -54,24 +68,30 @@ export default function DevicesScreen({ navigation }) {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.colors.background }]}>
       <View style={styles.container}>
         {/* Self Device Header Card */}
-        <GlassCard style={styles.selfCard}>
+        <GlassCard style={styles.selfCard} variant="interactive">
           <View style={styles.selfHeaderRow}>
             <View style={styles.selfInfo}>
-              <Text style={styles.selfLabel}>THIS DEVICE</Text>
-              <Text style={styles.selfName}>{selfDevice.displayName}</Text>
-              <Text style={styles.selfDetails}>
+              <View style={styles.selfLabelRow}>
+                <View style={[styles.statusDot, { backgroundColor: theme.colors.success }]} />
+                <Text style={[styles.selfLabel, { color: theme.colors.primary }]}>THIS DEVICE</Text>
+              </View>
+              <Text style={[styles.selfName, { color: theme.colors.text }]}>{selfDevice.displayName}</Text>
+              <Text style={[styles.selfDetails, { color: theme.colors.textSecondary }]}>
                 {selfDevice.address}:{selfDevice.port}
               </Text>
             </View>
             <TouchableOpacity
-              style={styles.qrButton}
+              style={[
+                styles.qrButton,
+                { backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.primary }
+              ]}
               onPress={() => setQrModalVisible(true)}
               testID="qr-code-button"
             >
-              <Text style={styles.qrButtonText}>QR</Text>
+              <Text style={[styles.qrButtonText, { color: theme.colors.primary }]}>QR Code</Text>
             </TouchableOpacity>
           </View>
         </GlassCard>
@@ -79,25 +99,58 @@ export default function DevicesScreen({ navigation }) {
         {/* Discovery Controls Bar */}
         <View style={styles.controlsBar}>
           <TouchableOpacity
-            style={[styles.actionBtn, isDiscovering ? styles.activeScanBtn : styles.idleScanBtn]}
+            style={[
+              styles.actionBtn,
+              isDiscovering
+                ? { backgroundColor: theme.colors.primary }
+                : { backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.primary, borderWidth: 1 }
+            ]}
             onPress={isDiscovering ? stopDiscovery : startDiscovery}
           >
-            <Text style={styles.actionBtnText}>
-              {isDiscovering ? 'Scanning for Peers...' : 'Start Scan'}
+            <Text
+              style={[
+                styles.actionBtnText,
+                { color: isDiscovering && theme.mode === 'light' ? '#ffffff' : isDiscovering ? '#000000' : theme.colors.primary }
+              ]}
+            >
+              {isDiscovering ? '● Scanning for Peers...' : '▶ Start Scan'}
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.actionBtn, styles.manualBtn]}
+            style={[
+              styles.actionBtn,
+              styles.manualBtn,
+              { backgroundColor: theme.colors.cardSolid, borderColor: theme.colors.border }
+            ]}
             onPress={() => setManualModalVisible(true)}
           >
-            <Text style={styles.actionBtnText}>+ Manual IP</Text>
+            <Text style={[styles.actionBtnText, { color: theme.colors.text }]}>+ Manual IP</Text>
           </TouchableOpacity>
         </View>
 
+        {/* Search Bar when peers present */}
+        {peers.length > 2 ? (
+          <View style={[styles.searchBox, { backgroundColor: theme.colors.inputBg, borderColor: theme.colors.border }]}>
+            <Text style={styles.searchIcon}>🔍</Text>
+            <TextInput
+              style={[styles.searchInput, { color: theme.colors.text }]}
+              placeholder="Search discovered peers..." // justified: TextInput hint
+              placeholderTextColor={theme.colors.textMuted} // justified: TextInput hint
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
+            {searchQuery ? (
+              <TouchableOpacity onPress={() => setSearchQuery('')}>
+                <Text style={[styles.clearSearch, { color: theme.colors.textMuted }]}>✕</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        ) : null}
+
         {/* Peer List */}
         <FlatList
-          data={peers}
+          data={filteredPeers}
           keyExtractor={(item) => item.deviceId}
           contentContainerStyle={styles.listContent}
           renderItem={({ item }) => (
@@ -110,11 +163,16 @@ export default function DevicesScreen({ navigation }) {
           ListEmptyComponent={
             <EmptyState
               title={isDiscovering ? 'Looking for nearby devices...' : 'No devices found'}
-              description="Ensure other devices have LocalShare open on the same Wi-Fi network."
+              description="Ensure other devices have LocalShare open on the same Wi-Fi subnet or connect directly via manual IP."
               action={
                 !isDiscovering ? (
-                  <TouchableOpacity style={styles.scanNowBtn} onPress={startDiscovery}>
-                    <Text style={styles.scanNowBtnText}>Scan Now</Text>
+                  <TouchableOpacity
+                    style={[styles.scanNowBtn, { backgroundColor: theme.colors.primary }]}
+                    onPress={startDiscovery}
+                  >
+                    <Text style={[styles.scanNowBtnText, { color: theme.mode === 'light' ? '#ffffff' : '#000000' }]}>
+                      Scan Now
+                    </Text>
                   </TouchableOpacity>
                 ) : null
               }
@@ -130,26 +188,32 @@ export default function DevicesScreen({ navigation }) {
           onRequestClose={() => setQrModalVisible(false)}
         >
           <View style={styles.modalOverlay}>
-            <GlassCard style={styles.modalCard}>
-              <Text style={styles.modalTitle}>Device QR Identity</Text>
-              <Text style={styles.modalSubtitle}>Scan with another LocalShare device to pair directly.</Text>
+            <GlassCard style={styles.modalCard} variant="highlighted">
+              <Text style={[styles.modalTitle, { color: theme.colors.text }]}>Device QR Identity</Text>
+              <Text style={[styles.modalSubtitle, { color: theme.colors.textSecondary }]}>
+                Scan with another LocalShare device to pair directly.
+              </Text>
 
               <View style={styles.qrContainer}>
                 <QRCode
                   value={qrData}
                   size={200}
-                  color="#0f172a"
+                  color="#000000"
                   backgroundColor="#ffffff"
                 />
               </View>
 
-              <Text style={styles.fpText}>Fingerprint: {selfDevice.fingerprint || 'Pending'}</Text>
+              <Text style={[styles.fpText, { color: theme.colors.textMuted }]}>
+                Fingerprint: {selfDevice.fingerprint || 'Pending'}
+              </Text>
 
               <TouchableOpacity
-                style={styles.closeModalBtn}
+                style={[styles.closeModalBtn, { backgroundColor: theme.colors.primary }]}
                 onPress={() => setQrModalVisible(false)}
               >
-                <Text style={styles.closeModalBtnText}>Close</Text>
+                <Text style={[styles.closeModalBtnText, { color: theme.mode === 'light' ? '#ffffff' : '#000000' }]}>
+                  Close
+                </Text>
               </TouchableOpacity>
             </GlassCard>
           </View>
@@ -163,32 +227,43 @@ export default function DevicesScreen({ navigation }) {
           onRequestClose={() => setManualModalVisible(false)}
         >
           <View style={styles.modalOverlay}>
-            <GlassCard style={styles.modalCard}>
-              <Text style={styles.modalTitle}>Add Peer Manually</Text>
-              <Text style={styles.modalSubtitle}>Connect across subnets or when mDNS is blocked.</Text>
+            <GlassCard style={styles.modalCard} variant="highlighted">
+              <Text style={[styles.modalTitle, { color: theme.colors.text }]}>Add Peer Manually</Text>
+              <Text style={[styles.modalSubtitle, { color: theme.colors.textSecondary }]}>
+                Connect across subnets or when mDNS multicast is restricted.
+              </Text>
 
               <TextInput
-                style={styles.input}
-                placeholder="IP Address (e.g. 192.168.1.45)"
-                placeholderTextColor="#64748b"
+                style={[
+                  styles.input,
+                  { backgroundColor: theme.colors.inputBg, borderColor: theme.colors.border, color: theme.colors.text }
+                ]}
+                placeholder="IP Address (e.g. 192.168.1.45)" // justified: TextInput hint
+                placeholderTextColor={theme.colors.textMuted} // justified: TextInput hint
                 value={manualIp}
                 onChangeText={setManualIp}
                 autoCapitalize="none"
               />
 
               <TextInput
-                style={styles.input}
-                placeholder="Port (default: 53318)"
-                placeholderTextColor="#64748b"
+                style={[
+                  styles.input,
+                  { backgroundColor: theme.colors.inputBg, borderColor: theme.colors.border, color: theme.colors.text }
+                ]}
+                placeholder="Port (default: 53318)" // justified: TextInput hint
+                placeholderTextColor={theme.colors.textMuted} // justified: TextInput hint
                 value={manualPort}
                 onChangeText={setManualPort}
                 keyboardType="numeric"
               />
 
               <TextInput
-                style={styles.input}
-                placeholder="Certificate SHA-256 (optional)"
-                placeholderTextColor="#64748b"
+                style={[
+                  styles.input,
+                  { backgroundColor: theme.colors.inputBg, borderColor: theme.colors.border, color: theme.colors.text }
+                ]}
+                placeholder="Certificate SHA-256 (optional)" // justified: TextInput hint
+                placeholderTextColor={theme.colors.textMuted} // justified: TextInput hint
                 value={manualFingerprint}
                 onChangeText={setManualFingerprint}
                 autoCapitalize="none"
@@ -196,16 +271,18 @@ export default function DevicesScreen({ navigation }) {
 
               <View style={styles.modalBtnRow}>
                 <TouchableOpacity
-                  style={[styles.modalBtn, styles.cancelModalBtn]}
+                  style={[styles.modalBtn, { backgroundColor: theme.colors.cardSolid, borderColor: theme.colors.border }]}
                   onPress={() => setManualModalVisible(false)}
                 >
-                  <Text style={styles.cancelModalBtnText}>Cancel</Text>
+                  <Text style={[styles.cancelModalBtnText, { color: theme.colors.textSecondary }]}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.modalBtn, styles.confirmModalBtn]}
+                  style={[styles.modalBtn, { backgroundColor: theme.colors.primary }]}
                   onPress={handleManualAdd}
                 >
-                  <Text style={styles.confirmModalBtnText}>Connect</Text>
+                  <Text style={[styles.confirmModalBtnText, { color: theme.mode === 'light' ? '#ffffff' : '#000000' }]}>
+                    Connect
+                  </Text>
                 </TouchableOpacity>
               </View>
             </GlassCard>
@@ -218,8 +295,7 @@ export default function DevicesScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   safeArea: {
-    flex: 1,
-    backgroundColor: '#0f172a'
+    flex: 1
   },
   container: {
     flex: 1,
@@ -236,34 +312,39 @@ const styles = StyleSheet.create({
   selfInfo: {
     flex: 1
   },
+  selfLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 2
+  },
+  statusDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    marginRight: 6
+  },
   selfLabel: {
     fontSize: 10,
-    fontWeight: '700',
-    color: '#38bdf8',
-    letterSpacing: 0.8,
-    marginBottom: 2
+    fontWeight: '800',
+    letterSpacing: 0.8
   },
   selfName: {
     fontSize: 18,
-    fontWeight: '700',
-    color: '#f8fafc'
+    fontWeight: '800'
   },
   selfDetails: {
     fontSize: 12,
-    color: '#94a3b8',
-    marginTop: 2
+    marginTop: 2,
+    fontWeight: '500'
   },
   qrButton: {
-    backgroundColor: 'rgba(56, 189, 248, 0.2)',
     borderWidth: 1,
-    borderColor: '#38bdf8',
     paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: 8
+    borderRadius: 10
   },
   qrButtonText: {
-    color: '#38bdf8',
-    fontWeight: '700',
+    fontWeight: '800',
     fontSize: 13
   },
   controlsBar: {
@@ -273,39 +354,50 @@ const styles = StyleSheet.create({
   },
   actionBtn: {
     flex: 1,
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderRadius: 10,
     alignItems: 'center',
     marginHorizontal: 4
   },
-  idleScanBtn: {
-    backgroundColor: '#3b82f6'
-  },
-  activeScanBtn: {
-    backgroundColor: '#0284c7'
-  },
   manualBtn: {
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)'
+    borderWidth: 1
   },
   actionBtnText: {
-    color: '#ffffff',
-    fontWeight: '600',
+    fontWeight: '700',
     fontSize: 13
+  },
+  searchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 12
+  },
+  searchIcon: {
+    fontSize: 14,
+    marginRight: 8
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 13,
+    padding: 0
+  },
+  clearSearch: {
+    fontSize: 14,
+    paddingHorizontal: 4
   },
   listContent: {
     flexGrow: 1
   },
   scanNowBtn: {
-    backgroundColor: '#3b82f6',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8
+    paddingHorizontal: 22,
+    paddingVertical: 12,
+    borderRadius: 10
   },
   scanNowBtnText: {
-    color: '#ffffff',
-    fontWeight: '600',
+    fontWeight: '800',
     fontSize: 14
   },
   modalOverlay: {
@@ -322,14 +414,12 @@ const styles = StyleSheet.create({
     padding: 24
   },
   modalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#f8fafc',
+    fontSize: 19,
+    fontWeight: '800',
     marginBottom: 6
   },
   modalSubtitle: {
     fontSize: 13,
-    color: '#94a3b8',
     textAlign: 'center',
     marginBottom: 16
   },
@@ -341,31 +431,25 @@ const styles = StyleSheet.create({
   },
   fpText: {
     fontSize: 11,
-    color: '#64748b',
     textAlign: 'center',
     marginBottom: 16
   },
   closeModalBtn: {
-    backgroundColor: '#3b82f6',
     paddingHorizontal: 24,
-    paddingVertical: 10,
-    borderRadius: 8,
+    paddingVertical: 12,
+    borderRadius: 10,
     width: '100%',
     alignItems: 'center'
   },
   closeModalBtnText: {
-    color: '#ffffff',
-    fontWeight: '600',
+    fontWeight: '800',
     fontSize: 14
   },
   input: {
     width: '100%',
-    backgroundColor: 'rgba(15, 23, 42, 0.6)',
     borderWidth: 1,
-    borderColor: '#334155',
-    borderRadius: 8,
+    borderRadius: 10,
     padding: 12,
-    color: '#f8fafc',
     fontSize: 14,
     marginBottom: 12
   },
@@ -377,23 +461,16 @@ const styles = StyleSheet.create({
   },
   modalBtn: {
     flex: 1,
-    paddingVertical: 10,
-    borderRadius: 8,
+    paddingVertical: 12,
+    borderRadius: 10,
     alignItems: 'center',
-    marginHorizontal: 4
-  },
-  cancelModalBtn: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)'
+    marginHorizontal: 4,
+    borderWidth: 1
   },
   cancelModalBtnText: {
-    color: '#94a3b8',
-    fontWeight: '600'
-  },
-  confirmModalBtn: {
-    backgroundColor: '#3b82f6'
+    fontWeight: '700'
   },
   confirmModalBtnText: {
-    color: '#ffffff',
-    fontWeight: '600'
+    fontWeight: '800'
   }
 });

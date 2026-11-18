@@ -57,3 +57,4 @@ export function createLogger(tag) {
 }
 
 export const defaultLogger = createLogger('LocalShare');
+

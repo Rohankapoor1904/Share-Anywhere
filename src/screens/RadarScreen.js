@@ -7,11 +7,13 @@ import {
   SafeAreaView
 } from 'react-native';
 import { useLocalShare } from '../engine/providers';
+import { useTheme } from '../theme';
 import RadarView from '../components/RadarView';
 import GlassCard from '../components/GlassCard';
 
 export default function RadarScreen({ navigation }) {
   const { peers, isDiscovering, startDiscovery, stopDiscovery } = useLocalShare();
+  const { theme } = useTheme();
   const [radarActive, setRadarActive] = useState(true);
 
   const handleSelectPeer = (peer) => {
@@ -20,19 +22,19 @@ export default function RadarScreen({ navigation }) {
 
   const getPositionForPeer = (index, total) => {
     const angle = (index / Math.max(1, total)) * 2 * Math.PI - Math.PI / 2;
-    const radius = 80;
+    const radius = 90;
     const x = Math.cos(angle) * radius;
     const y = Math.sin(angle) * radius;
     return { x, y };
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.colors.background }]}>
       <View style={styles.container}>
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Radar Discovery</Text>
-          <Text style={styles.headerSubtitle}>
-            Visualizing nearby peers broadcasting on your local network.
+          <Text style={[styles.headerTitle, { color: theme.colors.text }]}>Radar Discovery</Text>
+          <Text style={[styles.headerSubtitle, { color: theme.colors.textSecondary }]}>
+            Visualizing nearby peers broadcasting on your local Wi-Fi subnet.
           </Text>
         </View>
 
@@ -49,9 +51,29 @@ export default function RadarScreen({ navigation }) {
                     { transform: [{ translateX: pos.x }, { translateY: pos.y }] }
                   ]}
                   onPress={() => handleSelectPeer(peer)}
+                  activeOpacity={0.7}
                 >
-                  <View style={styles.peerDot} />
-                  <Text style={styles.peerNodeLabel} numberOfLines={1}>
+                  <View
+                    style={[
+                      styles.peerDot,
+                      {
+                        backgroundColor: theme.colors.primary,
+                        shadowColor: theme.colors.primary,
+                        borderColor: '#ffffff'
+                      }
+                    ]}
+                  />
+                  <Text
+                    style={[
+                      styles.peerNodeLabel,
+                      {
+                        color: theme.colors.text,
+                        backgroundColor: theme.colors.cardSolid,
+                        borderColor: theme.colors.borderHighlight
+                      }
+                    ]}
+                    numberOfLines={1}
+                  >
                     {peer.displayName}
                   </Text>
                 </TouchableOpacity>
@@ -61,16 +83,23 @@ export default function RadarScreen({ navigation }) {
         </View>
 
         {/* Discovery Summary Card */}
-        <GlassCard style={styles.summaryCard}>
+        <GlassCard style={styles.summaryCard} variant="interactive">
           <View style={styles.summaryRow}>
             <View>
-              <Text style={styles.summaryTitle}>Active Network Radar</Text>
-              <Text style={styles.summaryDesc}>
-                {peers.length} {peers.length === 1 ? 'peer detected' : 'peers detected'}
+              <Text style={[styles.summaryTitle, { color: theme.colors.text }]}>
+                {isDiscovering ? 'Scanning Subnet...' : 'Radar Standby'}
+              </Text>
+              <Text style={[styles.summaryDesc, { color: theme.colors.textSecondary }]}>
+                {peers.length} {peers.length === 1 ? 'peer detected' : 'peers detected'} in range
               </Text>
             </View>
             <TouchableOpacity
-              style={[styles.toggleBtn, isDiscovering ? styles.activeBtn : styles.idleBtn]}
+              style={[
+                styles.toggleBtn,
+                isDiscovering
+                  ? { backgroundColor: theme.colors.dangerGlow, borderColor: theme.colors.danger, borderWidth: 1 }
+                  : { backgroundColor: theme.colors.primary }
+              ]}
               onPress={() => {
                 if (isDiscovering) {
                   stopDiscovery();
@@ -81,8 +110,19 @@ export default function RadarScreen({ navigation }) {
                 }
               }}
             >
-              <Text style={styles.toggleBtnText}>
-                {isDiscovering ? 'Pause Radar' : 'Resume Radar'}
+              <Text
+                style={[
+                  styles.toggleBtnText,
+                  {
+                    color: isDiscovering
+                      ? theme.colors.danger
+                      : theme.mode === 'light'
+                      ? '#ffffff'
+                      : '#000000'
+                  }
+                ]}
+              >
+                {isDiscovering ? 'Pause Sweep' : 'Start Sweep'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -94,8 +134,7 @@ export default function RadarScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   safeArea: {
-    flex: 1,
-    backgroundColor: '#0f172a'
+    flex: 1
   },
   container: {
     flex: 1,
@@ -107,12 +146,10 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 22,
-    fontWeight: '800',
-    color: '#f8fafc'
+    fontWeight: '800'
   },
   headerSubtitle: {
     fontSize: 13,
-    color: '#94a3b8',
     marginTop: 2
   },
   radarWrapper: {
@@ -123,32 +160,28 @@ const styles = StyleSheet.create({
   peerNode: {
     position: 'absolute',
     alignItems: 'center',
-    width: 80,
-    marginLeft: -40,
-    marginTop: -40
+    width: 90,
+    marginLeft: -45,
+    marginTop: -45
   },
   peerDot: {
     width: 14,
     height: 14,
     borderRadius: 7,
-    backgroundColor: '#38bdf8',
     borderWidth: 2,
-    borderColor: '#ffffff',
-    shadowColor: '#38bdf8',
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 1,
     shadowRadius: 6
   },
   peerNodeLabel: {
-    color: '#f8fafc',
     fontSize: 11,
-    fontWeight: '600',
-    marginTop: 4,
+    fontWeight: '700',
+    marginTop: 5,
     textAlign: 'center',
-    backgroundColor: 'rgba(15, 23, 42, 0.8)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1
   },
   summaryCard: {
     marginTop: 16
@@ -160,30 +193,19 @@ const styles = StyleSheet.create({
   },
   summaryTitle: {
     fontSize: 16,
-    fontWeight: '700',
-    color: '#f8fafc'
+    fontWeight: '800'
   },
   summaryDesc: {
     fontSize: 13,
-    color: '#94a3b8',
     marginTop: 2
   },
   toggleBtn: {
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8
-  },
-  activeBtn: {
-    backgroundColor: 'rgba(239, 68, 68, 0.2)',
-    borderWidth: 1,
-    borderColor: '#ef4444'
-  },
-  idleBtn: {
-    backgroundColor: '#3b82f6'
+    paddingVertical: 10,
+    borderRadius: 10
   },
   toggleBtnText: {
-    color: '#ffffff',
     fontSize: 13,
-    fontWeight: '600'
+    fontWeight: '800'
   }
 });

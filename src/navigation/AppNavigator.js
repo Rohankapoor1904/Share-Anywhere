@@ -11,15 +11,16 @@ import TransfersScreen from '../screens/TransfersScreen';
 import ReceivedScreen from '../screens/ReceivedScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import { useLocalShare } from '../engine/providers';
+import { useTheme } from '../theme';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
-function TabIcon({ label, focused }) {
+function TabIcon({ glyph, focused, activeColor, inactiveColor }) {
   return (
-    <View style={styles.iconContainer}>
-      <Text style={[styles.tabLabel, focused ? styles.tabLabelFocused : null]}>
-        {label}
+    <View style={[styles.iconContainer, focused ? styles.iconContainerFocused : null]}>
+      <Text style={[styles.tabGlyph, { color: focused ? activeColor : inactiveColor }]}>
+        {glyph}
       </Text>
     </View>
   );
@@ -27,6 +28,8 @@ function TabIcon({ label, focused }) {
 
 function MainTabNavigator() {
   const { transfers } = useLocalShare();
+  const { theme } = useTheme();
+
   const activeTransfersCount = transfers.filter(
     (t) => t.status === 'in_progress' || t.status === 'queued'
   ).length;
@@ -36,21 +39,44 @@ function MainTabNavigator() {
       initialRouteName="Devices"
       screenOptions={{
         headerStyle: {
-          backgroundColor: '#0f172a'
+          backgroundColor: theme.colors.background,
+          borderBottomWidth: 1,
+          borderBottomColor: theme.colors.border,
+          shadowOpacity: 0,
+          elevation: 0
         },
-        headerTintColor: '#f8fafc',
+        headerTintColor: theme.colors.text,
         headerTitleStyle: {
-          fontWeight: '700'
+          fontWeight: '800',
+          fontSize: 19,
+          letterSpacing: 0.3
         },
         tabBarStyle: {
-          backgroundColor: '#0f172a',
-          borderTopColor: 'rgba(255, 255, 255, 0.1)',
-          height: 60,
+          backgroundColor: theme.colors.tabBar,
+          borderTopColor: theme.colors.border,
+          borderTopWidth: 1,
+          height: 64,
           paddingBottom: 8,
-          paddingTop: 8
+          paddingTop: 6,
+          elevation: 8,
+          shadowColor: '#000000',
+          shadowOffset: { width: 0, height: -2 },
+          shadowOpacity: 0.15,
+          shadowRadius: 6
         },
-        tabBarActiveTintColor: '#38bdf8',
-        tabBarInactiveTintColor: '#64748b'
+        tabBarActiveTintColor: theme.colors.tabBarActive,
+        tabBarInactiveTintColor: theme.colors.tabBarInactive,
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: '600',
+          marginTop: 2
+        },
+        tabBarBadgeStyle: {
+          backgroundColor: theme.colors.primary,
+          color: theme.mode === 'light' ? '#ffffff' : '#000000',
+          fontSize: 10,
+          fontWeight: '800'
+        }
       }}
     >
       <Tab.Screen
@@ -58,7 +84,14 @@ function MainTabNavigator() {
         component={DevicesScreen}
         options={{
           tabBarLabel: 'Devices',
-          tabBarIcon: ({ focused }) => <TabIcon label="📱" focused={focused} />
+          tabBarIcon: ({ focused }) => (
+            <TabIcon
+              glyph="📱"
+              focused={focused}
+              activeColor={theme.colors.tabBarActive}
+              inactiveColor={theme.colors.tabBarInactive}
+            />
+          )
         }}
       />
       <Tab.Screen
@@ -66,7 +99,14 @@ function MainTabNavigator() {
         component={RadarScreen}
         options={{
           tabBarLabel: 'Radar',
-          tabBarIcon: ({ focused }) => <TabIcon label="📡" focused={focused} />
+          tabBarIcon: ({ focused }) => (
+            <TabIcon
+              glyph="📡"
+              focused={focused}
+              activeColor={theme.colors.tabBarActive}
+              inactiveColor={theme.colors.tabBarInactive}
+            />
+          )
         }}
       />
       <Tab.Screen
@@ -74,7 +114,14 @@ function MainTabNavigator() {
         component={ShareHubScreen}
         options={{
           tabBarLabel: 'Share',
-          tabBarIcon: ({ focused }) => <TabIcon label="📤" focused={focused} />
+          tabBarIcon: ({ focused }) => (
+            <TabIcon
+              glyph="📤"
+              focused={focused}
+              activeColor={theme.colors.tabBarActive}
+              inactiveColor={theme.colors.tabBarInactive}
+            />
+          )
         }}
       />
       <Tab.Screen
@@ -83,7 +130,14 @@ function MainTabNavigator() {
         options={{
           tabBarLabel: 'Transfers',
           tabBarBadge: activeTransfersCount > 0 ? activeTransfersCount : undefined,
-          tabBarIcon: ({ focused }) => <TabIcon label="🔄" focused={focused} />
+          tabBarIcon: ({ focused }) => (
+            <TabIcon
+              glyph="🔄"
+              focused={focused}
+              activeColor={theme.colors.tabBarActive}
+              inactiveColor={theme.colors.tabBarInactive}
+            />
+          )
         }}
       />
       <Tab.Screen
@@ -91,7 +145,14 @@ function MainTabNavigator() {
         component={ReceivedScreen}
         options={{
           tabBarLabel: 'Received',
-          tabBarIcon: ({ focused }) => <TabIcon label="📥" focused={focused} />
+          tabBarIcon: ({ focused }) => (
+            <TabIcon
+              glyph="📥"
+              focused={focused}
+              activeColor={theme.colors.tabBarActive}
+              inactiveColor={theme.colors.tabBarInactive}
+            />
+          )
         }}
       />
       <Tab.Screen
@@ -99,7 +160,14 @@ function MainTabNavigator() {
         component={SettingsScreen}
         options={{
           tabBarLabel: 'Settings',
-          tabBarIcon: ({ focused }) => <TabIcon label="⚙️" focused={focused} />
+          tabBarIcon: ({ focused }) => (
+            <TabIcon
+              glyph="⚙️"
+              focused={focused}
+              activeColor={theme.colors.tabBarActive}
+              inactiveColor={theme.colors.tabBarInactive}
+            />
+          )
         }}
       />
     </Tab.Navigator>
@@ -107,12 +175,14 @@ function MainTabNavigator() {
 }
 
 export default function AppNavigator() {
+  const { theme } = useTheme();
+
   return (
     <Stack.Navigator
       initialRouteName="Main"
       screenOptions={{
         headerShown: false,
-        contentStyle: { backgroundColor: '#0f172a' }
+        contentStyle: { backgroundColor: theme.colors.background }
       }}
     >
       <Stack.Screen name="Permissions" component={PermissionsScreen} />
@@ -124,13 +194,15 @@ export default function AppNavigator() {
 const styles = StyleSheet.create({
   iconContainer: {
     alignItems: 'center',
-    justifyContent: 'center'
+    justifyContent: 'center',
+    width: 32,
+    height: 32,
+    borderRadius: 16
   },
-  tabLabel: {
-    fontSize: 16,
-    opacity: 0.6
+  iconContainerFocused: {
+    transform: [{ scale: 1.1 }]
   },
-  tabLabelFocused: {
-    opacity: 1
+  tabGlyph: {
+    fontSize: 18
   }
 });

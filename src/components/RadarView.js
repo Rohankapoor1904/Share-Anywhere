@@ -1,27 +1,31 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Animated, StyleSheet, Easing, AccessibilityInfo } from 'react-native';
+import { useTheme } from '../theme';
 
 const AnimatedView = /** @type {any} */ (Animated.View);
 
 /**
- * Animated radar sweep visualization representing active local discovery.
+ * Animated themed radar sweep visualization representing active local discovery.
  * @param {object} props
  * @param {boolean} [props.active=true] - Whether sweep animation is active.
  * @param {number} [props.size=260] - Diameter of the radar container.
  * @param {React.ReactNode} [props.children] - Nodes positioned over the radar.
  */
 export default function RadarView({ active = true, size = 260, children }) {
+  const { theme } = useTheme();
   const rotateAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const animationRef = useRef(null);
 
   useEffect(() => {
     let isReducedMotion = false;
-    AccessibilityInfo.isReduceMotionEnabled().then((enabled) => {
-      isReducedMotion = enabled;
-    }).catch(() => {
-      isReducedMotion = false;
-    });
+    AccessibilityInfo.isReduceMotionEnabled()
+      .then((enabled) => {
+        isReducedMotion = enabled;
+      })
+      .catch(() => {
+        isReducedMotion = false;
+      });
 
     if (!active || isReducedMotion) {
       rotateAnim.setValue(0);
@@ -41,7 +45,7 @@ export default function RadarView({ active = true, size = 260, children }) {
     const pulse = Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, {
-          toValue: 1.08,
+          toValue: 1.15,
           duration: 1500,
           easing: Easing.inOut(Easing.ease),
           useNativeDriver: true
@@ -73,13 +77,40 @@ export default function RadarView({ active = true, size = 260, children }) {
   return (
     <View style={[styles.container, { width: size, height: size }]}>
       {/* Concentric rings */}
-      <View style={[styles.ring, styles.ringOuter, { width: size, height: size }]} />
-      <View style={[styles.ring, styles.ringMiddle, { width: size * 0.66, height: size * 0.66 }]} />
-      <View style={[styles.ring, styles.ringInner, { width: size * 0.33, height: size * 0.33 }]} />
+      <View
+        style={[
+          styles.ring,
+          {
+            width: size,
+            height: size,
+            borderColor: theme.colors.borderHighlight
+          }
+        ]}
+      />
+      <View
+        style={[
+          styles.ring,
+          {
+            width: size * 0.66,
+            height: size * 0.66,
+            borderColor: theme.colors.primaryGlow
+          }
+        ]}
+      />
+      <View
+        style={[
+          styles.ring,
+          {
+            width: size * 0.33,
+            height: size * 0.33,
+            borderColor: theme.colors.border
+          }
+        ]}
+      />
 
       {/* Crosshairs */}
-      <View style={[styles.crosshairH, { width: size }]} />
-      <View style={[styles.crosshairV, { height: size }]} />
+      <View style={[styles.crosshairH, { width: size, backgroundColor: theme.colors.border }]} />
+      <View style={[styles.crosshairV, { height: size, backgroundColor: theme.colors.border }]} />
 
       {/* Sweep Arm */}
       {active ? (
@@ -89,7 +120,16 @@ export default function RadarView({ active = true, size = 260, children }) {
             { width: size, height: size, transform: [{ rotate: spin }] }
           ]}
         >
-          <View style={[styles.sweepArm, { height: size / 2 }]} />
+          <View
+            style={[
+              styles.sweepArm,
+              {
+                height: size / 2,
+                backgroundColor: theme.colors.primary,
+                shadowColor: theme.colors.primary
+              }
+            ]}
+          />
         </AnimatedView>
       ) : null}
 
@@ -97,7 +137,11 @@ export default function RadarView({ active = true, size = 260, children }) {
       <AnimatedView
         style={[
           styles.centerBeacon,
-          { transform: [{ scale: pulseAnim }] }
+          {
+            backgroundColor: theme.colors.primary,
+            shadowColor: theme.colors.primary,
+            transform: [{ scale: pulseAnim }]
+          }
         ]}
       />
 
@@ -119,36 +163,22 @@ const styles = StyleSheet.create({
   ring: {
     position: 'absolute',
     borderRadius: 9999,
-    borderWidth: 1,
-    borderColor: 'rgba(56, 189, 248, 0.2)'
-  },
-  ringOuter: {
-    borderColor: 'rgba(56, 189, 248, 0.25)'
-  },
-  ringMiddle: {
-    borderColor: 'rgba(56, 189, 248, 0.18)'
-  },
-  ringInner: {
-    borderColor: 'rgba(56, 189, 248, 0.12)'
+    borderWidth: 1
   },
   crosshairH: {
     position: 'absolute',
-    height: 1,
-    backgroundColor: 'rgba(56, 189, 248, 0.1)'
+    height: 1
   },
   crosshairV: {
     position: 'absolute',
-    width: 1,
-    backgroundColor: 'rgba(56, 189, 248, 0.1)'
+    width: 1
   },
   sweepArmContainer: {
     position: 'absolute',
     alignItems: 'center'
   },
   sweepArm: {
-    width: 2,
-    backgroundColor: 'rgba(56, 189, 248, 0.8)',
-    shadowColor: '#38bdf8',
+    width: 2.5,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.9,
     shadowRadius: 8
@@ -157,8 +187,6 @@ const styles = StyleSheet.create({
     width: 14,
     height: 14,
     borderRadius: 7,
-    backgroundColor: '#38bdf8',
-    shadowColor: '#38bdf8',
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 1,
     shadowRadius: 10

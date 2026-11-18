@@ -195,3 +195,4 @@ describe('Wire Protocol Models Round-Trip Tests (§6, §12.1)', () => {
     expect(restored.errorMessage).toBeNull();
   });
 });
+

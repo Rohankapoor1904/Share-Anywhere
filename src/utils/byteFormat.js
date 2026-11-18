@@ -71,3 +71,4 @@ export function formatEta(remainingBytes, bytesPerSecond) {
   }
   return `${pad(minutes)}:${pad(seconds)}`;
 }
+

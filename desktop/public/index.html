@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="midnight">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LocalShare Desktop — Direct LAN File Sharing</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-icon">⚡</div>
+        <div class="brand-info">
+          <h1>LocalShare</h1>
+          <span class="brand-badge">Pure Desktop</span>
+        </div>
+      </div>
+
+      <nav class="nav-menu">
+        <button class="nav-item active" data-tab="devices">
+          <span class="nav-icon">📱</span>
+          <span class="nav-label">Devices</span>
+          <span class="nav-badge" id="devices-badge">0</span>
+        </button>
+        <button class="nav-item" data-tab="radar">
+          <span class="nav-icon">📡</span>
+          <span class="nav-label">Radar</span>
+        </button>
+        <button class="nav-item" data-tab="share">
+          <span class="nav-icon">📤</span>
+          <span class="nav-label">Share Hub</span>
+        </button>
+        <button class="nav-item" data-tab="transfers">
+          <span class="nav-icon">🔄</span>
+          <span class="nav-label">Transfers</span>
+          <span class="nav-badge" id="transfers-badge">0</span>
+        </button>
+        <button class="nav-item" data-tab="received">
+          <span class="nav-icon">📥</span>
+          <span class="nav-label">Received</span>
+        </button>
+        <button class="nav-item" data-tab="settings">
+          <span class="nav-icon">⚙️</span>
+          <span class="nav-label">Settings</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="status-indicator">
+          <span class="status-dot"></span>
+          <div class="status-text">
+            <span class="status-title" id="self-name">Loading...</span>
+            <span class="status-ip" id="self-ip">127.0.0.1:53318</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <!-- Devices Tab -->
+      <section id="tab-devices" class="tab-pane active">
+        <header class="pane-header">
+          <div>
+            <h2>Nearby Devices</h2>
+            <p>Devices discovered on your local network broadcasting via mDNS or UDP.</p>
+          </div>
+          <div class="header-actions">
+            <button id="btn-scan" class="btn btn-primary">▶ Scan Network</button>
+            <button id="btn-manual" class="btn btn-secondary">+ Manual IP</button>
+          </div>
+        </header>
+
+        <div class="glass-card self-card">
+          <div class="self-card-row">
+            <div class="self-details">
+              <span class="chip chip-primary">THIS PC</span>
+              <h3 id="self-device-name">Windows PC</h3>
+              <p id="self-device-details">127.0.0.1:53318 • Port 53317 (LocalSend Interop)</p>
+            </div>
+            <button id="btn-open-folder" class="btn btn-secondary">📂 Open Downloads Folder</button>
+          </div>
+        </div>
+
+        <div id="devices-list" class="devices-grid">
+          <!-- Populated dynamically -->
+        </div>
+      </section>
+
+      <!-- Radar Tab -->
+      <section id="tab-radar" class="tab-pane">
+        <header class="pane-header">
+          <div>
+            <h2>Radar Discovery</h2>
+            <p>Live 360-degree radar sweep visualizing peers on your local Wi-Fi subnet.</p>
+          </div>
+        </header>
+
+        <div class="radar-container">
+          <div class="radar-sweep-box">
+            <div class="radar-ring radar-ring-outer"></div>
+            <div class="radar-ring radar-ring-mid"></div>
+            <div class="radar-ring radar-ring-inner"></div>
+            <div class="radar-crosshair-h"></div>
+            <div class="radar-crosshair-v"></div>
+            <div class="radar-sweep-arm"></div>
+            <div class="radar-beacon"></div>
+            <div id="radar-blips-container"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Share Hub Tab -->
+      <section id="tab-share" class="tab-pane">
+        <header class="pane-header">
+          <div>
+            <h2>Share Hub</h2>
+            <p>Drag and drop files to stage them, choose a recipient device, and transfer directly.</p>
+          </div>
+        </header>
+
+        <div class="share-hub-grid">
+          <div class="share-column">
+            <div class="glass-card">
+              <h3>1. Recipient Device</h3>
+              <div id="selected-peer-box" class="selected-peer-empty">
+                <p>No recipient selected. Click on a device below:</p>
+                <div id="recipient-chips" class="recipient-chips-list"></div>
+              </div>
+            </div>
+
+            <div class="glass-card dropzone-card" id="dropzone">
+              <div class="dropzone-content">
+                <span class="dropzone-icon">📁</span>
+                <h4>Drag & Drop Files Here</h4>
+                <p>or click to browse your computer</p>
+                <input type="file" id="file-input" multiple style="display: none;">
+                <button id="btn-browse-files" class="btn btn-primary">Browse Files</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="share-column">
+            <div class="glass-card staged-card">
+              <div class="staged-header">
+                <h3>Staged Files (<span id="staged-count">0</span>)</h3>
+                <span id="staged-size" class="chip chip-primary">0 B</span>
+              </div>
+              <ul id="staged-list" class="staged-file-list">
+                <li class="empty-list-notice">No files staged yet.</li>
+              </ul>
+              <button id="btn-send-files" class="btn btn-primary btn-block" disabled>🚀 Send Files</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Transfers Tab -->
+      <section id="tab-transfers" class="tab-pane">
+        <header class="pane-header">
+          <div>
+            <h2>Active & Recent Transfers</h2>
+            <p>Real-time streaming TLS transfer sessions with chunk verification.</p>
+          </div>
+        </header>
+
+        <div id="transfers-list" class="transfers-container">
+          <div class="empty-state">
+            <span class="empty-icon">🔄</span>
+            <h3>No Active Transfers</h3>
+            <p>When you send or receive files, real-time progress will stream here.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Received Files Tab -->
+      <section id="tab-received" class="tab-pane">
+        <header class="pane-header">
+          <div>
+            <h2>Received Files</h2>
+            <p>Files received and verified on your local PC storage.</p>
+          </div>
+          <button id="btn-open-received-folder" class="btn btn-secondary">📂 Open in File Explorer</button>
+        </header>
+
+        <div id="received-list" class="received-grid">
+          <!-- Populated dynamically -->
+        </div>
+      </section>
+
+      <!-- Settings Tab -->
+      <section id="tab-settings" class="tab-pane">
+        <header class="pane-header">
+          <div>
+            <h2>Settings & Customization</h2>
+            <p>Choose theme palettes and view desktop network configuration.</p>
+          </div>
+        </header>
+
+        <div class="glass-card">
+          <h3>Appearance & Theme</h3>
+          <p class="card-subtitle">Select your tailored desktop palette. Changes apply immediately.</p>
+          <div class="theme-grid">
+            <div class="theme-card active" data-theme-id="midnight">
+              <div class="theme-card-header">
+                <strong>Midnight Slate</strong>
+                <span class="chip chip-primary">Default</span>
+              </div>
+              <p>Deep navy-slate with electric cyan accents</p>
+              <div class="swatches">
+                <span style="background: #0a0f1d;"></span>
+                <span style="background: #1e293b;"></span>
+                <span style="background: #38bdf8;"></span>
+                <span style="background: #818cf8;"></span>
+              </div>
+            </div>
+
+            <div class="theme-card" data-theme-id="obsidian">
+              <div class="theme-card-header">
+                <strong>OLED Obsidian</strong>
+                <span class="chip chip-primary">Pure Black</span>
+              </div>
+              <p>100% true black for AMOLED battery conservation</p>
+              <div class="swatches">
+                <span style="background: #000000;"></span>
+                <span style="background: #141414;"></span>
+                <span style="background: #00f2fe;"></span>
+                <span style="background: #00e676;"></span>
+              </div>
+            </div>
+
+            <div class="theme-card" data-theme-id="cyberpunk">
+              <div class="theme-card-header">
+                <strong>Cyber Neon</strong>
+                <span class="chip chip-primary">High Voltage</span>
+              </div>
+              <p>Ultraviolet, hot magenta and neon purple</p>
+              <div class="swatches">
+                <span style="background: #0c0717;"></span>
+                <span style="background: #23133c;"></span>
+                <span style="background: #f43f5e;"></span>
+                <span style="background: #c084fc;"></span>
+              </div>
+            </div>
+
+            <div class="theme-card" data-theme-id="daylight">
+              <div class="theme-card-header">
+                <strong>Daylight Pristine</strong>
+                <span class="chip chip-primary">Light Mode</span>
+              </div>
+              <p>Crisp, accessible high-contrast light aesthetics</p>
+              <div class="swatches">
+                <span style="background: #f1f5f9;"></span>
+                <span style="background: #ffffff;"></span>
+                <span style="background: #0284c7;"></span>
+                <span style="background: #6366f1;"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="glass-card" style="margin-top: 16px;">
+          <h3>System Identity & Ports</h3>
+          <div class="info-table">
+            <div class="info-row"><span>Host Name</span><strong id="info-hostname">...</strong></div>
+            <div class="info-row"><span>Local IP Address</span><strong id="info-ip">...</strong></div>
+            <div class="info-row"><span>Direct TLS Port</span><strong>53318</strong></div>
+            <div class="info-row"><span>LocalSend Port</span><strong>53317</strong></div>
+            <div class="info-row"><span>Downloads Folder</span><strong id="info-folder">...</strong></div>
+            <div class="info-row"><span>Version</span><strong style="color: var(--primary);">v1.2.84</strong></div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Manual IP Modal -->
+  <div id="modal-manual" class="modal-overlay">
+    <div class="modal-card">
+      <h3>Add Peer Manually</h3>
+      <p>Connect across subnets or when mDNS multicast is restricted.</p>
+      <input type="text" id="manual-ip-input" class="form-input" placeholder="IP Address (e.g. 192.168.1.45)">
+      <input type="text" id="manual-port-input" class="form-input" placeholder="Port (default: 53318)" value="53318">
+      <input type="text" id="manual-name-input" class="form-input" placeholder="Device Name (optional)">
+      <div class="modal-actions">
+        <button id="btn-cancel-manual" class="btn btn-secondary">Cancel</button>
+        <button id="btn-confirm-manual" class="btn btn-primary">Connect</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

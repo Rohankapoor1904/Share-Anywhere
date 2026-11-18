@@ -5,9 +5,11 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# Expo
+# Expo & Desktop Packaging
 .expo/
+.desktop-stage/
 dist/
+out/
 web-build/
 
 # Native builds
@@ -32,3 +34,4 @@ Thumbs.db
 # Coverage / Tests
 coverage/
 .jest/
+

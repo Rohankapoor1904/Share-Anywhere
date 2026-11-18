@@ -54,3 +54,4 @@ describe('TrustStore Unit Tests (§7, §12.1)', () => {
     expect(all.map((d) => d.deviceId)).toEqual(expect.arrayContaining(['dev-A', 'dev-B']));
   });
 });
+

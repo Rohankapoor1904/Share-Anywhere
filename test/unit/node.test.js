@@ -73,3 +73,4 @@ describe('LocalShareNode Facade Unit Tests (§8, §10, §12.1)', () => {
     expect(node.getPeers().length).toBe(0);
   });
 });
+

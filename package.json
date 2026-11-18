@@ -10,6 +10,10 @@
     "lint": "eslint . --max-warnings=0",
     "test": "jest",
     "test:integration": "jest --config jest.integration.config.js",
+    "desktop": "electron desktop/main.js",
+    "desktop:build": "node ./scripts/build_desktop.js",
+    "pc": "electron desktop/main.js",
+    "pc:server": "node desktop/engine/desktop-node.js",
     "e2e": "detox test --configuration android.emu.debug"
   },
   "dependencies": {
@@ -43,6 +47,8 @@
     "@types/react": "~18.2.79",
     "babel-jest": "^29.7.0",
     "babel-preset-expo": "~11.0.14",
+    "electron": "^30.0.0",
+    "electron-packager": "^17.1.2",
     "eslint": "^8.57.0",
     "eslint-plugin-react": "^7.34.1",
     "eslint-plugin-react-native": "^4.1.0",

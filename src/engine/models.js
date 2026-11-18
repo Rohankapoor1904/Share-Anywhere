@@ -246,3 +246,4 @@ export class CommitResponse {
     return new CommitResponse(json);
   }
 }
+

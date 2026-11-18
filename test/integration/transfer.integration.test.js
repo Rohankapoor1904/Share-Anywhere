@@ -249,3 +249,4 @@ describe('Real-Socket Transfer Gateway Integration Tests (§12.2)', () => {
     expect(savedBytes.equals(fileBytes)).toBe(true);
   });
 });
+

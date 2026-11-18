@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import GlassCard from './GlassCard';
 import { formatBytes, formatSpeed, formatEta } from '../utils/byteFormat';
+import { useTheme } from '../theme';
 
 /**
  * Renders an active or finished file transfer tile with progress, speed, ETA, and actions.
@@ -19,9 +20,11 @@ import { formatBytes, formatSpeed, formatEta } from '../utils/byteFormat';
  * @param {(sessionId: string) => void} [props.onRetry]
  */
 export default function TransferTile({ transfer, onCancel, onRetry }) {
+  const { theme } = useTheme();
+
   const {
     sessionId,
-    fileName,
+    fileName = 'Unnamed Transfer',
     totalBytes = 0,
     transferredBytes = 0,
     speed = 0,
@@ -39,75 +42,121 @@ export default function TransferTile({ transfer, onCancel, onRetry }) {
 
   const getStatusColor = () => {
     switch (status) {
-      case 'completed': return '#10b981';
-      case 'failed': return '#ef4444';
-      case 'cancelled': return '#f59e0b';
-      case 'in_progress': return '#3b82f6';
-      default: return '#94a3b8';
+      case 'completed': return theme.colors.success;
+      case 'failed': return theme.colors.danger;
+      case 'cancelled': return theme.colors.warning;
+      case 'in_progress': return theme.colors.primary;
+      default: return theme.colors.textMuted;
     }
   };
 
+  const getFileGlyph = (name) => {
+    const ext = (name || '').split('.').pop()?.toLowerCase();
+    switch (ext) {
+      case 'jpg':
+      case 'jpeg':
+      case 'png':
+      case 'gif':
+      case 'webp': return '🖼️';
+      case 'mp4':
+      case 'mkv':
+      case 'mov':
+      case 'avi': return '🎬';
+      case 'mp3':
+      case 'wav':
+      case 'flac':
+      case 'm4a': return '🎵';
+      case 'pdf': return '📕';
+      case 'zip':
+      case 'rar':
+      case 'tar':
+      case 'gz':
+      case '7z': return '📦';
+      case 'apk': return '🤖';
+      case 'txt':
+      case 'md':
+      case 'doc':
+      case 'docx': return '📄';
+      default: return '📁';
+    }
+  };
+
+  const statusColor = getStatusColor();
+
   return (
-    <GlassCard style={styles.card}>
+    <GlassCard style={styles.card} variant={status === 'in_progress' ? 'interactive' : 'default'}>
       <View style={styles.topRow}>
         <View style={styles.nameContainer}>
-          <Text style={styles.directionLabel}>
-            {direction === 'send' ? 'OUTGOING' : 'INCOMING'}
-          </Text>
-          <Text style={styles.fileName} numberOfLines={1}>
-            {fileName}
-          </Text>
+          <View style={styles.directionRow}>
+            <Text style={[styles.directionGlyph]}>
+              {direction === 'send' ? '📤' : '📥'}
+            </Text>
+            <Text style={[styles.directionLabel, { color: theme.colors.textMuted }]}>
+              {direction === 'send' ? 'OUTGOING' : 'INCOMING'}
+            </Text>
+          </View>
+          <View style={styles.fileNameRow}>
+            <Text style={styles.fileGlyph}>{getFileGlyph(fileName)}</Text>
+            <Text style={[styles.fileName, { color: theme.colors.text }]} numberOfLines={1}>
+              {fileName}
+            </Text>
+          </View>
         </View>
-        <View style={[styles.statusBadge, { backgroundColor: getStatusColor() }]}>
-          <Text style={styles.statusText}>{status.replace('_', ' ')}</Text>
+
+        <View style={[styles.statusBadge, { backgroundColor: statusColor + '25', borderColor: statusColor }]}>
+          <Text style={[styles.statusText, { color: statusColor }]}>
+            {status.replace('_', ' ')}
+          </Text>
         </View>
       </View>
 
-      {/* Progress Bar */}
-      <View style={styles.progressBarTrack}>
+      {/* Progress Bar Track */}
+      <View style={[styles.progressBarTrack, { backgroundColor: theme.colors.border }]}>
         <View
           style={[
             styles.progressBarFill,
-            { width: `${percent}%`, backgroundColor: getStatusColor() }
+            { width: `${percent}%`, backgroundColor: statusColor }
           ]}
         />
       </View>
 
       {/* Metrics Row */}
       <View style={styles.metricsRow}>
-        <Text style={styles.metricText}>
+        <Text style={[styles.metricText, { color: theme.colors.textSecondary }]}>
           {formatBytes(transferredBytes)} / {formatBytes(totalBytes)} ({percent}%)
         </Text>
         {status === 'in_progress' ? (
-          <Text style={styles.metricText}>
-            {formatSpeed(speed)} • ETA {eta}
+          <Text style={[styles.speedText, { color: theme.colors.primary }]}>
+            ⚡ {formatSpeed(speed)} • ETA {eta}
           </Text>
         ) : null}
       </View>
 
       {errorMessage ? (
-        <Text style={styles.errorText} numberOfLines={2}>
-          {errorMessage}
-        </Text>
+        <View style={[styles.errorBox, { backgroundColor: theme.colors.dangerGlow, borderColor: theme.colors.danger }]}>
+          <Text style={[styles.errorText, { color: theme.colors.danger }]} numberOfLines={2}>
+            ⚠️ {errorMessage}
+          </Text>
+        </View>
       ) : null}
 
       {/* Action Buttons */}
       <View style={styles.actionsRow}>
         {status === 'in_progress' || status === 'queued' ? (
           <TouchableOpacity
-            style={[styles.btn, styles.cancelBtn]}
+            style={[styles.btn, { backgroundColor: theme.colors.dangerGlow, borderColor: theme.colors.danger }]}
             onPress={() => onCancel && onCancel(sessionId)}
           >
-            <Text style={styles.cancelBtnText}>Cancel</Text>
+            <Text style={[styles.btnText, { color: theme.colors.danger }]}>✕ Cancel</Text>
           </TouchableOpacity>
         ) : null}
 
         {status === 'failed' || status === 'cancelled' ? (
           <TouchableOpacity
-            style={[styles.btn, styles.retryBtn]}
+            style={[styles.btn, { backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.primary }]}
             onPress={() => onRetry && onRetry(sessionId)}
           >
-            <Text style={styles.retryBtnText}>Retry</Text>
+            <Text style={[styles.btnText, { color: theme.colors.primary }]}>🔄 Retry Transfer</Text>
           </TouchableOpacity>
         ) : null}
       </View>
@@ -129,39 +178,55 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: 10
   },
+  directionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 2
+  },
+  directionGlyph: {
+    fontSize: 11,
+    marginRight: 4
+  },
   directionLabel: {
     fontSize: 10,
-    fontWeight: '700',
-    color: '#64748b',
-    letterSpacing: 0.5,
-    marginBottom: 2
+    fontWeight: '800',
+    letterSpacing: 0.5
+  },
+  fileNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2
+  },
+  fileGlyph: {
+    fontSize: 16,
+    marginRight: 6
   },
   fileName: {
     fontSize: 15,
-    fontWeight: '600',
-    color: '#f8fafc'
+    fontWeight: '700',
+    flex: 1
   },
   statusBadge: {
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 6
+    borderRadius: 8,
+    borderWidth: 1
   },
   statusText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#ffffff',
-    textTransform: 'uppercase'
+    fontSize: 10,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3
   },
   progressBarTrack: {
-    height: 6,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 3,
+    height: 7,
+    borderRadius: 4,
     overflow: 'hidden',
     marginBottom: 8
   },
   progressBarFill: {
     height: '100%',
-    borderRadius: 3
+    borderRadius: 4
   },
   metricsRow: {
     flexDirection: 'row',
@@ -170,12 +235,21 @@ const styles = StyleSheet.create({
   },
   metricText: {
     fontSize: 12,
-    color: '#94a3b8'
+    fontWeight: '500'
+  },
+  speedText: {
+    fontSize: 12,
+    fontWeight: '700'
+  },
+  errorBox: {
+    marginTop: 8,
+    padding: 8,
+    borderRadius: 6,
+    borderWidth: 1
   },
   errorText: {
     fontSize: 12,
-    color: '#ef4444',
-    marginTop: 6
+    fontWeight: '600'
   },
   actionsRow: {
     flexDirection: 'row',
@@ -186,26 +260,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 8,
+    borderWidth: 1,
     marginLeft: 8
   },
-  cancelBtn: {
-    backgroundColor: 'rgba(239, 68, 68, 0.2)',
-    borderWidth: 1,
-    borderColor: '#ef4444'
-  },
-  cancelBtnText: {
-    color: '#ef4444',
+  btnText: {
     fontSize: 12,
-    fontWeight: '600'
-  },
-  retryBtn: {
-    backgroundColor: 'rgba(59, 130, 246, 0.2)',
-    borderWidth: 1,
-    borderColor: '#3b82f6'
-  },
-  retryBtnText: {
-    color: '#3b82f6',
-    fontSize: 12,
-    fontWeight: '600'
+    fontWeight: '700'
   }
 });

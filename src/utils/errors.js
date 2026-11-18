@@ -103,3 +103,4 @@ export class ProtocolError extends LocalShareError {
     this.name = 'ProtocolError';
   }
 }
+

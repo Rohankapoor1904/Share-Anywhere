@@ -116,3 +116,4 @@ describe('Pairing Engine Unit Tests (§7, §12.1)', () => {
     expect(result.reason).toBe('fingerprint_mismatch');
   });
 });
+

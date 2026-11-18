@@ -80,3 +80,4 @@ class NativeEventsManager {
 }
 
 export const NativeEvents = new NativeEventsManager();
+
