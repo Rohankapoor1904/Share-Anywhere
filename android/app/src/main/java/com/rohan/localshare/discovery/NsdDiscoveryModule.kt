@@ -3,6 +3,7 @@ package com.rohan.localshare.discovery
 import android.content.Context
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
+import android.net.wifi.WifiManager
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
@@ -11,6 +12,8 @@ import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import java.net.InetAddress
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Native Android NsdManager integration for mDNS/DNS-SD local network discovery.
@@ -24,6 +27,9 @@ class NsdDiscoveryModule(reactContext: ReactApplicationContext) : ReactContextBa
     private var registrationListener: NsdManager.RegistrationListener? = null
     private var discoveryListener: NsdManager.DiscoveryListener? = null
     private var registeredServiceName: String? = null
+    private var multicastLock: WifiManager.MulticastLock? = null
+    private val resolveQueue = ConcurrentLinkedQueue<NsdServiceInfo>()
+    private val isResolving = AtomicBoolean(false)
 
     override fun getName(): String = "NsdDiscoveryModule"
 
@@ -104,6 +110,19 @@ class NsdDiscoveryModule(reactContext: ReactApplicationContext) : ReactContextBa
         try {
             stopExistingDiscovery()
 
+            // Acquire Wi-Fi MulticastLock so the OS Wi-Fi driver does not filter incoming mDNS packets
+            try {
+                val wifiManager = reactApplicationContext.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+                if (multicastLock == null) {
+                    multicastLock = wifiManager?.createMulticastLock("LocalShareNsdMulticastLock")?.apply {
+                        setReferenceCounted(true)
+                        acquire()
+                    }
+                }
+            } catch (e: Exception) {
+                // MulticastLock acquisition fallback
+            }
+
             discoveryListener = object : NsdManager.DiscoveryListener {
                 override fun onDiscoveryStarted(regType: String) {
                     promise?.resolve(true)
@@ -113,7 +132,8 @@ class NsdDiscoveryModule(reactContext: ReactApplicationContext) : ReactContextBa
                     if (serviceInfo.serviceType.contains("_localshare._tcp") &&
                         serviceInfo.serviceName != registeredServiceName
                     ) {
-                        resolveService(serviceInfo)
+                        resolveQueue.offer(serviceInfo)
+                        processNextResolve()
                     }
                 }
 
@@ -166,42 +186,74 @@ class NsdDiscoveryModule(reactContext: ReactApplicationContext) : ReactContextBa
             }
             discoveryListener = null
         }
+
+        multicastLock?.let {
+            try {
+                if (it.isHeld) {
+                    it.release()
+                }
+            } catch (e: Exception) {
+                // Ignore lock release error
+            }
+            multicastLock = null
+        }
+
+        resolveQueue.clear()
+        isResolving.set(false)
     }
 
-    private fun resolveService(serviceInfo: NsdServiceInfo) {
+    private fun processNextResolve() {
+        if (!isResolving.compareAndSet(false, true)) {
+            return
+        }
+
+        val nextService = resolveQueue.poll()
+        if (nextService == null) {
+            isResolving.set(false)
+            return
+        }
+
         try {
-            nsdManager.resolveService(serviceInfo, object : NsdManager.ResolveListener {
+            nsdManager.resolveService(nextService, object : NsdManager.ResolveListener {
                 override fun onResolveFailed(info: NsdServiceInfo, errorCode: Int) {
-                    // Resolve error; ignore or retry
+                    isResolving.set(false)
+                    processNextResolve()
                 }
 
                 override fun onServiceResolved(resolvedInfo: NsdServiceInfo) {
-                    val host: InetAddress? = resolvedInfo.host
-                    val hostAddress = host?.hostAddress ?: return
-                    val port = resolvedInfo.port
+                    try {
+                        val host: InetAddress? = resolvedInfo.host
+                        val hostAddress = host?.hostAddress
+                        if (hostAddress != null) {
+                            val port = resolvedInfo.port
+                            val attrs = resolvedInfo.attributes
+                            val deviceId = attrs["deviceId"]?.let { String(it, Charsets.UTF_8) }
+                                ?: resolvedInfo.serviceName
+                            val displayName = attrs["displayName"]?.let { String(it, Charsets.UTF_8) }
+                                ?: resolvedInfo.serviceName
+                            val fingerprint = attrs["fingerprint"]?.let { String(it, Charsets.UTF_8) } ?: ""
+                            val platform = attrs["platform"]?.let { String(it, Charsets.UTF_8) } ?: "android"
 
-                    val attrs = resolvedInfo.attributes
-                    val deviceId = attrs["deviceId"]?.let { String(it, Charsets.UTF_8) }
-                        ?: resolvedInfo.serviceName
-                    val displayName = attrs["displayName"]?.let { String(it, Charsets.UTF_8) }
-                        ?: resolvedInfo.serviceName
-                    val fingerprint = attrs["fingerprint"]?.let { String(it, Charsets.UTF_8) } ?: ""
-                    val platform = attrs["platform"]?.let { String(it, Charsets.UTF_8) } ?: "android"
+                            val params = Arguments.createMap().apply {
+                                putString("deviceId", deviceId)
+                                putString("displayName", displayName)
+                                putString("address", hostAddress)
+                                putInt("port", port)
+                                putString("fingerprint", fingerprint)
+                                putString("platform", platform)
+                            }
 
-                    val params = Arguments.createMap().apply {
-                        putString("deviceId", deviceId)
-                        putString("displayName", displayName)
-                        putString("address", hostAddress)
-                        putInt("port", port)
-                        putString("fingerprint", fingerprint)
-                        putString("platform", platform)
+                            sendEvent("PeerFound", params)
+                        }
+                    } finally {
+                        isResolving.set(false)
+                        processNextResolve()
                     }
-
-                    sendEvent("PeerFound", params)
                 }
             })
         } catch (e: Exception) {
-            // Transient resolve exception
+            isResolving.set(false)
+            processNextResolve()
         }
     }
 

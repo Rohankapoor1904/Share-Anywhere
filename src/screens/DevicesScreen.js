@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -23,10 +23,15 @@ export default function DevicesScreen({ navigation }) {
     isDiscovering,
     startDiscovery,
     stopDiscovery,
+    scanSubnet,
     addManualPeer
   } = useLocalShare();
 
   const { theme } = useTheme();
+
+  useEffect(() => {
+    startDiscovery();
+  }, [startDiscovery]);
 
   const [qrModalVisible, setQrModalVisible] = useState(false);
   const [manualModalVisible, setManualModalVisible] = useState(false);
@@ -115,6 +120,17 @@ export default function DevicesScreen({ navigation }) {
             >
               {isDiscovering ? '● Scanning for Peers...' : '▶ Start Scan'}
             </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.actionBtn,
+              styles.manualBtn,
+              { backgroundColor: theme.colors.cardSolid, borderColor: theme.colors.border }
+            ]}
+            onPress={scanSubnet}
+          >
+            <Text style={[styles.actionBtnText, { color: theme.colors.text }]}>⚡ Subnet Probe</Text>
           </TouchableOpacity>
 
           <TouchableOpacity

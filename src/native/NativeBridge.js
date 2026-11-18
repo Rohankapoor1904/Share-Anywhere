@@ -8,6 +8,7 @@ const {
   PinModule,
   NsdDiscoveryModule,
   BleDiscoveryModule,
+  TransferServerModule,
   TransferForegroundService,
   StorageModule
 } = NativeModules;
@@ -112,6 +113,25 @@ export const NativeBridge = {
   stopForegroundService() {
     if (TransferForegroundService && TransferForegroundService.stopService) {
       TransferForegroundService.stopService();
+    }
+  },
+
+  // Native Transfer Server
+  async startServer(port = 53318) {
+    if (TransferServerModule && TransferServerModule.startServer) {
+      return TransferServerModule.startServer(port);
+    }
+  },
+
+  async stopServer() {
+    if (TransferServerModule && TransferServerModule.stopServer) {
+      return TransferServerModule.stopServer();
+    }
+  },
+
+  updateDeviceInfo(info) {
+    if (TransferServerModule && TransferServerModule.updateDeviceInfo) {
+      TransferServerModule.updateDeviceInfo(info);
     }
   },
 

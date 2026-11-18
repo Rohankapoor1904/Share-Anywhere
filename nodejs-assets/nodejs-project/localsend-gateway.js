@@ -102,15 +102,16 @@ class LocalSendGateway {
 
     this.udpSocket.bind(this.port, () => {
       try {
+        this.udpSocket.setBroadcast(true);
         this.udpSocket.addMembership(MULTICAST_ADDR);
-      } catch (err) {
-        // Multicast interface error
+      } catch (_err) {
+        // Interface may not support multicast membership; broadcast remains active
       }
     });
   }
 
   /**
-   * Broadcast LocalSend presence announcement over UDP.
+   * Broadcast LocalSend presence announcement over UDP multicast and broadcast.
    */
   broadcastAnnouncement() {
     if (!this.udpSocket) return;
@@ -127,7 +128,19 @@ class LocalSendGateway {
       announcement: true
     });
 
+    // Send to multicast group
     this.udpSocket.send(message, 0, message.length, this.port, MULTICAST_ADDR);
+
+    // Also send to local broadcast address for routers with multicast filtering
+    try {
+      this.udpSocket.send(message, 0, message.length, this.port, '255.255.255.255');
+    } catch (_err) {
+      // Broadcast send fallback
+    }
+  }
+
+  announcePresence() {
+    this.broadcastAnnouncement();
   }
 
   async handleHttp(req, res) {

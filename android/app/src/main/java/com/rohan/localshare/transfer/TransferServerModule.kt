@@ -5,6 +5,7 @@ import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import com.rohan.localshare.crypto.EphemeralCertModule
 import com.rohan.localshare.crypto.HashingModule
@@ -33,6 +34,9 @@ class TransferServerModule(
     private val threadPool = Executors.newCachedThreadPool()
     private val chunkEngine: ChunkEngine
     private val activeSessions = ConcurrentHashMap<String, JSONObject>()
+    private var selfDeviceId: String = "android-device"
+    private var selfDisplayName: String = "Android Phone"
+    private var selfPlatform: String = "android"
 
     init {
         val baseDir = File(reactContext.filesDir, "received")
@@ -40,6 +44,13 @@ class TransferServerModule(
     }
 
     override fun getName(): String = "TransferServerModule"
+
+    @ReactMethod
+    fun updateDeviceInfo(info: ReadableMap) {
+        if (info.hasKey("deviceId")) selfDeviceId = info.getString("deviceId") ?: selfDeviceId
+        if (info.hasKey("displayName")) selfDisplayName = info.getString("displayName") ?: selfDisplayName
+        if (info.hasKey("platform")) selfPlatform = info.getString("platform") ?: selfPlatform
+    }
 
     @ReactMethod
     fun startServer(port: Int, promise: Promise) {
@@ -113,9 +124,25 @@ class TransferServerModule(
             when {
                 path == "/v1/info" && method == "GET" -> {
                     val json = JSONObject().apply {
-                        put("deviceId", "android-native-server")
+                        put("deviceId", selfDeviceId)
+                        put("displayName", selfDisplayName)
                         put("fingerprint", certModule.getFingerprint())
                         put("port", s.localPort)
+                        put("platform", selfPlatform)
+                    }
+                    sendJsonResponse(output, 200, json)
+                }
+
+                (path == "/api/localsend/v2/info" || path == "/v2/info") && method == "GET" -> {
+                    val json = JSONObject().apply {
+                        put("alias", selfDisplayName)
+                        put("version", "2.2")
+                        put("deviceModel", "Android")
+                        put("deviceType", "mobile")
+                        put("fingerprint", certModule.getFingerprint())
+                        put("port", s.localPort)
+                        put("protocol", "http")
+                        put("download", true)
                     }
                     sendJsonResponse(output, 200, json)
                 }

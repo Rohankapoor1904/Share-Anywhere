@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import GlassCard from '../components/GlassCard';
 import { useTheme } from '../theme';
+import { requestDiscoveryPermissions } from '../utils/permissions';
 
 export default function PermissionsScreen({ navigation }) {
   const { theme } = useTheme();
@@ -16,19 +17,23 @@ export default function PermissionsScreen({ navigation }) {
   const [bluetoothGranted, setBluetoothGranted] = useState(false);
   const [storageGranted, setStorageGranted] = useState(false);
 
-  const handleGrantNearby = () => {
+  const handleGrantNearby = async () => {
+    await requestDiscoveryPermissions();
     setNearbyGranted(true);
   };
 
-  const handleGrantBluetooth = () => {
+  const handleGrantBluetooth = async () => {
+    await requestDiscoveryPermissions();
     setBluetoothGranted(true);
   };
 
-  const handleGrantStorage = () => {
+  const handleGrantStorage = async () => {
+    await requestDiscoveryPermissions();
     setStorageGranted(true);
   };
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
+    await requestDiscoveryPermissions();
     navigation.replace('Main');
   };
 

@@ -137,6 +137,12 @@ export function LocalShareProvider({ children, nodeInstance }) {
     }
   };
 
+  const scanSubnet = async () => {
+    if (nodeInstance && typeof nodeInstance.scanSubnet === 'function') {
+      await nodeInstance.scanSubnet();
+    }
+  };
+
   const sendFiles = async (peer, files) => {
     if (nodeInstance) {
       await nodeInstance.send(peer, files);
@@ -192,6 +198,7 @@ export function LocalShareProvider({ children, nodeInstance }) {
     settings,
     startDiscovery,
     stopDiscovery,
+    scanSubnet,
     sendFiles,
     cancelTransfer,
     retryTransfer,
@@ -222,6 +229,7 @@ export function useLocalShare() {
       settings: {},
       startDiscovery: async () => {},
       stopDiscovery: async () => {},
+      scanSubnet: async () => {},
       sendFiles: async () => {},
       cancelTransfer: () => {},
       retryTransfer: () => {},

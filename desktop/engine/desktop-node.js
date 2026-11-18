@@ -61,6 +61,7 @@ class DesktopEngine {
     this.transferGateway = null;
     this.localsendGateway = null;
     this.controlServer = null;
+    this.discoveryInterval = null;
   }
 
   async start() {
@@ -97,6 +98,11 @@ class DesktopEngine {
     // Scan immediately
     this.scanSubnet();
 
+    // Start periodic discovery sweep every 12 seconds
+    this.discoveryInterval = setInterval(() => {
+      this.scanSubnet();
+    }, 12000);
+
     // eslint-disable-next-line no-console
     console.info(`=======================================================`);
     // eslint-disable-next-line no-console
@@ -115,7 +121,7 @@ class DesktopEngine {
 
   handlePeerFound(peer) {
     if (!peer || !peer.ip) return;
-    if (peer.ip === this.localIp && peer.port === LOCALSEND_PORT) return;
+    if (peer.ip === this.localIp && (peer.port === LOCALSEND_PORT || peer.port === TRANSFER_PORT)) return;
 
     const id = peer.fingerprint || `${peer.ip}:${peer.port}`;
     const existing = this.peers.get(id);
@@ -125,7 +131,7 @@ class DesktopEngine {
       displayName: peer.alias || peer.displayName || 'Unknown Peer',
       address: peer.ip,
       port: peer.port || 53317,
-      platform: peer.deviceType || 'mobile',
+      platform: peer.deviceType || peer.platform || 'mobile',
       fingerprint: peer.fingerprint || '',
       lastSeen: Date.now()
     };
@@ -136,18 +142,161 @@ class DesktopEngine {
     }
   }
 
-  scanSubnet() {
+  httpGetFast(targetUrl, timeoutMs = 800) {
+    return new Promise((resolve) => {
+      const u = new URL(targetUrl);
+      const req = http.get({
+        hostname: u.hostname,
+        port: u.port,
+        path: u.pathname,
+        timeout: timeoutMs
+      }, (res) => {
+        let body = '';
+        res.on('data', (d) => { body += d; });
+        res.on('end', () => {
+          if (res.statusCode === 200) {
+            try {
+              resolve(JSON.parse(body));
+            } catch (_e) {
+              resolve(null);
+            }
+          } else {
+            resolve(null);
+          }
+        });
+      });
+      req.on('timeout', () => {
+        req.destroy();
+        resolve(null);
+      });
+      req.on('error', () => {
+        resolve(null);
+      });
+    });
+  }
+
+  async probeSingleIp(ip) {
+    // 1. Probe LocalShare (Port 53318)
+    try {
+      const lsInfo = await this.httpGetFast(`http://${ip}:53318/v1/info`, 800);
+      if (lsInfo && (lsInfo.deviceId || lsInfo.fingerprint)) {
+        this.handlePeerFound({
+          deviceId: lsInfo.deviceId || `ls-${ip}`,
+          displayName: lsInfo.displayName || `Device (${ip})`,
+          ip,
+          port: lsInfo.port || 53318,
+          deviceType: lsInfo.platform || 'mobile',
+          fingerprint: lsInfo.fingerprint || '',
+          alias: lsInfo.displayName
+        });
+        return;
+      }
+    } catch (_e) {
+      // Offline / unreachable host
+    }
+
+    // 2. Probe LocalSend (Port 53317)
+    try {
+      const sendInfo = await this.httpGetFast(`http://${ip}:53317/api/localsend/v2/info`, 800);
+      if (sendInfo && sendInfo.alias) {
+        this.handlePeerFound({
+          deviceId: sendInfo.fingerprint || `localsend-${ip}`,
+          displayName: sendInfo.alias,
+          ip,
+          port: sendInfo.port || 53317,
+          deviceType: sendInfo.deviceType || 'mobile',
+          fingerprint: sendInfo.fingerprint || '',
+          alias: sendInfo.alias
+        });
+
+        // Register our presence with the peer
+        this.registerWithPeer(ip, sendInfo.port || 53317).catch(() => {});
+      }
+    } catch (_e) {
+      // Offline / unreachable host
+    }
+  }
+
+  async registerWithPeer(ip, port) {
+    try {
+      const body = JSON.stringify({
+        alias: this.selfDevice.displayName,
+        version: '2.2',
+        deviceModel: 'PC',
+        deviceType: 'desktop',
+        fingerprint: this.fingerprint,
+        port: this.selfDevice.port,
+        protocol: 'http',
+        download: true
+      });
+      await this.httpRequest({
+        hostname: ip,
+        port,
+        path: '/api/localsend/v2/register',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 1000
+      }, body);
+    } catch (_err) {
+      // Best-effort registration
+    }
+  }
+
+  async probeSubnet() {
+    const interfaces = os.networkInterfaces();
+    const prefixes = new Set();
+
+    for (const name of Object.keys(interfaces)) {
+      for (const iface of interfaces[name]) {
+        if (iface.family === 'IPv4' && !iface.internal) {
+          const parts = iface.address.split('.');
+          if (parts.length === 4) {
+            prefixes.add(`${parts[0]}.${parts[1]}.${parts[2]}.`);
+          }
+        }
+      }
+    }
+
+    if (prefixes.size === 0) {
+      prefixes.add('192.168.1.');
+    }
+
+    for (const prefix of prefixes) {
+      const ips = [];
+      for (let i = 1; i <= 254; i++) {
+        const ip = `${prefix}${i}`;
+        if (ip !== this.localIp) {
+          ips.push(ip);
+        }
+      }
+
+      // Concurrently probe in batches of 32
+      const batchSize = 32;
+      for (let i = 0; i < ips.length; i += batchSize) {
+        const batch = ips.slice(i, i + batchSize);
+        await Promise.all(batch.map((ip) => this.probeSingleIp(ip)));
+      }
+    }
+  }
+
+  async scanSubnet() {
+    if (this.isScanning) return;
     this.isScanning = true;
     this.broadcastEvent('scan_state', { scanning: true });
 
-    if (this.localsendGateway && typeof this.localsendGateway.announcePresence === 'function') {
-      this.localsendGateway.announcePresence();
+    if (this.localsendGateway && typeof this.localsendGateway.broadcastAnnouncement === 'function') {
+      this.localsendGateway.broadcastAnnouncement();
     }
 
-    setTimeout(() => {
+    try {
+      await this.probeSubnet();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('Subnet probe warning:', err);
+    } finally {
       this.isScanning = false;
       this.broadcastEvent('scan_state', { scanning: false });
-    }, 4000);
+    }
   }
 
   broadcastEvent(type, data) {
@@ -607,6 +756,10 @@ class DesktopEngine {
   }
 
   async stop() {
+    if (this.discoveryInterval) {
+      clearInterval(this.discoveryInterval);
+      this.discoveryInterval = null;
+    }
     if (this.transferGateway) await this.transferGateway.stop();
     if (this.localsendGateway) await this.localsendGateway.stop();
     if (this.controlServer) {

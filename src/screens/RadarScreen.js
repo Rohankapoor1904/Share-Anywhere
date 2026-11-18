@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,10 @@ export default function RadarScreen({ navigation }) {
   const { peers, isDiscovering, startDiscovery, stopDiscovery } = useLocalShare();
   const { theme } = useTheme();
   const [radarActive, setRadarActive] = useState(true);
+
+  useEffect(() => {
+    startDiscovery();
+  }, [startDiscovery]);
 
   const handleSelectPeer = (peer) => {
     navigation.navigate('ShareHub', { targetPeer: peer });

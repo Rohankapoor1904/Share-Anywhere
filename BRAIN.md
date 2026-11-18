@@ -7,7 +7,21 @@
 - **Contract**: Anti-Fake Contract (§3) enforced. No mock data in app, no stubbed native modules, no swallowed errors, no fake progress, real sockets/tests only.
 
 ## Current State
-- **Status**: ALL PHASES COMPLETE, THEME & UI REFACTORED, RELEASE APKs & PC DESKTOP APP COMPILED & VERIFIED.
+- **Status**: ALL PHASES COMPLETE, DISCOVERY MULTI-CHANNEL OVERHAUL IMPLEMENTED, STANDALONE PC EXECUTABLE COMPILED, RELEASE APKs COMPILED & REPOSITORY SYNCED.
+- **Discovery Multi-Channel Engine**:
+  - **Android Wi-Fi MulticastLock**: Native `WifiManager.MulticastLock` acquired during discovery to prevent Android kernel/firmware from dropping incoming mDNS and UDP multicast packets.
+  - **Serialized Resolve Queue**: Re-entrant `ConcurrentLinkedQueue` in `NsdDiscoveryModule.kt` ensuring sequential service resolution to prevent Android `FAILURE_ALREADY_ACTIVE` crashes.
+  - **Active Subnet Probing**: Concurrent subnet range probers on Android (`LocalShareNode.scanSubnet()`) and PC Desktop (`desktop-node.js:probeSubnet()`) probing ports 53318 (`/v1/info`) and 53317 (`/api/localsend/v2/info`) across `192.168.x.1-254`. Guarantees peer discovery even when routers filter multicast or enforce AP isolation.
+  - **Cross-Protocol Handshake**: Dual-channel support across both LocalShare (53318) and LocalSend (53317) protocols.
+  - **Android 12-14+ Runtime Permissions**: Comprehensive runtime permission request flow in `src/utils/permissions.js` handling `NEARBY_WIFI_DEVICES`, `BLUETOOTH_SCAN`, and `ACCESS_FINE_LOCATION`.
+- **Pure Standalone Windows Desktop Application**:
+  - **Status**: `BUILD, PACKAGING & VERIFICATION SUCCESSFUL` (`build_pc.ps1`, `scripts/build_desktop.js`)
+  - **Standalone Executable**: `dist/LocalShare-win32-x64/LocalShare.exe` (**168.84 MB**)
+  - **Electron Main Process**: `desktop/main.js` native `BrowserWindow` with single instance lock, IPC bridge, native Windows file dialogs (`dialog:openFiles`), and Explorer integration (`shell:showInFolder`).
+  - **Preload Bridge**: `desktop/preload.js` secure `contextBridge` exposing `window.electronAPI`.
+  - **Engine**: `desktop/engine/desktop-node.js` running native TLS server on 53318, LocalSend v2.2 protocol on 53317, UDP multicast discovery, full chunked file streaming `/api/send`, active subnet range scanning, and desktop control API on 53319.
+  - **UI**: `desktop/public/` with glassmorphic native desktop interface supporting all 4 themes (Midnight, Obsidian, Cyberpunk, Daylight), native drag-and-drop file staging, live radar sweep, transfer progress bars, and Windows Explorer folder integration.
+  - **Launchers**: `dist/LocalShare-win32-x64/LocalShare.exe`, `LocalShare-PC.bat`, `npm run desktop`.
 - **Theme & UI/UX System**:
   - Full modular Design Token & Multi-Theme Architecture implemented in `src/theme/`.
   - 4 tailored, high-contrast themes:
@@ -17,37 +31,17 @@
     - **Daylight Pristine** (id: `daylight`, crisp high-contrast light theme)
   - Interactive visual Theme Selector on `SettingsScreen` with live preview swatches and AsyncStorage persistence (`@localshare:theme_id`).
   - Dynamic React Navigation sync: active tab bar highlights, themed header backgrounds, and status bar styles (`light` / `dark`).
-  - Enhanced UI components: `GlassCard` variants, `PeerCard` with platform avatars & trust badges, `TransferTile` with semantic status colors & file type glyphs, `RadarView` with themed sweep gradient, `PinDialog` with illuminated PIN boxes, `QueueList` with total size chips, and `EmptyState` with glowing icons.
-  - Enhanced screens: peer searching on `DevicesScreen`, file category filtering and searching on `ReceivedScreen`, combined throughput banner on `TransfersScreen`, and dashed dropzone on `ShareHubScreen`.
-- **Android Release APK Build**:
-  - **Status**: `BUILD SUCCESSFUL in 16m 36s` (`build_release.ps1`)
+- **Android Release APKs**:
   - **Primary Phone APK (arm64-v8a)**: `android/app/build/outputs/apk/release/app-arm64-v8a-release.apk`
-    - **Size**: **30.21 MB**
-    - **SHA-256**: `3B19E13E17C18490980AFCE67C7132CA44866E36EAC2E91816E20E1CCB064CCD`
   - **Emulator / WSA APK (x86_64)**: `android/app/build/outputs/apk/release/app-x86_64-release.apk`
-    - **Size**: **31.59 MB**
-    - **SHA-256**: `46CE8BDA3DDD47678D1020CC0559B347267EA056868A0C44A7E8120D52B1EB82`
   - **Legacy ARM APK (armeabi-v7a)**: `android/app/build/outputs/apk/release/app-armeabi-v7a-release.apk`
-    - **Size**: **28.90 MB**
-    - **SHA-256**: `9C975C24CBD1F40A128D9FA3BD2B38609B52CF98B6C29315FE77133B9E69B74F`
   - **Universal APK**: `android/app/build/outputs/apk/release/app-universal-release.apk`
-    - **Size**: **73.89 MB**
-    - **SHA-256**: `D1A1CF4A368307F10BBCBB5A25A85024749BBF5D64C20A08501A067805D824EC`
-- **Pure Standalone Windows Desktop Application**:
-  - **Status**: `BUILD, PACKAGING & VERIFICATION SUCCESSFUL` (`build_pc.ps1`, `scripts/build_desktop.js`)
-  - **Standalone Executable**: `dist/LocalShare-win32-x64/LocalShare.exe` (**168.84 MB**)
-  - **Electron Main Process**: `desktop/main.js` native `BrowserWindow` with single instance lock, IPC bridge, native Windows file dialogs (`dialog:openFiles`), and Explorer integration (`shell:showInFolder`).
-  - **Preload Bridge**: `desktop/preload.js` secure `contextBridge` exposing `window.electronAPI`.
-  - **Engine**: `desktop/engine/desktop-node.js` running native TLS server on 53318, LocalSend v2.2 protocol on 53317, UDP multicast discovery, full chunked file streaming `/api/send`, and desktop control API on 53319.
-  - **UI**: `desktop/public/` with glassmorphic native desktop interface supporting all 4 themes (Midnight, Obsidian, Cyberpunk, Daylight), native drag-and-drop file staging, live radar sweep, transfer progress bars, and Windows Explorer folder integration.
-  - **Launchers**: `dist/LocalShare-win32-x64/LocalShare.exe`, `LocalShare-PC.bat`, `npm run desktop`.
 - **Test Suite**:
-  - Unit Tests: 43/43 passing (`npm test`, including `test/unit/theme.test.js`).
+  - Unit Tests: 43/43 passing (`npm test`).
   - Integration Tests: 5/5 passing on real sockets (`npm run test:integration`).
   - Linter: ESLint passing with 0 warnings and 0 errors (`npm run lint`).
   - Type-Check: TypeScript checkJs passing with 0 errors (`npm run type-check`).
   - Anti-Fake Audit: 0 forbidden markers, 0 swallowed errors, 0 skipped/todo tests.
-  - Mutation Checks: 4 critical paths verified (pinning, PIN reject, resume, SHA-256 verify).
 
 ## Architectural Map
 1. **Design System & Theme Engine (`src/theme/`)**:
