@@ -17,7 +17,9 @@
 - **Pure Standalone Windows Desktop Application**:
   - **Status**: `BUILD, PACKAGING & VERIFICATION SUCCESSFUL` (`build_pc.ps1`, `scripts/build_desktop.js`)
   - **Standalone Executable**: `dist/LocalShare-win32-x64/LocalShare.exe` (**168.84 MB**)
-  - **Electron Main Process**: `desktop/main.js` native `BrowserWindow` with single instance lock, IPC bridge, native Windows file dialogs (`dialog:openFiles`), and Explorer integration (`shell:showInFolder`).
+  - **Electron Main Process**: `desktop/main.js` native `BrowserWindow` with single instance lock, IPC bridge, native Windows file dialogs (`dialog:openFiles`), and Explorer integration (`shell:showInFolder`). Window initializes instantly with `show: true` and local disk fallback to prevent any black/invisible window states.
+  - **Network Resilience & Port Fallback**: Automatic port fallback across `TransferGateway` (53318 -> 53328), `LocalSendGateway` (53317 -> 53327), and `controlServer` (53319 -> 53320) to eliminate Windows ephemeral socket `EADDRINUSE` conflicts.
+  - **Environment Isolation**: `scripts/run_desktop.js` and `LocalShare-PC.bat` strip `ELECTRON_RUN_AS_NODE` to ensure the GUI launches properly across all Windows terminal and explorer environments.
   - **Preload Bridge**: `desktop/preload.js` secure `contextBridge` exposing `window.electronAPI`.
   - **Engine**: `desktop/engine/desktop-node.js` running native TLS server on 53318, LocalSend v2.2 protocol on 53317, UDP multicast discovery, full chunked file streaming `/api/send`, active subnet range scanning, and desktop control API on 53319.
   - **UI**: `desktop/public/` with glassmorphic native desktop interface supporting all 4 themes (Midnight, Obsidian, Cyberpunk, Daylight), native drag-and-drop file staging, live radar sweep, transfer progress bars, and Windows Explorer folder integration.

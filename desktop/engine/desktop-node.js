@@ -61,38 +61,52 @@ class DesktopEngine {
     this.transferGateway = null;
     this.localsendGateway = null;
     this.controlServer = null;
+    this.controlPort = DESKTOP_HTTP_PORT;
     this.discoveryInterval = null;
   }
 
   async start() {
-    // 1. Start Native Transfer Gateway (Port 53318)
-    this.transferGateway = new TransferGateway({
-      port: TRANSFER_PORT,
-      storageDir: this.storageDir,
-      selfDevice: this.selfDevice,
-      onSessionRequest: async (req) => {
-        this.broadcastEvent('session_request', req);
-        return { accepted: true };
+    // 1. Start Native Transfer Gateway (Port 53318 / fallback 53328)
+    try {
+      this.transferGateway = new TransferGateway({
+        port: TRANSFER_PORT,
+        storageDir: this.storageDir,
+        selfDevice: this.selfDevice,
+        onSessionRequest: async (req) => {
+          this.broadcastEvent('session_request', req);
+          return { accepted: true };
+        }
+      });
+      const bound = await this.transferGateway.start();
+      if (bound && bound.port) {
+        this.selfDevice.port = bound.port;
       }
-    });
-    await this.transferGateway.start();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('TransferGateway start warning:', err.message);
+    }
 
-    // 2. Start LocalSend Gateway & Multicast (Port 53317)
-    this.localsendGateway = new LocalSendGateway({
-      port: LOCALSEND_PORT,
-      storageDir: this.storageDir,
-      alias: `${this.hostname} (PC)`,
-      deviceType: 'desktop',
-      fingerprint: this.fingerprint,
-      onPeerFound: (peer) => this.handlePeerFound(peer),
-      onUploadRequest: async (req) => {
-        this.broadcastEvent('upload_request', req);
-        return { accepted: true };
-      }
-    });
-    await this.localsendGateway.start();
+    // 2. Start LocalSend Gateway & Multicast (Port 53317 / fallback 53327)
+    try {
+      this.localsendGateway = new LocalSendGateway({
+        port: LOCALSEND_PORT,
+        storageDir: this.storageDir,
+        alias: `${this.hostname} (PC)`,
+        deviceType: 'desktop',
+        fingerprint: this.fingerprint,
+        onPeerFound: (peer) => this.handlePeerFound(peer),
+        onUploadRequest: async (req) => {
+          this.broadcastEvent('upload_request', req);
+          return { accepted: true };
+        }
+      });
+      await this.localsendGateway.start();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('LocalSendGateway start warning:', err.message);
+    }
 
-    // 3. Start Desktop HTTP & Control Server (Port 53319)
+    // 3. Start Desktop HTTP & Control Server (Port 53319 / fallback 53320)
     await this.startControlServer();
 
     // Scan immediately
@@ -471,9 +485,25 @@ class DesktopEngine {
       }
     });
 
-    return new Promise((resolve) => {
-      this.controlServer.listen(DESKTOP_HTTP_PORT, '0.0.0.0', () => {
-        resolve();
+    return new Promise((resolve, reject) => {
+      this.controlServer.on('error', (err) => {
+        if (err.code === 'EADDRINUSE' && this.controlPort === DESKTOP_HTTP_PORT) {
+          this.controlPort = DESKTOP_HTTP_PORT + 1;
+          try {
+            this.controlServer.listen(this.controlPort, '0.0.0.0', () => {
+              resolve(this.controlPort);
+            });
+            return;
+          } catch (retryErr) {
+            reject(retryErr);
+            return;
+          }
+        }
+        reject(err);
+      });
+
+      this.controlServer.listen(this.controlPort, '0.0.0.0', () => {
+        resolve(this.controlPort);
       });
     });
   }

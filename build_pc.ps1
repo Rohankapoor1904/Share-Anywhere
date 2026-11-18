@@ -27,6 +27,7 @@ $requiredFiles = @(
     "desktop\public\style.css",
     "desktop\public\app.js",
     "scripts\build_desktop.js",
+    "scripts\run_desktop.js",
     "LocalShare-PC.bat"
 )
 

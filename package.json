@@ -10,9 +10,9 @@
     "lint": "eslint . --max-warnings=0",
     "test": "jest",
     "test:integration": "jest --config jest.integration.config.js",
-    "desktop": "electron desktop/main.js",
+    "desktop": "node scripts/run_desktop.js",
     "desktop:build": "node ./scripts/build_desktop.js",
-    "pc": "electron desktop/main.js",
+    "pc": "node scripts/run_desktop.js",
     "pc:server": "node desktop/engine/desktop-node.js",
     "e2e": "detox test --configuration android.emu.debug"
   },

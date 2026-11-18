@@ -58,13 +58,34 @@ class TransferGateway {
       }
 
       this.server.on('error', (err) => {
+        if (err.code === 'EADDRINUSE' && this.port === protocol.kDefaultPort) {
+          // If 53318 is temporarily held by a dynamic OS connection, fallback to 53328
+          this.port = 53328;
+          try {
+            this.server.listen(this.port, '0.0.0.0', () => {
+              const addr = this.server.address();
+              this.port = typeof addr === 'object' && addr ? addr.port : this.port;
+              if (this.selfDevice) this.selfDevice.port = this.port;
+              resolve({
+                port: this.port,
+                address: typeof addr === 'object' && addr ? addr.address : '0.0.0.0'
+              });
+            });
+            return;
+          } catch (retryErr) {
+            reject(retryErr);
+            return;
+          }
+        }
         reject(err);
       });
 
       this.server.listen(this.port, '0.0.0.0', () => {
         const addr = this.server.address();
+        this.port = typeof addr === 'object' && addr ? addr.port : this.port;
+        if (this.selfDevice) this.selfDevice.port = this.port;
         resolve({
-          port: typeof addr === 'object' && addr ? addr.port : this.port,
+          port: this.port,
           address: typeof addr === 'object' && addr ? addr.address : '0.0.0.0'
         });
       });

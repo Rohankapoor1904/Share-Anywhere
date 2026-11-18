@@ -1,4 +1,6 @@
 @echo off
+setlocal
+set ELECTRON_RUN_AS_NODE=
 title LocalShare Pure Desktop App
 echo ========================================================
 echo  Starting LocalShare Pure Desktop Application...
@@ -18,4 +20,4 @@ if %ERRORLEVEL% NEQ 0 (
 )
 
 echo [INFO] Launching LocalShare Electron Desktop Window...
-call npx electron desktop\main.js
+node scripts\run_desktop.js

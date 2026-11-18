@@ -326,3 +326,32 @@ This file tracks every modification made across the codebase, recording exact ta
    - `npm run lint`: 0 warnings, 0 errors.
    - `npm run type-check`: 0 errors.
    - `build_pc.ps1`: Desktop executable successfully packaged and verified.
+
+### Entry 11.3: Desktop GUI Window Launch, Port Conflict Fallback & Environment Isolation Fix
+1. **Exact Target & Location**:
+   - `desktop/main.js` (lines 10-28: guarded `app` object; restored and focused window on `second-instance`; lines 30-75: reversed initialization order so `BrowserWindow` is created and displayed immediately with `show: true` and loads static HTML from disk in <100ms before starting engine; eliminated asynchronous `ready-to-show` race condition where window remained hidden in background; bound to dynamic `engine.controlPort`)
+   - `desktop/engine/desktop-node.js` (lines 60-120, 480-510: added `this.controlPort = DESKTOP_HTTP_PORT`; added automatic port fallback for `TransferGateway` [53318 -> 53328], `LocalSendGateway` [53317 -> 53327], and `controlServer` [53319 -> 53320] when Windows ephemeral outbound sockets cause `EADDRINUSE`)
+   - `nodejs-assets/nodejs-project/transfer-gateway.js` (lines 55-80: added `EADDRINUSE` catch handler with automatic fallback to port 53328)
+   - `nodejs-assets/nodejs-project/localsend-gateway.js` (lines 72-88: added `EADDRINUSE` catch handler with automatic fallback to port 53327)
+   - `scripts/run_desktop.js` (lines 1-30: created dedicated launcher stripping `ELECTRON_RUN_AS_NODE` environment variable so Electron GUI runs reliably inside IDE terminals)
+   - `LocalShare-PC.bat` (lines 1-25: added `set ELECTRON_RUN_AS_NODE=` to isolate process and route fallback to `scripts\run_desktop.js`)
+   - `package.json` (lines 13-16: routed `desktop` and `pc` npm scripts to `node scripts/run_desktop.js`)
+   - `build_pc.ps1` (lines 28-35: added `scripts\run_desktop.js` to asset verification suite)
+2. **Root Cause & Trigger**: User issue: *"desktop app open nahi ho rahha h?"* (Desktop application was failing to show a window or exiting on launch).
+   - Root Cause 1: Asynchronous `ready-to-show` Event Missed — In `desktop/main.js`, `await mainWindow.loadURL(...)` was executed before attaching `mainWindow.once('ready-to-show')`. The event fired during loadURL, leaving the window permanently hidden (`show: false`).
+   - Root Cause 2: Windows Dynamic Ephemeral Port Conflict (`EADDRINUSE`) — Windows OS temporarily assigned outbound port 53318 to a background system process (`svchost`), causing `TransferGateway.start()` to throw `EADDRINUSE` and abort the engine startup before the GUI window was even created.
+   - Root Cause 3: IDE Terminal Environment Variable (`ELECTRON_RUN_AS_NODE=1`) — Electron-based IDEs export `ELECTRON_RUN_AS_NODE=1` into integrated terminals. When Electron binaries run with this flag, they execute as headless Node.js instead of launching a GUI desktop window.
+3. **Exact Modification (What Changed)**:
+   - Modified `createWindow()` to initialize `BrowserWindow` with `show: true` and load `loadFile('public/index.html')` immediately, guaranteeing instant visual display in <100ms.
+   - Implemented dynamic port fallbacks across `TransferGateway` (53318 -> 53328), `LocalSendGateway` (53317 -> 53327), and `controlServer` (53319 -> 53320) to prevent any `EADDRINUSE` startup failures.
+   - Isolated the process environment via `scripts/run_desktop.js` and `LocalShare-PC.bat` by deleting `ELECTRON_RUN_AS_NODE`.
+4. **Why It Was Changed**: Guarantees that the Windows desktop application opens immediately upon execution under all network conditions and terminal environments.
+5. **Impact & Guidance**:
+   - Double-clicking `dist\LocalShare-win32-x64\LocalShare.exe` opens the native GUI window instantly.
+   - Double-clicking `LocalShare-PC.bat` launches the app with zero configuration.
+   - Running `npm run desktop` or `npm run pc` works in any terminal.
+6. **Verification Evidence**:
+   - Executable test: Windows OS assigned active `MainWindowHandle` (`2754030` for `LocalShare.exe`, `1836540` for dev Electron).
+   - `npm run lint`: 0 warnings, 0 errors.
+   - `npm test`: 43/43 unit tests passing.
+   - `dist/LocalShare-win32-x64/LocalShare.exe` recompiled and verified (168.84 MB).

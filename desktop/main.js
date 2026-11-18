@@ -7,6 +7,13 @@ let mainWindow = null;
 let engine = null;
 let isShuttingDown = false;
 
+// Guard against non-Electron execution
+if (!app || typeof app.requestSingleInstanceLock !== 'function') {
+  // eslint-disable-next-line no-console
+  console.error('[FATAL] Electron main process must be executed by Electron runtime.');
+  process.exit(1);
+}
+
 // Enforce single instance lock
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
@@ -15,18 +22,14 @@ if (!gotTheLock) {
   app.on('second-instance', () => {
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
       mainWindow.focus();
     }
   });
 
   async function createWindow() {
-    // 1. Initialize & Start Native Desktop Engine
-    engine = new DesktopEngine();
-    await engine.start();
-
-    // 2. Setup Native Window
-    const iconPath = path.join(__dirname, '..', 'assets', 'icon.png');
-    mainWindow = new BrowserWindow({
+    // 1. Setup Native Window IMMEDIATELY so the app opens instantly
+    const windowOpts = {
       title: 'LocalShare Desktop — Direct LAN File Sharing',
       width: 1140,
       height: 780,
@@ -34,28 +37,49 @@ if (!gotTheLock) {
       minHeight: 640,
       backgroundColor: '#0F172A',
       autoHideMenuBar: true,
-      show: false,
-      icon: fs.existsSync(iconPath) ? iconPath : undefined,
+      show: true,
       webPreferences: {
         preload: path.join(__dirname, 'preload.js'),
         nodeIntegration: false,
         contextIsolation: true,
         sandbox: false
       }
-    });
+    };
 
+    mainWindow = new BrowserWindow(windowOpts);
     Menu.setApplicationMenu(null);
-
-    // 3. Load Internal Control Surface
-    await mainWindow.loadURL('http://127.0.0.1:53319');
-
-    mainWindow.once('ready-to-show', () => {
-      mainWindow.show();
-    });
 
     mainWindow.on('closed', () => {
       mainWindow = null;
     });
+
+    // 2. Load static HTML from disk immediately for zero latency display
+    try {
+      await mainWindow.loadFile(path.join(__dirname, 'public', 'index.html'));
+    } catch (fileErr) {
+      // eslint-disable-next-line no-console
+      console.warn('loadFile warning:', fileErr.message);
+    }
+
+    // 3. Initialize & Start Native Desktop Engine
+    try {
+      if (!engine) {
+        engine = new DesktopEngine();
+        await engine.start();
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('Failed starting DesktopEngine:', err);
+    }
+
+    // 4. Switch to internal control surface once engine is live
+    try {
+      const port = engine && engine.controlPort ? engine.controlPort : 53319;
+      await mainWindow.loadURL(`http://127.0.0.1:${port}`);
+    } catch (loadErr) {
+      // eslint-disable-next-line no-console
+      console.warn('loadURL warning:', loadErr.message);
+    }
   }
 
   // Register Native Desktop IPC Handlers

@@ -71,7 +71,19 @@ class LocalSendGateway {
   startHttpServer() {
     return new Promise((resolve, reject) => {
       this.httpServer = http.createServer((req, res) => this.handleHttp(req, res));
-      this.httpServer.on('error', reject);
+      this.httpServer.on('error', (err) => {
+        if (err.code === 'EADDRINUSE' && this.port === LOCALSEND_PORT) {
+          this.port = 53327;
+          try {
+            this.httpServer.listen(this.port, '0.0.0.0', resolve);
+            return;
+          } catch (retryErr) {
+            reject(retryErr);
+            return;
+          }
+        }
+        reject(err);
+      });
       this.httpServer.listen(this.port, '0.0.0.0', () => {
         resolve();
       });
