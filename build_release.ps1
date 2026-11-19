@@ -33,8 +33,8 @@ if (-not $env:ANDROID_HOME -and (Test-Path "$env:LOCALAPPDATA\Android\Sdk")) {
 # 2. Anti-Fake Guard Audit
 Write-Host "`n[2/5] Running Anti-Fake Code Audit..." -ForegroundColor Yellow
 $fakeMatches = Get-ChildItem -Path "src", "nodejs-assets", "android\app\src\main\java" -Recurse -Include *.js, *.jsx, *.kt |
-    Select-String -CaseSensitive -Pattern "TODO|FIXME|not implemented|placeholder" |
-    Where-Object { $_.Line -notmatch "// justified:" }
+    Select-String -CaseSensitive -Pattern "TODO|FIXME|not implemented|\bplaceholder\b" |
+    Where-Object { $_.Line -notmatch "// justified:" -and $_.Line -notmatch "placeholder=" -and $_.Line -notmatch "placeholderTextColor" }
 
 if ($fakeMatches) {
     Write-Host "ERROR: Anti-Fake Contract violation detected!" -ForegroundColor Red
