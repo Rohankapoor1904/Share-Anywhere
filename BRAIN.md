@@ -7,7 +7,29 @@
 - **Contract**: Anti-Fake Contract (§3) enforced. No mock data in app, no stubbed native modules, no swallowed errors, no fake progress, real sockets/tests only.
 
 ## Current State
-- **Status**: ALL PHASES COMPLETE, DISCOVERY MULTI-CHANNEL OVERHAUL IMPLEMENTED, STANDALONE PC EXECUTABLE COMPILED, RELEASE APKs COMPILED & REPOSITORY SYNCED.
+- **Status**: ALL PHASES COMPLETE, DISCOVERY MULTI-CHANNEL OVERHAUL IMPLEMENTED, STANDALONE PC EXECUTABLE COMPILED, RELEASE APKs COMPILED & REPOSITORY SYNCED, PHASE 12 & PHASE 13 RUNTIME-DEFECT FIXES LANDED, PHASE 14 REMOTE FILE EXPLORER & CLIPBOARD SYNC LANDED, PHASE 14.6 FOUR RUNTIME BUGS FIXED, PHASE 14.7 DESKTOP UI OVERHAUL LANDED.
+- **Phase 14.7 Desktop UI Overhaul** (see `docs/audit/change_log.md` entry 14.7):
+  - **Layered Shell**: `body` now paints two `radial-gradient(circle at 15% 15% / 85% 85%)` mesh layers over `--bg-app` with `background-attachment: fixed`; the previous `body::before` mesh was removed as redundant.
+  - **Glass Depth**: `.glass-card`, `.device-card` and `.transfer-card` all use `backdrop-filter: blur(20px) saturate(160%)` with a two-part shadow (`0 12px 32px -8px` drop + `inset 0 1px 0 0 rgba(255,255,255,0.14)` rim), a `translateY(-2px)` hover lift with a `--primary-glow` ring, and `transform: scale(0.99)` press feedback.
+  - **Sonar Motion**: `@keyframes radar-ripple` renamed to `@keyframes radarPulse` (0% `scale(0.15)`/`opacity 0.65` → 100% `scale(1)`/`opacity 0`) and consumed by both `.radar-ripple` rings.
+  - **Slim Scrollbars**: 8px `::-webkit-scrollbar` family with transparent track, `--border` thumb and `--border-highlight` hover, replacing the default Electron chrome.
+  - **Persistent Telemetry**: `.engine-telemetry` strip at the top of `<main>` shows live LAN IP, both engine ports (53318 / 53317) and peer count on every tab, plus two functional pills — Clipboard Sync (GET `/api/clipboard`, reports real character count) and Scan (POST `/api/scan` → `loadPeers()`). Wired in `app.js` via `loadSelfInfo()` and `renderRadar()`.
+- **Phase 14.6 Four Runtime Bugs** (see `docs/audit/change_log.md` entry 14.6):
+  - **Self-Discovery on Android**: `LocalShareNode._handlePeerSighting()` now also rejects any peer advertising one of this device's own interface addresses (`normalizeIp` + `isLocalAddress`, `detectedLocalIp`), covering the case where the same app answers on 53317 *and* 53318 with two different ids.
+  - **PC Approval Visibility**: `DesktopEngine.onIncomingRequest` hook fires from `requestIncomingApproval()`; `desktop/main.js` restores/focuses the window and raises a native Electron `Notification`, so the 30s approval gate is never silently missed (previously surfaced as "request failed" on the phone).
+  - **PC→Phone Crash**: `TransferForegroundService.onStartCommand()` wraps `startForeground()` in try/catch — it throws `ForegroundServiceStartNotAllowedException`/`SecurityException` and previously escaped to kill the process.
+  - **Approval Race**: `TransferServerModule` registers the `CountDownLatch` *before* emitting `IncomingSession`, so a fast JS `respondToSession` is no longer dropped into a 30s timeout; `startServer`/`respondToSession` bridge promises are nullable because JS omits them.
+- **Phase 14 Remote File Explorer & Clipboard Sync** (see `docs/audit/change_log.md` entries 14.1-14.4):
+  - **PC Remote FS Protocol**: `nodejs-assets/nodejs-project/fs-service.js` performs real disk I/O (list/copy/delete/stream); `transfer-gateway.js` serves `/v1/fs/list`, `/v1/fs/download`, `/v1/fs/stream` (HTTP Range 206), `/v1/fs/copy`, `/v1/fs/delete`, and `GET/POST /v1/clipboard` (real OS clipboard). `browseRoot` defaults to the home directory.
+  - **Desktop Remote Files UI**: `desktop/engine/desktop-node.js` proxies `/api/remote-fs/*` and `/api/remote-clipboard/*` to remote peers and streams pulls into `Downloads/LocalShare`; `desktop/public/` adds a Remote Files tab with preview (image/video/audio/text), copy, delete, pull, and clipboard push/pull.
+  - **Android Remote FS/Clipboard Server**: `TransferServerModule.kt` serves the same `/v1/fs/*` + `/v1/clipboard` protocol over real `File` I/O with Range streaming and UI-thread clipboard access; `StorageModule.kt` exposes all-files access management and clipboard; `MANAGE_EXTERNAL_STORAGE` added.
+  - **Mobile Files Screen**: `src/engine/remoteFs.js` (`RemoteFsClient`) + `src/screens/RemoteExplorerScreen.js` (new `Files` tab) browse a paired PC; `PeerCard` gains a "Browse Files" action.
+  - **Live FGS Notification (Issue 4)**: transfer-progress events now drive a determinate progress bar and speed text in the Android foreground-service notification via `TransferForegroundService.updateProgress` → `NativeBridge.updateForegroundProgress` → `LocalShareNode._updateProgressNotification`.
+- **Phase 13 Spec Reconciliation** (see `docs/audit/change_log.md` entries 13.1-13.4):
+  - **Self-Discovery Hardening**: `desktop/engine/desktop-node.js` collects *every* local interface IP (`getAllLocalIps()`) and drops self via `isSelfPeer()` / `handlePeerFound()`; the LocalSend UDP socket disables multicast loopback and ignores self announcements. The PC never lists itself.
+  - **Native `content://` Streaming**: `TransferClientModule.uploadChunkFromUri()` streams a real file slice (content:// URI or path) straight to the socket via OkHttp; `HashingModule.computeFileHash()` streams `content://` URIs. `sendController.js` uses this path on Android (with a `react-native-fs` fallback for tests) and the scheme follows `peer.useTls`.
+  - **Native Payload Parsing**: `TransferServerModule.handleClient()` reads headers line-by-line and bodies by exact `Content-Length`, wrapped in try/catch so a bad socket can never crash the app; `receiveController.js` parses the Android `{ sessionId, rawJson }` event before dereferencing `sender`.
+  - **Approval Flow & Notifications**: incoming sessions raise a high-priority OS notification and block until the user accepts/declines (native `CountDownLatch`); Android shows the prompt via `PinDialog` (`mode: 'approve'`) and the PC UI shows an Accept/Decline modal via SSE (`/api/respond-request`). Status notifications post on launch, scanning, transfers, and shutdown.
 - **Discovery Multi-Channel Engine**:
   - **Android Wi-Fi MulticastLock**: Native `WifiManager.MulticastLock` acquired during discovery to prevent Android kernel/firmware from dropping incoming mDNS and UDP multicast packets.
   - **Serialized Resolve Queue**: Re-entrant `ConcurrentLinkedQueue` in `NsdDiscoveryModule.kt` ensuring sequential service resolution to prevent Android `FAILURE_ALREADY_ACTIVE` crashes.
@@ -39,8 +61,8 @@
   - **Legacy ARM APK (armeabi-v7a)**: `android/app/build/outputs/apk/release/app-armeabi-v7a-release.apk`
   - **Universal APK**: `android/app/build/outputs/apk/release/app-universal-release.apk`
 - **Test Suite**:
-  - Unit Tests: 43/43 passing (`npm test`).
-  - Integration Tests: 5/5 passing on real sockets (`npm run test:integration`).
+  - Unit Tests: 75/75 passing (`npm test`).
+  - Integration Tests: 18/18 passing on real sockets (`npm run test:integration`).
   - Linter: ESLint passing with 0 warnings and 0 errors (`npm run lint`).
   - Type-Check: TypeScript checkJs passing with 0 errors (`npm run type-check`).
   - Anti-Fake Audit: 0 forbidden markers, 0 swallowed errors, 0 skipped/todo tests.

@@ -15,6 +15,8 @@ import { useTheme } from '../theme';
 import PeerCard from '../components/PeerCard';
 import GlassCard from '../components/GlassCard';
 import EmptyState from '../components/EmptyState';
+import Icon from '../components/Icon';
+import AmbientBackground from '../components/AmbientBackground';
 
 export default function DevicesScreen({ navigation }) {
   const {
@@ -72,8 +74,13 @@ export default function DevicesScreen({ navigation }) {
     navigation.navigate('ShareHub', { targetPeer: peer });
   };
 
+  const handleBrowsePeer = (peer) => {
+    navigation.navigate('Files', { targetPeer: peer });
+  };
+
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.colors.background }]}>
+    <AmbientBackground>
+      <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
         {/* Self Device Header Card */}
         <GlassCard style={styles.selfCard} variant="interactive">
@@ -95,7 +102,10 @@ export default function DevicesScreen({ navigation }) {
               ]}
               onPress={() => setQrModalVisible(true)}
               testID="qr-code-button"
+              accessibilityRole="button"
+              accessibilityLabel="Show device QR code"
             >
+              <Icon name="qr" size={14} color={theme.colors.primary} strokeWidth={2.2} />
               <Text style={[styles.qrButtonText, { color: theme.colors.primary }]}>QR Code</Text>
             </TouchableOpacity>
           </View>
@@ -112,13 +122,19 @@ export default function DevicesScreen({ navigation }) {
             ]}
             onPress={isDiscovering ? stopDiscovery : startDiscovery}
           >
+            <Icon
+              name={isDiscovering ? 'radar' : 'play'}
+              size={14}
+              color={isDiscovering && theme.mode === 'light' ? '#ffffff' : isDiscovering ? '#000000' : theme.colors.primary}
+              strokeWidth={2.4}
+            />
             <Text
               style={[
                 styles.actionBtnText,
                 { color: isDiscovering && theme.mode === 'light' ? '#ffffff' : isDiscovering ? '#000000' : theme.colors.primary }
               ]}
             >
-              {isDiscovering ? '● Scanning for Peers...' : '▶ Start Scan'}
+              {isDiscovering ? 'Scanning for Peers...' : 'Start Scan'}
             </Text>
           </TouchableOpacity>
 
@@ -130,7 +146,8 @@ export default function DevicesScreen({ navigation }) {
             ]}
             onPress={scanSubnet}
           >
-            <Text style={[styles.actionBtnText, { color: theme.colors.text }]}>⚡ Subnet Probe</Text>
+            <Icon name="activity" size={14} color={theme.colors.text} strokeWidth={2.2} />
+            <Text style={[styles.actionBtnText, { color: theme.colors.text }]}>Subnet Probe</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -141,14 +158,15 @@ export default function DevicesScreen({ navigation }) {
             ]}
             onPress={() => setManualModalVisible(true)}
           >
-            <Text style={[styles.actionBtnText, { color: theme.colors.text }]}>+ Manual IP</Text>
+            <Icon name="plus" size={14} color={theme.colors.text} strokeWidth={2.4} />
+            <Text style={[styles.actionBtnText, { color: theme.colors.text }]}>Manual IP</Text>
           </TouchableOpacity>
         </View>
 
         {/* Search Bar when peers present */}
         {peers.length > 2 ? (
           <View style={[styles.searchBox, { backgroundColor: theme.colors.inputBg, borderColor: theme.colors.border }]}>
-            <Text style={styles.searchIcon}>🔍</Text>
+            <Icon name="search" size={15} color={theme.colors.textMuted} style={styles.searchIcon} strokeWidth={2.2} />
             <TextInput
               style={[styles.searchInput, { color: theme.colors.text }]}
               placeholder="Search discovered peers..." // justified: TextInput hint
@@ -158,7 +176,7 @@ export default function DevicesScreen({ navigation }) {
             />
             {searchQuery ? (
               <TouchableOpacity onPress={() => setSearchQuery('')}>
-                <Text style={[styles.clearSearch, { color: theme.colors.textMuted }]}>✕</Text>
+                <Icon name="close" size={14} color={theme.colors.textMuted} strokeWidth={2.6} />
               </TouchableOpacity>
             ) : null}
           </View>
@@ -174,6 +192,7 @@ export default function DevicesScreen({ navigation }) {
               peer={item}
               isTrusted={item.isTrusted}
               onPress={() => handleSelectPeer(item)}
+              onBrowseFiles={() => handleBrowsePeer(item)}
             />
           )}
           ListEmptyComponent={
@@ -305,7 +324,8 @@ export default function DevicesScreen({ navigation }) {
           </View>
         </Modal>
       </View>
-    </SafeAreaView>
+      </SafeAreaView>
+    </AmbientBackground>
   );
 }
 
@@ -354,6 +374,8 @@ const styles = StyleSheet.create({
     fontWeight: '500'
   },
   qrButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     borderWidth: 1,
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -361,7 +383,8 @@ const styles = StyleSheet.create({
   },
   qrButtonText: {
     fontWeight: '800',
-    fontSize: 13
+    fontSize: 13,
+    marginLeft: 6
   },
   controlsBar: {
     flexDirection: 'row',
@@ -370,9 +393,11 @@ const styles = StyleSheet.create({
   },
   actionBtn: {
     flex: 1,
+    flexDirection: 'row',
     paddingVertical: 12,
     borderRadius: 10,
     alignItems: 'center',
+    justifyContent: 'center',
     marginHorizontal: 4
   },
   manualBtn: {
@@ -380,7 +405,8 @@ const styles = StyleSheet.create({
   },
   actionBtnText: {
     fontWeight: '700',
-    fontSize: 13
+    fontSize: 13,
+    marginLeft: 6
   },
   searchBox: {
     flexDirection: 'row',
@@ -392,7 +418,6 @@ const styles = StyleSheet.create({
     marginBottom: 12
   },
   searchIcon: {
-    fontSize: 14,
     marginRight: 8
   },
   searchInput: {
@@ -401,7 +426,6 @@ const styles = StyleSheet.create({
     padding: 0
   },
   clearSearch: {
-    fontSize: 14,
     paddingHorizontal: 4
   },
   listContent: {

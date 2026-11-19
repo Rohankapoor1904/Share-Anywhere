@@ -72,10 +72,10 @@ class LocalSendGateway {
     return new Promise((resolve, reject) => {
       this.httpServer = http.createServer((req, res) => this.handleHttp(req, res));
       this.httpServer.on('error', (err) => {
-        if (err.code === 'EADDRINUSE' && this.port === LOCALSEND_PORT) {
+        if (/** @type {any} */ (err).code === 'EADDRINUSE' && this.port === LOCALSEND_PORT) {
           this.port = 53327;
           try {
-            this.httpServer.listen(this.port, '0.0.0.0', resolve);
+            this.httpServer.listen(this.port, '0.0.0.0', () => resolve(undefined));
             return;
           } catch (retryErr) {
             reject(retryErr);
@@ -96,7 +96,8 @@ class LocalSendGateway {
     this.udpSocket.on('message', (msg, rinfo) => {
       try {
         const payload = JSON.parse(msg.toString('utf8'));
-        if (payload.alias && payload.fingerprint !== this.fingerprint) {
+        const isSelf = payload.fingerprint === this.fingerprint || payload.alias === this.alias;
+        if (payload.alias && !isSelf) {
           this.onPeerFound({
             deviceId: payload.fingerprint || rinfo.address,
             displayName: payload.alias,
@@ -115,6 +116,8 @@ class LocalSendGateway {
     this.udpSocket.bind(this.port, () => {
       try {
         this.udpSocket.setBroadcast(true);
+        // Do not receive our own multicast announcements back as a peer
+        this.udpSocket.setMulticastLoopback(false);
         this.udpSocket.addMembership(MULTICAST_ADDR);
       } catch (_err) {
         // Interface may not support multicast membership; broadcast remains active

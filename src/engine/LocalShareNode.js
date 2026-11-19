@@ -8,13 +8,14 @@ import { DeviceInfo } from './models';
 import { NativeBridge } from '../native/NativeBridge';
 import { NativeEvents } from '../native/NativeEvents';
 import { generateDeviceName } from '../utils/deviceName';
-import { requestDiscoveryPermissions } from '../utils/permissions';
+import { requestDiscoveryPermissions, ensureNotificationPermission } from '../utils/permissions';
 import {
   kDefaultPort,
   kBleServiceUuid,
   kPeerStaleMs
 } from '../utils/protocol';
 import { defaultLogger } from '../utils/logger';
+import { formatBytes } from '../utils/byteFormat';
 
 const logger = defaultLogger;
 
@@ -40,6 +41,29 @@ async function getWifiIpAddress() {
     logger.debug('NetInfo unavailable in current environment:', err.message);
   }
   return null;
+}
+
+/**
+ * Strip the IPv4-mapped IPv6 prefix so `::ffff:10.0.0.5` compares equal to `10.0.0.5`.
+ * @param {string} ip
+ * @returns {string}
+ */
+function normalizeIp(ip) {
+  const value = String(ip || '').trim();
+  return value.toLowerCase().startsWith('::ffff:') ? value.slice(7) : value;
+}
+
+/**
+ * True when the address is loopback or matches one of this device's own addresses.
+ * @param {string} ip
+ * @param {string[]} localAddresses
+ * @returns {boolean}
+ */
+function isLocalAddress(ip, localAddresses) {
+  const value = normalizeIp(ip);
+  if (!value) return false;
+  if (value === '127.0.0.1' || value === '::1' || value === 'localhost') return true;
+  return localAddresses.some((address) => normalizeIp(address) === value);
 }
 
 export class LocalShareNode {
@@ -80,6 +104,8 @@ export class LocalShareNode {
 
     /** @type {Map<string, DeviceInfo>} */
     this.peerMap = new Map();
+    /** @type {string} */
+    this.detectedLocalIp = '';
     this.discovering = false;
     this.staleIntervalId = null;
     this.subnetScanIntervalId = null;
@@ -103,6 +129,16 @@ export class LocalShareNode {
    * Start the engine, load certificate, start native transfer server, and bind native listeners.
    */
   async start() {
+    // Notifications must be permitted before the status notification is posted,
+    // otherwise Android 13+ silently drops it and the user gets no feedback until
+    // a transfer is already in flight.
+    try {
+      await ensureNotificationPermission();
+      await requestDiscoveryPermissions();
+    } catch (err) {
+      logger.warn('Permission request error during startup:', err.message);
+    }
+
     try {
       const cert = await NativeBridge.getEphemeralCert();
       this.selfDevice.fingerprint = cert.fingerprint || '';
@@ -127,7 +163,13 @@ export class LocalShareNode {
       onPeerFound: (peer) => this._handlePeerSighting({ ...peer, discoveryChannel: 'mdns' }),
       onPeerLost: (peerId) => this._handlePeerLost(peerId),
       onBlePeerFound: (peer) => this._handlePeerSighting({ ...peer, discoveryChannel: 'ble' }),
-      onIncomingSession: (sessionReq) => this.receiveController.handleIncomingSession(sessionReq),
+      onIncomingSession: (sessionReq) => {
+        // An unhandled rejection here reaches the RN global handler; a malformed
+        // peer payload must fail the session, never the app.
+        Promise.resolve(this.receiveController.handleIncomingSession(sessionReq)).catch((err) => {
+          logger.warn('Failed handling incoming session:', err.message);
+        });
+      },
       onReceiveProgress: (progress) => this.receiveController.handleChunkProgress(progress),
       onFileReceived: (file) => this.receiveController.handleFileReceived(file),
       onSendProgress: (progress) => this.events.emit(EngineEventType.TRANSFER_PROGRESS, progress),
@@ -136,12 +178,63 @@ export class LocalShareNode {
       onServiceState: () => {}
     });
 
+    // Reflect transfer lifecycle in the status notification
+    this.events.on(EngineEventType.TRANSFER_QUEUED, (transfer) => {
+      const label = transfer.direction === 'receive' ? 'Incoming transfer' : 'Sending files';
+      this._updateNotification(`LocalShare — ${label}`, transfer.fileName || 'Transfer in progress…');
+    });
+    this.events.on(EngineEventType.TRANSFER_PROGRESS, (progress) => {
+      this._updateProgressNotification(progress);
+    });
+    this.events.on(EngineEventType.TRANSFER_COMPLETED, () => {
+      this._updateNotification('LocalShare ready', 'Waiting for nearby devices to connect…');
+    });
+
     // Start periodic staleness sweep
     this.staleIntervalId = setInterval(() => {
       this._sweepStalePeers();
     }, 5000);
 
+    // Post a persistent status notification immediately on launch so the user
+    // is informed before any peer connection or transfer is established.
+    this._updateNotification('LocalShare ready', 'Waiting for nearby devices to connect…');
+
     logger.info(`LocalShareNode started. Self device: ${this.selfDevice.displayName} (${this.selfDevice.deviceId})`);
+  }
+
+  /**
+   * Update the Android foreground-service status notification (no-op off Android).
+   * @param {string} title
+   * @param {string} content
+   */
+  _updateNotification(title, content) {
+    try {
+      NativeBridge.startForegroundService(title, content);
+    } catch (err) {
+      logger.warn('Failed updating foreground notification:', err.message);
+    }
+  }
+
+  /**
+   * Reflect a transfer-progress event in the Android foreground-service notification.
+   * @param {object} progress - { direction, fileName, transferredBytes, totalBytes, speed }
+   */
+  _updateProgressNotification(progress) {
+    try {
+      const { direction, fileName, transferredBytes, totalBytes, speed } = progress || {};
+      const label = direction === 'receive' ? 'Receiving' : 'Sending';
+      const percent = totalBytes > 0
+        ? Math.min(100, Math.round((transferredBytes / totalBytes) * 100))
+        : -1;
+      const speedText = speed > 0 ? ` • ${formatBytes(speed)}/s` : '';
+      const name = fileName || 'file';
+      const content = percent >= 0
+        ? `${label} ${name} — ${percent}%${speedText}`
+        : `${label} ${name}${speedText}`;
+      NativeBridge.updateForegroundProgress(`LocalShare — ${label}`, content, percent);
+    } catch (err) {
+      logger.warn('Failed updating foreground progress:', err.message);
+    }
   }
 
   /**
@@ -167,6 +260,11 @@ export class LocalShareNode {
     if (this.nativeUnsub) {
       this.nativeUnsub();
       this.nativeUnsub = null;
+    }
+    try {
+      NativeBridge.stopForegroundService();
+    } catch (err) {
+      logger.warn('Failed stopping foreground notification:', err.message);
     }
     this.events.removeAllListeners();
     logger.info('LocalShareNode stopped.');
@@ -215,6 +313,8 @@ export class LocalShareNode {
       }, 15000);
     }
 
+    this._updateNotification('LocalShare — scanning', 'Looking for nearby devices on your Wi-Fi…');
+
     this.events.emit(EngineEventType.ENGINE_STATE_CHANGED, { discovering: true });
     logger.info('Discovery started.');
   }
@@ -256,6 +356,7 @@ export class LocalShareNode {
         const detectedIp = await getWifiIpAddress();
         if (detectedIp) {
           localIp = detectedIp;
+          this.detectedLocalIp = detectedIp;
           this.selfDevice.address = localIp;
         }
       } catch (err) {
@@ -312,6 +413,7 @@ export class LocalShareNode {
             port: data.port || kDefaultPort,
             platform: data.platform || 'desktop',
             fingerprint: data.fingerprint || '',
+            useTls: data.useTls === true, // responded on plain HTTP /v1/info
             discoveryChannel: 'subnet'
           });
           return;
@@ -338,7 +440,10 @@ export class LocalShareNode {
             displayName: data.alias,
             address: ip,
             port: data.port || 53317,
-            platform: data.deviceType || 'mobile',
+            // LocalSend speaks only its own v2 API; tag it so send() routes to
+            // _sendLocalSend instead of posting a LocalShare session to port 53317.
+            platform: 'localsend',
+            deviceType: data.deviceType || 'mobile',
             fingerprint: data.fingerprint || '',
             discoveryChannel: 'subnet'
           });
@@ -355,7 +460,21 @@ export class LocalShareNode {
    */
   _handlePeerSighting(rawPeer) {
     if (!rawPeer || !rawPeer.deviceId) return;
-    if (rawPeer.deviceId === this.selfDevice.deviceId) return; // Ignore self
+    if (rawPeer.deviceId === this.selfDevice.deviceId) return; // Ignore self by device id
+    if (
+      this.selfDevice.fingerprint &&
+      rawPeer.fingerprint &&
+      rawPeer.fingerprint === this.selfDevice.fingerprint
+    ) {
+      return; // Ignore self by certificate fingerprint (own service seen via mDNS)
+    }
+
+    // A peer advertising one of our own interface addresses is this device, even
+    // when it announced a different id (e.g. the same app on 53317 vs 53318).
+    const peerAddress = normalizeIp(rawPeer.address);
+    if (peerAddress && isLocalAddress(peerAddress, [this.selfDevice.address, this.detectedLocalIp])) {
+      return;
+    }
 
     const existing = this.peerMap.get(rawPeer.deviceId);
     const updated = new DeviceInfo({
@@ -430,6 +549,16 @@ export class LocalShareNode {
 
   rejectPinChallenge(deviceId, _reason) {
     this.pairing.resetAttempts(deviceId);
+  }
+
+  /**
+   * Resolve an incoming-transfer approval prompt by session id.
+   * @param {string} sessionId
+   * @param {boolean} accepted
+   */
+  respondIncomingSession(sessionId, accepted) {
+    if (!sessionId) return;
+    this.receiveController.respondToSession(sessionId, accepted);
   }
 
   updateSettings(newSettings) {

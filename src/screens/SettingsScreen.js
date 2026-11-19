@@ -9,6 +9,7 @@ import {
   ScrollView
 } from 'react-native';
 import { useLocalShare } from '../engine/providers';
+import Icon from '../components/Icon';
 import { useTheme } from '../theme';
 import GlassCard from '../components/GlassCard';
 import { formatBytes } from '../utils/byteFormat';
@@ -78,8 +79,9 @@ export default function SettingsScreen() {
                       </Text>
                       {isSelected ? (
                         <View style={[styles.selectedPill, { backgroundColor: item.colors.primary }]}>
+                          <Icon name="check" size={10} color={item.mode === 'light' ? '#ffffff' : '#000000'} strokeWidth={3.2} />
                           <Text style={[styles.selectedPillText, { color: item.mode === 'light' ? '#ffffff' : '#000000' }]}>
-                            Active ✓
+                            Active
                           </Text>
                         </View>
                       ) : null}
@@ -265,11 +267,14 @@ const styles = StyleSheet.create({
     fontWeight: '700'
   },
   selectedPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 6
   },
   selectedPillText: {
+    marginLeft: 3,
     fontSize: 9,
     fontWeight: '800'
   },

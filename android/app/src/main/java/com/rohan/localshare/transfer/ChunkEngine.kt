@@ -81,10 +81,12 @@ class ChunkEngine(private val baseDirectory: File) {
 
     /**
      * Finalize partial file by renaming it to the target file name.
+     * @param partName Name under which chunks were streamed (usually the fileId).
+     * @param targetName Final on-disk file name (defaults to partName when omitted).
      */
-    fun commitFile(fileName: String): File {
-        val partFile = File(baseDirectory, "$fileName.localshare.part")
-        val finalFile = File(baseDirectory, fileName)
+    fun commitFile(partName: String, targetName: String = partName): File {
+        val partFile = File(baseDirectory, "$partName.localshare.part")
+        val finalFile = File(baseDirectory, targetName)
         if (!partFile.exists()) {
             throw IllegalStateException("Cannot commit: partial file not found")
         }

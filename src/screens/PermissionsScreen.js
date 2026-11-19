@@ -8,6 +8,8 @@ import {
   Platform
 } from 'react-native';
 import GlassCard from '../components/GlassCard';
+import Icon from '../components/Icon';
+import AmbientBackground from '../components/AmbientBackground';
 import { useTheme } from '../theme';
 import { requestDiscoveryPermissions } from '../utils/permissions';
 
@@ -38,7 +40,8 @@ export default function PermissionsScreen({ navigation }) {
   };
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.colors.background }]}>
+    <AmbientBackground intense>
+      <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
         <View style={styles.header}>
           <Text style={[styles.badge, { color: theme.colors.primary }]}>SETUP & PERMISSIONS</Text>
@@ -50,7 +53,9 @@ export default function PermissionsScreen({ navigation }) {
 
         <GlassCard style={styles.card} variant="interactive">
           <View style={styles.permRow}>
-            <Text style={styles.permGlyph}>📡</Text>
+            <View style={[styles.permGlyph, { backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.primary }]}>
+              <Icon name="wifi" size={18} color={theme.colors.primary} strokeWidth={2.1} />
+            </View>
             <View style={styles.permInfo}>
               <Text style={[styles.permTitle, { color: theme.colors.text }]}>Nearby Wi-Fi Discovery</Text>
               <Text style={[styles.permDesc, { color: theme.colors.textSecondary }]}>
@@ -66,25 +71,23 @@ export default function PermissionsScreen({ navigation }) {
               ]}
               onPress={handleGrantNearby}
             >
-              <Text
-                style={[
-                  styles.permBtnText,
-                  {
-                    color: nearbyGranted
-                      ? theme.colors.success
-                      : theme.mode === 'light'
-                      ? '#ffffff'
-                      : '#000000'
-                  }
-                ]}
-              >
-                {nearbyGranted ? 'Granted ✓' : 'Allow'}
-              </Text>
+              {nearbyGranted ? (
+                <>
+                  <Icon name="check" size={11} color={theme.colors.success} strokeWidth={3} />
+                  <Text style={[styles.permBtnText, { color: theme.colors.success }]}>Granted</Text>
+                </>
+              ) : (
+                <Text style={[styles.permBtnText, { color: theme.mode === 'light' ? '#ffffff' : '#000000' }]}>
+                  Allow
+                </Text>
+              )}
             </TouchableOpacity>
           </View>
 
           <View style={[styles.permRow, styles.borderTop, { borderTopColor: theme.colors.border }]}>
-            <Text style={styles.permGlyph}>📶</Text>
+            <View style={[styles.permGlyph, { backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.primary }]}>
+              <Icon name="radar" size={18} color={theme.colors.primary} strokeWidth={2.1} />
+            </View>
             <View style={styles.permInfo}>
               <Text style={[styles.permTitle, { color: theme.colors.text }]}>Bluetooth Low Energy (BLE)</Text>
               <Text style={[styles.permDesc, { color: theme.colors.textSecondary }]}>
@@ -100,25 +103,23 @@ export default function PermissionsScreen({ navigation }) {
               ]}
               onPress={handleGrantBluetooth}
             >
-              <Text
-                style={[
-                  styles.permBtnText,
-                  {
-                    color: bluetoothGranted
-                      ? theme.colors.success
-                      : theme.mode === 'light'
-                      ? '#ffffff'
-                      : '#000000'
-                  }
-                ]}
-              >
-                {bluetoothGranted ? 'Granted ✓' : 'Allow'}
-              </Text>
+              {bluetoothGranted ? (
+                <>
+                  <Icon name="check" size={11} color={theme.colors.success} strokeWidth={3} />
+                  <Text style={[styles.permBtnText, { color: theme.colors.success }]}>Granted</Text>
+                </>
+              ) : (
+                <Text style={[styles.permBtnText, { color: theme.mode === 'light' ? '#ffffff' : '#000000' }]}>
+                  Allow
+                </Text>
+              )}
             </TouchableOpacity>
           </View>
 
           <View style={[styles.permRow, styles.borderTop, { borderTopColor: theme.colors.border }]}>
-            <Text style={styles.permGlyph}>📂</Text>
+            <View style={[styles.permGlyph, { backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.primary }]}>
+              <Icon name="folder" size={18} color={theme.colors.primary} strokeWidth={2.1} />
+            </View>
             <View style={styles.permInfo}>
               <Text style={[styles.permTitle, { color: theme.colors.text }]}>File & Storage Access</Text>
               <Text style={[styles.permDesc, { color: theme.colors.textSecondary }]}>
@@ -134,20 +135,16 @@ export default function PermissionsScreen({ navigation }) {
               ]}
               onPress={handleGrantStorage}
             >
-              <Text
-                style={[
-                  styles.permBtnText,
-                  {
-                    color: storageGranted
-                      ? theme.colors.success
-                      : theme.mode === 'light'
-                      ? '#ffffff'
-                      : '#000000'
-                  }
-                ]}
-              >
-                {storageGranted ? 'Granted ✓' : 'Allow'}
-              </Text>
+              {storageGranted ? (
+                <>
+                  <Icon name="check" size={11} color={theme.colors.success} strokeWidth={3} />
+                  <Text style={[styles.permBtnText, { color: theme.colors.success }]}>Granted</Text>
+                </>
+              ) : (
+                <Text style={[styles.permBtnText, { color: theme.mode === 'light' ? '#ffffff' : '#000000' }]}>
+                  Allow
+                </Text>
+              )}
             </TouchableOpacity>
           </View>
         </GlassCard>
@@ -157,11 +154,13 @@ export default function PermissionsScreen({ navigation }) {
           onPress={handleContinue}
         >
           <Text style={[styles.continueBtnText, { color: theme.mode === 'light' ? '#ffffff' : '#000000' }]}>
-            Continue to LocalShare →
+            Continue to LocalShare
           </Text>
+          <Icon name="arrow-right" size={15} color={theme.mode === 'light' ? '#ffffff' : '#000000'} strokeWidth={2.4} />
         </TouchableOpacity>
       </View>
-    </SafeAreaView>
+      </SafeAreaView>
+    </AmbientBackground>
   );
 }
 
@@ -208,7 +207,12 @@ const styles = StyleSheet.create({
     borderTopWidth: 1
   },
   permGlyph: {
-    fontSize: 22,
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginRight: 12
   },
   permInfo: {
@@ -225,21 +229,27 @@ const styles = StyleSheet.create({
     lineHeight: 18
   },
   permBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 8
   },
   permBtnText: {
     fontSize: 12,
-    fontWeight: '800'
+    fontWeight: '800',
+    marginLeft: 4
   },
   continueBtn: {
+    flexDirection: 'row',
+    justifyContent: 'center',
     paddingVertical: 15,
     borderRadius: 12,
     alignItems: 'center'
   },
   continueBtnText: {
     fontSize: 16,
-    fontWeight: '800'
+    fontWeight: '800',
+    marginRight: 8
   }
 });

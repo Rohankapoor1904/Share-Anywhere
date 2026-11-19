@@ -163,14 +163,23 @@ export function LocalShareProvider({ children, nodeInstance }) {
 
   const respondPinChallenge = (pin) => {
     if (nodeInstance && activeChallenge) {
-      nodeInstance.respondPinChallenge(activeChallenge.deviceId, pin);
+      if (activeChallenge.mode === 'approve') {
+        // Incoming transfer approval: accept and release the waiting HTTP handler.
+        nodeInstance.respondIncomingSession(activeChallenge.sessionId, true);
+      } else {
+        nodeInstance.respondPinChallenge(activeChallenge.deviceId, pin);
+      }
       setActiveChallenge(null);
     }
   };
 
   const dismissPinChallenge = () => {
     if (nodeInstance && activeChallenge) {
-      nodeInstance.rejectPinChallenge(activeChallenge.deviceId, 'user_declined');
+      if (activeChallenge.mode === 'approve') {
+        nodeInstance.respondIncomingSession(activeChallenge.sessionId, false);
+      } else {
+        nodeInstance.rejectPinChallenge(activeChallenge.deviceId, 'user_declined');
+      }
       setActiveChallenge(null);
     }
   };

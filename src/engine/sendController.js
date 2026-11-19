@@ -11,9 +11,92 @@ import {
   TransferCancelledError,
   IntegrityCheckFailedError
 } from '../utils/errors';
+import { NativeBridge } from '../native/NativeBridge';
 import { defaultLogger } from '../utils/logger';
 
 const logger = defaultLogger;
+
+const BASE64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+/**
+ * Decode a base64 string into raw bytes without relying on Buffer/atob (Hermes-safe).
+ * @param {string} base64
+ * @returns {Uint8Array}
+ */
+function decodeBase64(base64) {
+  const clean = String(base64).replace(/[^A-Za-z0-9+/]/g, '');
+  const bytes = new Uint8Array(Math.floor((clean.length * 3) / 4));
+  let p = 0;
+  let buffer = 0;
+  let bits = 0;
+  for (let i = 0; i < clean.length; i++) {
+    const idx = BASE64_CHARS.indexOf(clean[i]);
+    if (idx === -1) continue;
+    buffer = (buffer << 6) | idx;
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      bytes[p++] = (buffer >> bits) & 0xff;
+    }
+  }
+  return bytes.slice(0, p);
+}
+
+/**
+ * Normalize a content:// or file:// URI into a filesystem path usable by react-native-fs.
+ * @param {object} file
+ * @returns {string}
+ */
+function resolveLocalPath(file) {
+  const raw = file.path || file.uri || file.id || '';
+  return raw.startsWith('file://') ? raw.slice('file://'.length) : raw;
+}
+
+/**
+ * Build the plain header object for the native chunk uploader.
+ * @param {string} sessionId
+ * @param {object} desc
+ * @param {number} offset
+ * @returns {{ [k: string]: string }}
+ */
+function chunkHeaders(sessionId, desc, offset) {
+  return {
+    [kHeaderSessionId]: sessionId,
+    'x-file-id': desc.fileId,
+    'x-offset': String(offset)
+  };
+}
+
+/**
+ * Read a byte range from a local file via react-native-fs (real OS filesystem access).
+ * @param {object} file
+ * @param {number} offset
+ * @param {number} length
+ * @returns {Promise<Uint8Array>}
+ */
+async function readFileChunk(file, offset, length) {
+  const absPath = resolveLocalPath(file);
+  if (!absPath) {
+    throw new Error(`Missing local file path for ${file.name}`);
+  }
+  // eslint-disable-next-line global-require
+  const RNFS = require('react-native-fs');
+  const base64 = await RNFS.read(absPath, length, offset);
+  return decodeBase64(base64);
+}
+
+/**
+ * Compute the streaming SHA-256 of a local file using the native hashing module.
+ * @param {object} file
+ * @returns {Promise<string>}
+ */
+async function computeFileSha256(file) {
+  if (file.sha256) return file.sha256;
+  const target = file.path || file.uri || file.id || '';
+  if (!target) return '';
+  const result = await NativeBridge.computeFileHash(target);
+  return result && result.sha256 ? result.sha256 : '';
+}
 
 export class SendController {
   /**
@@ -94,13 +177,26 @@ export class SendController {
       }
     }
 
-    const descriptors = files.map((f, idx) => new FileDescriptor({
-      fileId: `f-${sessionId}-${idx}`,
-      fileName: f.name,
-      fileSize: f.size || 0,
-      mimeType: f.type || 'application/octet-stream',
-      sha256: f.sha256 || ''
-    }));
+    const descriptors = [];
+    for (let idx = 0; idx < files.length; idx++) {
+      const f = files[idx];
+      let sha256 = f.sha256 || '';
+      if (!sha256 && NativeBridge.isAvailable()) {
+        try {
+          sha256 = await computeFileSha256(f);
+        } catch (err) {
+          logger.warn(`Could not compute SHA-256 for ${f.name}:`, err.message);
+        }
+      }
+      f.sha256 = sha256;
+      descriptors.push(new FileDescriptor({
+        fileId: `f-${sessionId}-${idx}`,
+        fileName: f.name,
+        fileSize: f.size || 0,
+        mimeType: f.type || 'application/octet-stream',
+        sha256
+      }));
+    }
 
     const sessionReq = new SessionRequest({
       sessionId,
@@ -108,7 +204,10 @@ export class SendController {
       files: descriptors
     });
 
-    const protocolScheme = peer.useTls === false ? 'http' : 'https';
+    // Both the LocalShare PC gateway and the Android native server speak plain
+    // HTTP (Android serves cleartext on 53318). Only use HTTPS when a peer
+    // explicitly advertises TLS, otherwise the handshake fails with a TLS error.
+    const protocolScheme = peer.useTls === true ? 'https' : 'http';
     const baseUrl = `${protocolScheme}://${peer.address}:${peer.port}`;
 
     try {
@@ -141,13 +240,13 @@ export class SendController {
       const resumeOffsets = sessionResp.resume || {};
 
       // 2. Transfer each file
-      for (const desc of descriptors) {
-        const sourceFile = files.find((f) => f.name === desc.fileName) || files[0];
+      for (let idx = 0; idx < descriptors.length; idx++) {
+        const desc = descriptors[idx];
         await this._uploadFileChunks(
           baseUrl,
           sessionId,
           desc,
-          sourceFile,
+          files[idx],
           resumeOffsets[desc.fileId] || 0,
           abortController
         );
@@ -186,25 +285,29 @@ export class SendController {
 
       const end = Math.min(offset + chunkSize, totalBytes);
       const chunkBytes = end - offset;
+      const headers = chunkHeaders(sessionId, desc, offset);
 
-      // In real native/RN runtime, react-native-fs reads binary slice
-      const chunkPayload = new Uint8Array(chunkBytes);
+      const sourceUri = sourceFile.path || sourceFile.uri || sourceFile.id || '';
+      if (NativeBridge.isAvailable() && sourceUri) {
+        // Stream the real file slice straight from the Android URI/path in native code.
+        await NativeBridge.uploadChunkFromUri(`${baseUrl}/v1/chunk`, sourceUri, offset, chunkBytes, headers);
+      } else {
+        // Fallback (Jest unit/integration tests, non-Android): read bytes and fetch.
+        const chunkPayload = /** @type {any} */ (await readFileChunk(sourceFile, offset, chunkBytes));
+        const putRes = await fetch(`${baseUrl}/v1/chunk`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'Content-Length': String(chunkBytes),
+            ...headers
+          },
+          body: chunkPayload,
+          signal: abortController.signal
+        });
 
-      const putRes = await fetch(`${baseUrl}/v1/chunk`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/octet-stream',
-          'Content-Length': String(chunkBytes),
-          [kHeaderSessionId]: sessionId,
-          'x-file-id': desc.fileId,
-          'x-offset': String(offset)
-        },
-        body: chunkPayload,
-        signal: abortController.signal
-      });
-
-      if (!putRes.ok) {
-        throw new Error(`Chunk upload failed at offset ${offset}: HTTP ${putRes.status}`);
+        if (!putRes.ok) {
+          throw new Error(`Chunk upload failed at offset ${offset}: HTTP ${putRes.status}`);
+        }
       }
 
       offset += chunkBytes;
@@ -320,8 +423,8 @@ export class SendController {
         const token = fileTokens[fileId];
         const uploadUrl = `${baseUrl}/api/localsend/v2/upload?sessionId=${remoteSessionId}&fileId=${fileId}&token=${token}`;
 
-        // In real RN runtime, streaming file read; in node test, empty buffer or data
-        const bodyBytes = new Uint8Array(fileMeta.size);
+        const sourceFile = files.find((f) => f.name === fileMeta.fileName) || files[0];
+        const bodyBytes = /** @type {any} */ (await readFileChunk(sourceFile, 0, fileMeta.size));
 
         const uploadRes = await fetch(uploadUrl, {
           method: 'POST',

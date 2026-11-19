@@ -4,6 +4,50 @@ import { defaultLogger } from './logger';
 const logger = defaultLogger;
 
 /**
+ * True when the app may post notifications (always true outside Android 13+).
+ * @returns {Promise<boolean>}
+ */
+export async function hasNotificationPermission() {
+  if (Platform.OS !== 'android') {
+    return true;
+  }
+  if (Platform.Version < 33) {
+    return true;
+  }
+  try {
+    return await PermissionsAndroid.check(
+      /** @type {any} */ (PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS)
+    );
+  } catch (err) {
+    logger.warn('Failed checking notification permission:', err.message);
+    return false;
+  }
+}
+
+/**
+ * Requests POST_NOTIFICATIONS only when it has not been granted yet, so the
+ * foreground-service status notification is visible before any connection is made.
+ * @returns {Promise<boolean>}
+ */
+export async function ensureNotificationPermission() {
+  if (await hasNotificationPermission()) {
+    return true;
+  }
+  if (Platform.OS !== 'android' || Platform.Version < 33) {
+    return true;
+  }
+  try {
+    const result = await PermissionsAndroid.request(
+      /** @type {any} */ (PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS)
+    );
+    return result === PermissionsAndroid.RESULTS.GRANTED;
+  } catch (err) {
+    logger.warn('Failed requesting notification permission:', err.message);
+    return false;
+  }
+}
+
+/**
  * Requests all required Android runtime permissions for peer discovery (mDNS, BLE, Subnet)
  * and file storage operations across all Android API versions (Android 10 - 14+).
  * @returns {Promise<boolean>}

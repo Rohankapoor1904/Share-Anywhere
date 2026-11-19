@@ -3,13 +3,57 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { execFileSync } = require('child_process');
 const protocol = require('./protocol');
+const fsService = require('./fs-service');
 const {
   DeviceInfo,
   SessionResponse,
   ChunkAck,
   CommitResponse
 } = require('./models');
+
+/**
+ * Read the operating system clipboard as text.
+ * @returns {string}
+ */
+function getSystemClipboard() {
+  try {
+    if (process.platform === 'win32') {
+      return execFileSync('powershell.exe', ['-NoProfile', '-Command', 'Get-Clipboard'], {
+        encoding: 'utf8'
+      }).replace(/\r\n$/, '');
+    }
+    if (process.platform === 'darwin') {
+      return execFileSync('pbpaste', { encoding: 'utf8' });
+    }
+    return execFileSync('xclip', ['-selection', 'clipboard', '-o'], { encoding: 'utf8' });
+  } catch (err) {
+    return '';
+  }
+}
+
+/**
+ * Write text to the operating system clipboard.
+ * @param {string} text
+ * @returns {boolean}
+ */
+function setSystemClipboard(text) {
+  try {
+    if (process.platform === 'win32') {
+      execFileSync('clip.exe', [], { input: String(text), encoding: 'utf8' });
+      return true;
+    }
+    if (process.platform === 'darwin') {
+      execFileSync('pbcopy', [], { input: String(text), encoding: 'utf8' });
+      return true;
+    }
+    execFileSync('xclip', ['-selection', 'clipboard'], { input: String(text), encoding: 'utf8' });
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
 
 /**
  * LocalShare Transfer Server Gateway
@@ -23,6 +67,7 @@ class TransferGateway {
    * @param {object} [options.tls] - { key: Buffer | string, cert: Buffer | string }
    * @param {DeviceInfo} [options.selfDevice]
    * @param {(sessionReq: object) => Promise<{ accepted: boolean, reason?: string }>} [options.onSessionRequest]
+   * @param {string} [options.browseRoot] - Root directory exposed to remote /v1/fs/* clients.
    */
   constructor(options = {}) {
     this.port = options.port || protocol.kDefaultPort;
@@ -34,6 +79,7 @@ class TransferGateway {
       port: this.port
     });
     this.onSessionRequest = options.onSessionRequest || (async () => ({ accepted: true, reason: undefined }));
+    this.browseRoot = options.browseRoot || fsService.getDefaultRoot();
 
     this.activeSessions = new Map();
     this.server = null;
@@ -226,7 +272,9 @@ class TransferGateway {
         if (verified) {
           const session = this.activeSessions.get(sessionId);
           const fileEntry = session && session.files ? session.files.find((f) => f.fileId === fileId) : null;
-          const targetName = fileEntry ? fileEntry.fileName : `${fileId}.bin`;
+          // Strip path components so an advertised file name cannot escape the storage dir.
+          const advertised = fileEntry && fileEntry.fileName ? path.basename(fileEntry.fileName) : '';
+          const targetName = advertised && advertised !== '.' && advertised !== '..' ? advertised : `${fileId}.bin`;
           const finalPath = path.join(this.storageDir, targetName);
 
           // Atomic rename from partial to final
@@ -310,12 +358,148 @@ class TransferGateway {
         return;
       }
 
+      if (pathname === '/v1/fs/list' && method === 'GET') {
+        const requested = url.searchParams.get('path') || '';
+        try {
+          const listing = fsService.listDirectory(this.browseRoot, requested);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(listing));
+        } catch (err) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: err.message }));
+        }
+        return;
+      }
+
+      if (pathname === '/v1/fs/download' && method === 'GET') {
+        const requested = url.searchParams.get('path');
+        if (!requested) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Missing path parameter' }));
+          return;
+        }
+        const target = fsService.resolvePath(this.browseRoot, requested);
+        if (!fs.existsSync(target) || !fs.statSync(target).isFile()) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'File not found' }));
+          return;
+        }
+        const stat = fs.statSync(target);
+        res.writeHead(200, {
+          'Content-Type': 'application/octet-stream',
+          'Content-Length': stat.size,
+          'Content-Disposition': `attachment; filename="${encodeURIComponent(path.basename(target))}"`
+        });
+        fs.createReadStream(target).pipe(res);
+        return;
+      }
+
+      if (pathname === '/v1/fs/stream' && method === 'GET') {
+        const requested = url.searchParams.get('path');
+        if (!requested) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Missing path parameter' }));
+          return;
+        }
+        const target = fsService.resolvePath(this.browseRoot, requested);
+        if (!fs.existsSync(target) || !fs.statSync(target).isFile()) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'File not found' }));
+          return;
+        }
+        this.streamFile(req, res, target);
+        return;
+      }
+
+      if (pathname === '/v1/fs/copy' && method === 'POST') {
+        const body = await this.readJsonBody(req);
+        try {
+          const newPath = fsService.copyEntry(body.sourcePath, body.destinationPath);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true, newPath }));
+        } catch (err) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: err.message }));
+        }
+        return;
+      }
+
+      if (pathname === '/v1/fs/delete' && method === 'POST') {
+        const body = await this.readJsonBody(req);
+        try {
+          const deletedPath = fsService.deleteEntry(body.path);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true, deletedPath }));
+        } catch (err) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: err.message }));
+        }
+        return;
+      }
+
+      if (pathname === '/v1/clipboard' && method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ text: getSystemClipboard(), timestamp: Date.now() }));
+        return;
+      }
+
+      if (pathname === '/v1/clipboard' && method === 'POST') {
+        const body = await this.readJsonBody(req);
+        const text = typeof body.text === 'string' ? body.text : '';
+        const written = setSystemClipboard(text);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: written }));
+        return;
+      }
+
       res.writeHead(404, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Not found' }));
     } catch (err) {
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: err.message }));
     }
+  }
+
+  /**
+   * Stream a file with HTTP Range (206) support so large media can seek.
+   * @param {import('http').IncomingMessage} req
+   * @param {import('http').ServerResponse} res
+   * @param {string} target
+   */
+  streamFile(req, res, target) {
+    const stat = fs.statSync(target);
+    const total = stat.size;
+    const mimeType = fsService.getMimeType(target);
+    const range = req.headers.range;
+
+    if (range) {
+      const match = /bytes=(\d*)-(\d*)/.exec(range);
+      let start = match && match[1] ? parseInt(match[1], 10) : 0;
+      let end = match && match[2] ? parseInt(match[2], 10) : total - 1;
+      if (Number.isNaN(start) || start < 0) start = 0;
+      if (Number.isNaN(end) || end >= total) end = total - 1;
+      if (start > end) {
+        res.writeHead(416, { 'Content-Range': `bytes */${total}` });
+        res.end();
+        return;
+      }
+      const chunkSize = end - start + 1;
+      res.writeHead(206, {
+        'Content-Type': mimeType,
+        'Content-Length': chunkSize,
+        'Content-Range': `bytes ${start}-${end}/${total}`,
+        'Accept-Ranges': 'bytes'
+      });
+      fs.createReadStream(target, { start, end }).pipe(res);
+      return;
+    }
+
+    res.writeHead(200, {
+      'Content-Type': mimeType,
+      'Content-Length': total,
+      'Accept-Ranges': 'bytes'
+    });
+    fs.createReadStream(target).pipe(res);
   }
 
   readJsonBody(req) {

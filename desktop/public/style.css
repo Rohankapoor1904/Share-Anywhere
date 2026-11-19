@@ -1,7 +1,19 @@
 :root {
   --font-main: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --transition-speed: 0.2s;
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 22px;
 }
+
+/* Every theme also carries its own ambient mesh tint. */
+[data-theme="midnight"] { --mesh-a: rgba(56, 189, 248, 0.14); --mesh-b: rgba(129, 140, 248, 0.12); }
+[data-theme="obsidian"] { --mesh-a: rgba(0, 242, 254, 0.11); --mesh-b: rgba(0, 230, 118, 0.08); }
+[data-theme="cyberpunk"] { --mesh-a: rgba(244, 63, 94, 0.15); --mesh-b: rgba(192, 132, 252, 0.13); }
+[data-theme="daylight"] { --mesh-a: rgba(2, 132, 199, 0.10); --mesh-b: rgba(99, 102, 241, 0.09); }
 
 /* Midnight Slate Theme */
 [data-theme="midnight"] {
@@ -92,15 +104,49 @@
 body {
   font-family: var(--font-main);
   background-color: var(--bg-app);
+  background-image:
+    radial-gradient(circle at 15% 15%, var(--mesh-a), transparent 38%),
+    radial-gradient(circle at 85% 85%, var(--mesh-b), transparent 40%);
+  background-attachment: fixed;
   color: var(--text-main);
   height: 100vh;
   overflow: hidden;
   user-select: none;
+  -webkit-font-smoothing: antialiased;
 }
+
+.app-layout { position: relative; z-index: 1; }
 
 .app-layout {
   display: flex;
   height: 100vh;
+}
+
+/* Slim themed scrollbars — the default Electron chrome is visually noisy. */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  transition: background var(--transition-speed) ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-highlight);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 /* Sidebar */
@@ -111,6 +157,19 @@ body {
   display: flex;
   flex-direction: column;
   padding: 20px 16px;
+  position: relative;
+}
+
+.sidebar::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: -1px;
+  bottom: 0;
+  width: 1px;
+  background: linear-gradient(180deg, transparent, var(--border-highlight), transparent);
+  opacity: 0.6;
+  pointer-events: none;
 }
 
 .sidebar-brand {
@@ -122,15 +181,28 @@ body {
 }
 
 .brand-icon {
-  font-size: 26px;
   width: 44px;
   height: 44px;
-  border-radius: 12px;
+  border-radius: 13px;
   background: var(--primary-glow);
   display: flex;
   align-items: center;
   justify-content: center;
   border: 1px solid var(--primary);
+  color: var(--primary);
+  box-shadow: 0 0 18px var(--primary-glow);
+  transition: transform var(--transition-speed) var(--ease-spring),
+              box-shadow var(--transition-speed) ease;
+}
+
+.brand-icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.sidebar-brand:hover .brand-icon {
+  transform: rotate(-6deg) scale(1.07);
+  box-shadow: 0 0 28px var(--primary-glow);
 }
 
 .brand-info h1 {
@@ -168,12 +240,40 @@ body {
   font-weight: 600;
   cursor: pointer;
   text-align: left;
-  transition: all var(--transition-speed);
+  position: relative;
+  border: 1px solid transparent;
+  transition: background var(--transition-speed) ease,
+              color var(--transition-speed) ease,
+              border-color var(--transition-speed) ease,
+              transform var(--transition-speed) var(--ease-spring);
+}
+
+.nav-item::before {
+  content: '';
+  position: absolute;
+  left: -14px;
+  top: 50%;
+  width: 3px;
+  height: 0;
+  border-radius: 0 3px 3px 0;
+  background: var(--primary);
+  box-shadow: 0 0 10px var(--primary);
+  transform: translateY(-50%);
+  transition: height var(--transition-speed) var(--ease-out);
+}
+
+.nav-item.active::before {
+  height: 22px;
 }
 
 .nav-item:hover {
   background: var(--border);
   color: var(--text-main);
+  transform: translateX(3px);
+}
+
+.nav-item:active {
+  transform: scale(0.975);
 }
 
 .nav-item.active {
@@ -181,9 +281,32 @@ body {
   color: var(--primary);
   font-weight: 700;
   border: 1px solid var(--border-highlight);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
 }
 
 .nav-icon {
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform var(--transition-speed) var(--ease-spring);
+}
+
+.nav-icon svg {
+  width: 17px;
+  height: 17px;
+}
+
+.nav-item:hover .nav-icon {
+  transform: scale(1.14);
+}
+
+.nav-item.active .nav-icon {
+  filter: drop-shadow(0 0 6px var(--primary-glow));
+}
+
+.nav-icon-legacy {
   font-size: 16px;
 }
 
@@ -217,6 +340,23 @@ body {
   border-radius: 50%;
   background: var(--success);
   box-shadow: 0 0 8px var(--success);
+  position: relative;
+  flex-shrink: 0;
+}
+
+.status-dot::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 1px solid var(--success);
+  animation: status-ping 2.2s var(--ease-out) infinite;
+}
+
+@keyframes status-ping {
+  0% { opacity: 0.7; transform: scale(0.65); }
+  70% { opacity: 0; transform: scale(1.75); }
+  100% { opacity: 0; transform: scale(1.75); }
 }
 
 .status-text {
@@ -276,17 +416,45 @@ body {
 
 /* Glass Cards */
 .glass-card {
+  position: relative;
   background: var(--bg-card);
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   padding: 20px;
   margin-bottom: 20px;
-  transition: all var(--transition-speed);
+  box-shadow:
+    0 12px 32px -8px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.14);
+  transition: border-color var(--transition-speed) ease,
+              transform var(--transition-speed) var(--ease-spring),
+              box-shadow var(--transition-speed) ease;
+}
+
+/* Refraction edge: the card top catches light like frosted glass. */
+.glass-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 12%;
+  right: 12%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.22), transparent);
+  pointer-events: none;
 }
 
 .glass-card:hover {
   border-color: var(--border-highlight);
+  transform: translateY(-2px);
+  box-shadow:
+    0 18px 42px -10px rgba(0, 0, 0, 0.5),
+    0 0 0 1px var(--primary-glow),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.18);
+}
+
+.glass-card:active {
+  transform: scale(0.99);
 }
 
 .self-card-row {
@@ -313,23 +481,54 @@ body {
 
 /* Buttons */
 .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
   padding: 10px 18px;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
   border: none;
-  transition: all var(--transition-speed);
+  color: inherit;
+  transition: transform var(--transition-speed) var(--ease-spring),
+              box-shadow var(--transition-speed) ease,
+              background var(--transition-speed) ease,
+              border-color var(--transition-speed) ease,
+              opacity var(--transition-speed) ease;
+}
+
+.btn svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.btn:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .btn-primary {
   background: var(--primary);
   color: #000;
+  box-shadow: 0 4px 16px var(--primary-glow);
 }
 
-.btn-primary:hover {
-  opacity: 0.9;
+.btn-primary:hover:not(:disabled) {
+  opacity: 0.94;
   transform: translateY(-1px);
+  box-shadow: 0 7px 22px var(--primary-glow);
 }
 
 .btn-secondary {
@@ -338,8 +537,9 @@ body {
   border: 1px solid var(--border);
 }
 
-.btn-secondary:hover {
+.btn-secondary:hover:not(:disabled) {
   border-color: var(--border-highlight);
+  transform: translateY(-1px);
 }
 
 .btn-block {
@@ -354,21 +554,38 @@ body {
 }
 
 .device-card {
+  position: relative;
   background: var(--bg-card);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 18px;
   cursor: pointer;
-  transition: all var(--transition-speed);
   display: flex;
   align-items: center;
   gap: 14px;
+  box-shadow:
+    0 12px 32px -8px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.14);
+  transition: border-color var(--transition-speed) ease,
+              transform var(--transition-speed) var(--ease-spring),
+              background var(--transition-speed) ease,
+              box-shadow var(--transition-speed) ease;
 }
 
 .device-card:hover {
   border-color: var(--primary);
   transform: translateY(-2px);
   background: var(--primary-glow);
+  box-shadow:
+    0 18px 42px -10px rgba(0, 0, 0, 0.5),
+    0 0 0 1px var(--primary-glow),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.18);
+}
+
+.device-card:active {
+  transform: scale(0.99);
 }
 
 .device-avatar {
@@ -383,6 +600,18 @@ body {
   font-size: 18px;
   font-weight: 800;
   color: var(--primary);
+  flex-shrink: 0;
+  box-shadow: 0 0 14px var(--primary-glow);
+  transition: transform var(--transition-speed) var(--ease-spring);
+}
+
+.device-card:hover .device-avatar {
+  transform: scale(1.08);
+}
+
+.device-avatar svg {
+  width: 19px;
+  height: 19px;
 }
 
 .device-info {
@@ -462,6 +691,350 @@ body {
 @keyframes sweep {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+/* Expanding sonar ripples radiating from the beacon. */
+.radar-ripple {
+  position: absolute;
+  width: 380px;
+  height: 380px;
+  border-radius: 50%;
+  border: 2px solid var(--primary);
+  opacity: 0;
+  pointer-events: none;
+  animation: radarPulse 4s var(--ease-out) infinite;
+}
+
+.radar-ripple-2 {
+  border-color: var(--accent);
+  animation-delay: 2s;
+}
+
+@keyframes radarPulse {
+  0% { transform: scale(0.15); opacity: 0.65; }
+  80% { opacity: 0; }
+  100% { transform: scale(1); opacity: 0; }
+}
+
+/* Rim tick marks generated by app.js. */
+.radar-ticks {
+  position: absolute;
+  width: 380px;
+  height: 380px;
+  pointer-events: none;
+}
+
+.radar-tick-anchor {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+}
+
+.radar-tick {
+  width: 1.5px;
+  border-radius: 1px;
+  background: var(--text-muted);
+  opacity: 0.65;
+}
+
+.radar-tick.major {
+  background: var(--primary);
+  opacity: 1;
+  box-shadow: 0 0 6px var(--primary-glow);
+}
+
+.radar-range-label {
+  position: absolute;
+  left: 50%;
+  margin-left: 8px;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.9px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.radar-range-near { top: 44%; }
+.radar-range-lan { top: 24%; }
+.radar-range-subnet { top: 5%; }
+
+/* Blip layer overlays the sweep box so translate() coordinates are box-relative. */
+#radar-blips-container {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 3;
+}
+
+#radar-blips-container .radar-blip {
+  pointer-events: auto;
+}
+
+/* Peer blips drawn over the sweep. */
+.radar-blip {
+  transition: transform var(--transition-speed) var(--ease-spring);
+}
+
+.radar-blip:hover {
+  z-index: 5;
+}
+
+.radar-blip-node {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-card-solid);
+  border: 1.5px solid var(--primary);
+  color: var(--primary);
+  box-shadow: 0 0 16px var(--primary-glow);
+  transition: transform var(--transition-speed) var(--ease-spring),
+              box-shadow var(--transition-speed) ease;
+}
+
+.radar-blip-node svg {
+  width: 17px;
+  height: 17px;
+}
+
+.radar-blip:hover .radar-blip-node {
+  transform: scale(1.16);
+  box-shadow: 0 0 26px var(--primary-glow);
+}
+
+.radar-blip-label {
+  font-size: 10px;
+  font-weight: 800;
+  background: var(--bg-card-solid);
+  border: 1px solid var(--border-highlight);
+  padding: 2px 7px;
+  border-radius: 7px;
+  margin-top: 5px;
+  white-space: nowrap;
+  color: var(--text-main);
+}
+
+.radar-blip-ip {
+  font-size: 8px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-top: 1px;
+  white-space: nowrap;
+}
+
+/* Persistent engine telemetry strip (above the active tab). */
+.engine-telemetry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  margin-bottom: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  box-shadow:
+    0 12px 32px -8px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.14);
+}
+
+.engine-telemetry-group {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  flex-wrap: wrap;
+}
+
+.engine-telemetry-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.engine-telemetry-label {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.engine-telemetry-value {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text-main);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.2px;
+}
+
+.engine-telemetry-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.telemetry-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color var(--transition-speed) ease,
+              border-color var(--transition-speed) ease,
+              background var(--transition-speed) ease,
+              transform var(--transition-speed) var(--ease-spring);
+}
+
+.telemetry-pill svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+}
+
+.telemetry-pill:hover {
+  color: var(--text-main);
+  border-color: var(--border-highlight);
+  background: var(--primary-glow);
+  transform: translateY(-1px);
+}
+
+.telemetry-pill:active {
+  transform: scale(0.97);
+}
+
+.telemetry-pill-accent {
+  color: var(--primary);
+  border-color: var(--border-highlight);
+  background: var(--primary-glow);
+}
+
+.telemetry-pill-accent:hover {
+  color: var(--primary);
+  box-shadow: 0 0 16px var(--primary-glow);
+}
+
+/* Radar telemetry strip */
+.telemetry-bar {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  padding: 16px 20px;
+  margin-top: 8px;
+}
+
+.telemetry-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.telemetry-label {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.telemetry-value {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Generic inline icon containers used by dynamically rendered markup. */
+.empty-icon {
+  color: var(--primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.85;
+}
+
+.empty-icon svg {
+  width: 36px;
+  height: 36px;
+}
+
+.file-icon-badge {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--primary-glow);
+  border: 1px solid var(--border-highlight);
+  color: var(--primary);
+  flex-shrink: 0;
+}
+
+.file-icon-badge svg {
+  width: 19px;
+  height: 19px;
+}
+
+.btn-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 5px;
+  transition: color var(--transition-speed) ease,
+              border-color var(--transition-speed) ease,
+              transform var(--transition-speed) var(--ease-spring);
+}
+
+.btn-remove:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.btn-remove:active {
+  transform: scale(0.9);
+}
+
+.btn-remove svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* Respect users who ask the OS for reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  .radar-sweep-arm,
+  .radar-ripple,
+  .status-dot::after {
+    animation: none !important;
+  }
+
+  .glass-card:hover,
+  .device-card:hover,
+  .nav-item:hover,
+  .btn:hover {
+    transform: none !important;
+  }
 }
 
 /* Share Hub */
@@ -625,16 +1198,33 @@ body {
 
 /* Transfer Card & Progress Bar */
 .transfer-card {
+  position: relative;
   background: var(--bg-card);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 16px 20px;
   margin-bottom: 12px;
-  transition: border-color var(--transition-speed);
+  box-shadow:
+    0 12px 32px -8px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.14);
+  transition: border-color var(--transition-speed) ease,
+              transform var(--transition-speed) var(--ease-spring),
+              box-shadow var(--transition-speed) ease;
 }
 
 .transfer-card:hover {
   border-color: var(--border-highlight);
+  transform: translateY(-2px);
+  box-shadow:
+    0 18px 42px -10px rgba(0, 0, 0, 0.5),
+    0 0 0 1px var(--primary-glow),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.18);
+}
+
+.transfer-card:active {
+  transform: scale(0.99);
 }
 
 .transfer-header {
@@ -684,4 +1274,42 @@ body {
   justify-content: space-between;
   font-size: 12px;
   color: var(--text-muted);
+}
+
+/* ---- Remote File Explorer ---- */
+.remote-path-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.remote-path-text {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: monospace;
+}
+
+.remote-files-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.preview-body {
+  margin: 14px 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  max-height: 60vh;
+  overflow: auto;
+}
+
+.chip-success {
+  background: rgba(34, 197, 94, 0.15);
+  border: 1px solid var(--success);
+  color: var(--success);
 }

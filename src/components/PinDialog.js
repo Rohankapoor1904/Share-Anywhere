@@ -1,13 +1,27 @@
 import React, { useState } from 'react';
 import { Modal, View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
 import GlassCard from './GlassCard';
+import Icon from './Icon';
 import { useTheme } from '../theme';
 
 /**
- * 6-Digit PIN challenge confirmation dialog for unknown peers.
+ * Human-readable byte size.
+ * @param {number} bytes
+ * @returns {string}
+ */
+function formatBytes(bytes) {
+  const value = Number(bytes) || 0;
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  if (value < 1024 * 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(value / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+/**
+ * Confirmation dialog for pairing PIN challenges and incoming transfer approvals.
  * @param {object} props
  * @param {boolean} props.visible
- * @param {object} props.challenge - Challenge info { deviceId, displayName, expectedPin, mode: 'enter' | 'display' }
+ * @param {object} props.challenge - Challenge info { deviceId, displayName, expectedPin, files, mode: 'enter' | 'display' | 'approve' }
  * @param {(pin: string) => void} props.onConfirm
  * @param {() => void} props.onReject
  * @param {string} [props.error]
@@ -20,10 +34,17 @@ export default function PinDialog({ visible, challenge, onConfirm, onReject, err
     return null;
   }
 
-  const { displayName = 'Unknown Peer', expectedPin, mode = 'enter' } = challenge;
+  const { displayName = 'Unknown Peer', expectedPin, files, totalBytes, mode = 'enter' } = challenge;
+  const isApprove = mode === 'approve';
+  const fileList = Array.isArray(files) ? files : [];
+  const totalSize = totalBytes !== undefined
+    ? totalBytes
+    : fileList.reduce((acc, f) => acc + (f.fileSize || 0), 0);
 
   const handleConfirm = () => {
-    if (mode === 'display') {
+    if (isApprove) {
+      onConfirm('');
+    } else if (mode === 'display') {
       onConfirm(expectedPin);
     } else {
       onConfirm(enteredPin);
@@ -48,16 +69,39 @@ export default function PinDialog({ visible, challenge, onConfirm, onReject, err
           style={[styles.dialogCard, { borderColor: theme.colors.borderHighlight }]}
           variant="highlighted"
         >
-          <View style={[styles.shieldIconContainer, { backgroundColor: theme.colors.primaryGlow }]}>
-            <Text style={styles.shieldIcon}>🔐</Text>
+          <View style={[styles.shieldIconContainer, { backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.borderHighlight }]}>
+            <Icon name={isApprove ? 'received' : 'lock'} size={26} color={theme.colors.primary} strokeWidth={1.9} />
           </View>
 
-          <Text style={[styles.title, { color: theme.colors.text }]}>Pairing Security Check</Text>
+          <Text style={[styles.title, { color: theme.colors.text }]}>
+            {isApprove ? 'Incoming File Transfer' : 'Pairing Security Check'}
+          </Text>
           <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
-            Device <Text style={[styles.peerHighlight, { color: theme.colors.primary }]}>{displayName}</Text> is requesting connection.
+            Device <Text style={[styles.peerHighlight, { color: theme.colors.primary }]}>{displayName}</Text>
+            {isApprove ? ' wants to send you files.' : ' is requesting connection.'}
           </Text>
 
-          {mode === 'display' ? (
+          {isApprove ? (
+            <View style={[styles.pinDisplayBox, { backgroundColor: theme.colors.inputBg, borderColor: theme.colors.border }]}>
+              <Text style={[styles.pinLabel, { color: theme.colors.textSecondary }]}>
+                {fileList.length} file(s) • {formatBytes(totalSize)}
+              </Text>
+              {fileList.slice(0, 5).map((f, idx) => (
+                <Text
+                  key={`${f.fileId || f.fileName || idx}`}
+                  style={[styles.fileName, { color: theme.colors.text }]}
+                  numberOfLines={1}
+                >
+                  • {f.fileName || 'file'}
+                </Text>
+              ))}
+              {fileList.length > 5 ? (
+                <Text style={[styles.fileName, { color: theme.colors.textMuted }]}>
+                  +{fileList.length - 5} more
+                </Text>
+              ) : null}
+            </View>
+          ) : mode === 'display' ? (
             <View style={[styles.pinDisplayBox, { backgroundColor: theme.colors.inputBg, borderColor: theme.colors.border }]}>
               <Text style={[styles.pinLabel, { color: theme.colors.textSecondary }]}>
                 Confirm this PIN on the other device:
@@ -111,7 +155,7 @@ export default function PinDialog({ visible, challenge, onConfirm, onReject, err
               onPress={handleConfirm}
             >
               <Text style={[styles.confirmBtnText, { color: theme.mode === 'light' ? '#ffffff' : '#000000' }]}>
-                {mode === 'display' ? 'Authorize' : 'Verify & Connect'}
+                {isApprove ? 'Accept' : mode === 'display' ? 'Authorize' : 'Verify & Connect'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -136,15 +180,13 @@ const styles = StyleSheet.create({
     alignItems: 'center'
   },
   shieldIconContainer: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12
-  },
-  shieldIcon: {
-    fontSize: 26
+    marginBottom: 14
   },
   title: {
     fontSize: 20,
@@ -183,6 +225,12 @@ const styles = StyleSheet.create({
     fontSize: 34,
     fontWeight: '800',
     letterSpacing: 8
+  },
+  fileName: {
+    fontSize: 13,
+    marginTop: 4,
+    alignSelf: 'flex-start',
+    maxWidth: '100%'
   },
   input: {
     borderWidth: 1.5,

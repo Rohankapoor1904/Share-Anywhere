@@ -14,6 +14,8 @@ import { useTheme } from '../theme';
 import GlassCard from '../components/GlassCard';
 import QueueList from '../components/QueueList';
 import EmptyState from '../components/EmptyState';
+import Icon from '../components/Icon';
+import AmbientBackground from '../components/AmbientBackground';
 import { defaultLogger } from '../utils/logger';
 
 const logger = defaultLogger;
@@ -34,14 +36,15 @@ export default function ShareHubScreen({ route, navigation }) {
     try {
       const results = await DocumentPicker.pick({
         allowMultiSelection: true,
-        type: [DocumentPicker.types.allFiles]
+        type: [DocumentPicker.types.allFiles],
+        copyTo: 'cachesDirectory'
       });
 
       const newFiles = results.map((file) => ({
         id: file.uri,
         name: file.name || 'unnamed_file',
         size: file.size || 0,
-        path: file.uri,
+        path: file.fileCopyUri || file.uri,
         type: file.type || 'application/octet-stream'
       }));
 
@@ -79,7 +82,8 @@ export default function ShareHubScreen({ route, navigation }) {
   };
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.colors.background }]}>
+    <AmbientBackground>
+      <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container}>
         {/* Destination Peer Selector */}
         <GlassCard style={styles.card} variant={selectedPeer ? 'highlighted' : 'default'}>
@@ -122,8 +126,9 @@ export default function ShareHubScreen({ route, navigation }) {
                       ]}
                       onPress={() => setSelectedPeer(p)}
                     >
+                      <Icon name="devices" size={13} color={theme.colors.primary} strokeWidth={2.2} />
                       <Text style={[styles.peerChipText, { color: theme.colors.primary }]} numberOfLines={1}>
-                        📱 {p.displayName}
+                        {p.displayName}
                       </Text>
                     </TouchableOpacity>
                   ))}
@@ -136,8 +141,9 @@ export default function ShareHubScreen({ route, navigation }) {
                   ]}
                   onPress={() => navigation.navigate('Devices')}
                 >
+                  <Icon name="search" size={14} color={theme.colors.primary} strokeWidth={2.3} />
                   <Text style={[styles.findDevicesBtnText, { color: theme.colors.primary }]}>
-                    🔍 Find Devices on Network
+                    Find Devices on Network
                   </Text>
                 </TouchableOpacity>
               )}
@@ -157,10 +163,10 @@ export default function ShareHubScreen({ route, navigation }) {
           onPress={handlePickFiles}
           activeOpacity={0.7}
         >
-          <View style={[styles.uploadIconBadge, { backgroundColor: theme.colors.primaryGlow }]}>
-            <Text style={styles.uploadIcon}>📁</Text>
+          <View style={[styles.uploadIconBadge, { backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.primary }]}>
+            <Icon name="upload" size={21} color={theme.colors.primary} strokeWidth={2} />
           </View>
-          <Text style={[styles.pickButtonText, { color: theme.colors.text }]}>+ Add Files to Send</Text>
+          <Text style={[styles.pickButtonText, { color: theme.colors.text }]}>Add Files to Send</Text>
           <Text style={[styles.pickButtonSub, { color: theme.colors.textMuted }]}>
             Select documents, photos, videos, or archives
           </Text>
@@ -187,13 +193,15 @@ export default function ShareHubScreen({ route, navigation }) {
             onPress={handleSend}
             disabled={!selectedPeer}
           >
+            <Icon name="share" size={16} color={theme.mode === 'light' ? '#ffffff' : '#000000'} strokeWidth={2.2} />
             <Text style={[styles.sendButtonText, { color: theme.mode === 'light' ? '#ffffff' : '#000000' }]}>
-              🚀 Send {stagedFiles.length} {stagedFiles.length === 1 ? 'File' : 'Files'} {selectedPeer ? `to ${selectedPeer.displayName}` : ''}
+              Send {stagedFiles.length} {stagedFiles.length === 1 ? 'File' : 'Files'}{selectedPeer ? ` to ${selectedPeer.displayName}` : ''}
             </Text>
           </TouchableOpacity>
         ) : null}
       </ScrollView>
-    </SafeAreaView>
+      </SafeAreaView>
+    </AmbientBackground>
   );
 }
 
@@ -271,6 +279,8 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap'
   },
   peerChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
     borderWidth: 1,
     paddingHorizontal: 12,
     paddingVertical: 8,
@@ -281,17 +291,21 @@ const styles = StyleSheet.create({
   },
   peerChipText: {
     fontSize: 13,
-    fontWeight: '700'
+    fontWeight: '700',
+    marginLeft: 6
   },
   findDevicesBtn: {
+    flexDirection: 'row',
     paddingVertical: 12,
     borderRadius: 10,
     alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1
   },
   findDevicesBtnText: {
     fontWeight: '700',
-    fontSize: 13
+    fontSize: 13,
+    marginLeft: 7
   },
   pickButton: {
     borderWidth: 1.5,
@@ -302,15 +316,13 @@ const styles = StyleSheet.create({
     marginBottom: 16
   },
   uploadIconBadge: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8
-  },
-  uploadIcon: {
-    fontSize: 22
   },
   pickButtonText: {
     fontSize: 16,
@@ -321,9 +333,11 @@ const styles = StyleSheet.create({
     marginTop: 3
   },
   sendButton: {
+    flexDirection: 'row',
     borderRadius: 12,
     paddingVertical: 15,
     alignItems: 'center',
+    justifyContent: 'center',
     marginTop: 16
   },
   disabledBtn: {
@@ -331,6 +345,7 @@ const styles = StyleSheet.create({
   },
   sendButtonText: {
     fontSize: 16,
-    fontWeight: '800'
+    fontWeight: '800',
+    marginLeft: 8
   }
 });

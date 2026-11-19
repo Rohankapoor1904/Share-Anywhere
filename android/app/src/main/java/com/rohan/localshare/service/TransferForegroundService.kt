@@ -11,8 +11,7 @@ import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
-import com.facebook.react.bridge.Arguments
-import com.facebook.react.bridge.Promise
+import androidx.core.app.NotificationManagerCompat
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
@@ -45,20 +44,46 @@ class TransferForegroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val title = intent?.getStringExtra("title") ?: "LocalShare Active"
         val content = intent?.getStringExtra("content") ?: "Transferring files over local network..."
+        val progress = intent?.getIntExtra("progress", -1) ?: -1
 
-        val notification = buildNotification(title, content)
+        val notification = buildNotification(title, content, progress)
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
+        // startForeground() throws ForegroundServiceStartNotAllowedException when the
+        // process is background-restricted, and SecurityException when the dataSync type
+        // permission is missing. Both escape onStartCommand and kill the process, so a
+        // receive from a PC crashed the app instead of merely skipping the notification.
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        // Live progress updates arrive as repeated startService() intents; re-notify so
+        // the ongoing notification reflects real bytes rather than a static "transferring".
+        // notify() throws SecurityException on Android 13+ when POST_NOTIFICATIONS was
+        // denied, and an exception here kills the service thread and the app with it.
+        if (progress >= 0 && canPostNotifications()) {
+            NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, notification)
         }
 
         return START_NOT_STICKY
+    }
+
+    private fun canPostNotifications(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+        } else {
+            NotificationManagerCompat.from(this).areNotificationsEnabled()
+        }
     }
 
     override fun onDestroy() {
@@ -72,14 +97,19 @@ class TransferForegroundService : Service() {
         super.onDestroy()
     }
 
-    private fun buildNotification(title: String, content: String): Notification {
-        return NotificationCompat.Builder(this, CHANNEL_ID)
+    private fun buildNotification(title: String, content: String, progress: Int): Notification {
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(content)
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build()
+
+        if (progress in 0..100) {
+            builder.setProgress(100, progress, false)
+        }
+
+        return builder.build()
     }
 
     private fun createNotificationChannel() {
@@ -111,7 +141,7 @@ class TransferForegroundServiceModule(reactContext: ReactApplicationContext) :
     override fun getName(): String = "TransferForegroundService"
 
     @ReactMethod
-    fun startService(title: String, content: String, promise: Promise? = null) {
+    fun startService(title: String, content: String) {
         try {
             val context = reactApplicationContext
             val intent = Intent(context, TransferForegroundService::class.java).apply {
@@ -126,23 +156,49 @@ class TransferForegroundServiceModule(reactContext: ReactApplicationContext) :
             }
 
             sendEvent("ServiceState", "started")
-            promise?.resolve(true)
         } catch (e: Exception) {
-            promise?.reject("ERR_SERVICE_START_FAILED", e.localizedMessage, e)
+            // Foreground service start can be rejected by the OS in background-restricted states
+            sendEvent("ServiceState", "start_failed")
+        }
+    }
+
+    /**
+     * Push a live progress update into the running foreground-service notification.
+     * @param progress integer percentage 0-100, or -1 for an indeterminate/plain update.
+     */
+    @ReactMethod
+    fun updateProgress(title: String, content: String, progress: Int) {
+        try {
+            val context = reactApplicationContext
+            val intent = Intent(context, TransferForegroundService::class.java).apply {
+                putExtra("title", title)
+                putExtra("content", content)
+                putExtra("progress", progress)
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+
+            sendEvent("ServiceState", "progress")
+        } catch (e: Exception) {
+            // Service may be stopped or background-restricted; surface the failure to JS.
+            sendEvent("ServiceState", "progress_failed")
         }
     }
 
     @ReactMethod
-    fun stopService(promise: Promise? = null) {
+    fun stopService() {
         try {
             val context = reactApplicationContext
             val intent = Intent(context, TransferForegroundService::class.java)
             context.stopService(intent)
 
             sendEvent("ServiceState", "stopped")
-            promise?.resolve(true)
         } catch (e: Exception) {
-            promise?.reject("ERR_SERVICE_STOP_FAILED", e.localizedMessage, e)
+            sendEvent("ServiceState", "stop_failed")
         }
     }
 

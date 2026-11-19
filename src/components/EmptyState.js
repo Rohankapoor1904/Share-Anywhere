@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import Icon from './Icon';
 import { useTheme } from '../theme';
 
 /**
@@ -8,9 +9,10 @@ import { useTheme } from '../theme';
  * @param {string} props.title - Headline message.
  * @param {string} props.description - Explanatory subtitle.
  * @param {React.ReactNode} [props.icon] - Optional icon or illustration.
+ * @param {string} [props.iconName='radar'] - Vector icon shown when no custom icon is supplied.
  * @param {React.ReactNode} [props.action] - Optional action button.
  */
-export default function EmptyState({ title, description, icon, action }) {
+export default function EmptyState({ title, description, icon, iconName = 'radar', action }) {
   const { theme } = useTheme();
 
   return (
@@ -24,7 +26,7 @@ export default function EmptyState({ title, description, icon, action }) {
           }
         ]}
       >
-        {icon || <Text style={styles.defaultIconGlyph}>📡</Text>}
+        {icon || <Icon name={iconName} size={28} color={theme.colors.primary} strokeWidth={1.8} />}
       </View>
       <Text style={[styles.title, { color: theme.colors.text }]}>{title}</Text>
       {description ? (
@@ -52,9 +54,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16
-  },
-  defaultIconGlyph: {
-    fontSize: 28
   },
   title: {
     fontSize: 18,

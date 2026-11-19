@@ -9,6 +9,7 @@ const {
   NsdDiscoveryModule,
   BleDiscoveryModule,
   TransferServerModule,
+  TransferClientModule,
   TransferForegroundService,
   StorageModule
 } = NativeModules;
@@ -110,6 +111,12 @@ export const NativeBridge = {
     }
   },
 
+  updateForegroundProgress(title, content, progress) {
+    if (TransferForegroundService && TransferForegroundService.updateProgress) {
+      TransferForegroundService.updateProgress(title, content, progress);
+    }
+  },
+
   stopForegroundService() {
     if (TransferForegroundService && TransferForegroundService.stopService) {
       TransferForegroundService.stopService();
@@ -135,11 +142,71 @@ export const NativeBridge = {
     }
   },
 
+  // Incoming transfer approval (releases the native server's waiting HTTP handler)
+  async respondToSession(sessionId, accepted) {
+    if (TransferServerModule && TransferServerModule.respondToSession) {
+      return TransferServerModule.respondToSession(sessionId, accepted);
+    }
+    return true;
+  },
+
+  // Native streaming chunk upload (content:// URIs never cross the RN bridge as base64)
+  async uploadChunkFromUri(url, fileUri, offset, length, headers) {
+    if (TransferClientModule && TransferClientModule.uploadChunkFromUri) {
+      return TransferClientModule.uploadChunkFromUri(url, fileUri, offset, length, headers || {});
+    }
+    throw new Error('TransferClientModule.uploadChunkFromUri is not available');
+  },
+
   // Storage
   async getDownloadsDirectory() {
     if (StorageModule && StorageModule.getDownloadsDirectory) {
       return StorageModule.getDownloadsDirectory();
     }
     return '/storage/emulated/0/Download';
+  },
+
+  async hasAllFilesAccess() {
+    if (StorageModule && StorageModule.hasAllFilesAccess) {
+      return StorageModule.hasAllFilesAccess();
+    }
+    return false;
+  },
+
+  async requestAllFilesAccess() {
+    if (StorageModule && StorageModule.requestAllFilesAccess) {
+      return StorageModule.requestAllFilesAccess();
+    }
+    return false;
+  },
+
+  async openRemoteStreamUrl(url, mimeType) {
+    if (StorageModule && StorageModule.openRemoteStreamUrl) {
+      return StorageModule.openRemoteStreamUrl(url, mimeType || 'application/octet-stream');
+    }
+    return false;
+  },
+
+  // Remote file pull (writes real bytes into Downloads/LocalShare)
+  async downloadUrlToFile(url, fileName) {
+    if (TransferClientModule && TransferClientModule.downloadUrlToFile) {
+      return TransferClientModule.downloadUrlToFile(url, fileName);
+    }
+    throw new Error('TransferClientModule.downloadUrlToFile is not available');
+  },
+
+  // System clipboard (read/write on the UI thread)
+  async getClipboardText() {
+    if (StorageModule && StorageModule.getClipboardText) {
+      return StorageModule.getClipboardText();
+    }
+    return '';
+  },
+
+  async setClipboardText(text) {
+    if (StorageModule && StorageModule.setClipboardText) {
+      return StorageModule.setClipboardText(text);
+    }
+    return false;
   }
 };

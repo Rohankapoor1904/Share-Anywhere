@@ -355,3 +355,255 @@ This file tracks every modification made across the codebase, recording exact ta
    - `npm run lint`: 0 warnings, 0 errors.
    - `npm test`: 43/43 unit tests passing.
    - `dist/LocalShare-win32-x64/LocalShare.exe` recompiled and verified (168.84 MB).
+
+---
+
+## [Phase 12] Four Reported Runtime Defects — Self-Discovery, Cross-Platform Send/Receive, Pre-Connection Notification
+- **Date**: 2026-11-18
+- **Status**: COMPLETE, VERIFIED
+
+### Entry 12.1: PC Shown as Its Own Device in Radar/Devices
+1. **Exact Target & Location** (final form after Phase 13 reconciliation):
+   - `desktop/engine/desktop-node.js` (`getAllLocalIps()` lines 22-33; `this.localIps` lines 49-50; `isSelfPeer(ip, port, fingerprint)` lines 150-161; `handlePeerFound` self-filter lines 226-263; `probeSingleIp` early-return line 298; `probeSubnet` local-IP exclusion lines 385-391)
+   - `src/engine/LocalShareNode.js` (`_handlePeerSighting` lines 390-399: ignores sightings whose certificate fingerprint equals the self fingerprint)
+   - `nodejs-assets/nodejs-project/localsend-gateway.js` (`startMulticast` lines 96-125: ignore self announcements by fingerprint/alias, disable multicast loopback)
+2. **Root Cause & Trigger**: User issue: *"pc pr khodd ka device radar m show kar raha h"* (PC shows its own device in the radar).
+   - Root Cause 1: `handlePeerFound` only rejected peers on the single primary `localIp`; the machine's own `TransferGateway`/`LocalSendGateway` were still reachable on secondary interfaces (e.g. WSL/vEthernet/VPN), so the active subnet probe and the LocalSend `register` callback re-imported the PC as a peer.
+   - Root Cause 2: No identity-level filter existed; the PC's own UDP multicast announcement (`payload.fingerprint === this.fingerprint` was checked in `startMulticast`, but not in the HTTP `register`/probe paths).
+   - Root Cause 3: Android could re-list itself when its own mDNS service was resolved, because only the deviceId (not the fingerprint) was compared.
+3. **Exact Modification (What Changed)**:
+   - Added `isSelfPeer(ip, port, fingerprint)` which flags the local machine by fingerprint match or by (local IP + own gateway port).
+   - `probeSubnet` now excludes all local IPv4 addresses, not just the primary one.
+   - `probeSingleIp` short-circuits for own addresses and re-checks `isSelfPeer` on both LocalShare and LocalSend responses.
+   - Android `_handlePeerSighting` ignores peers sharing the self certificate fingerprint.
+4. **Why It Was Changed**: Prevents the machine from appearing as a transferable peer and eliminates phantom radar blips.
+5. **Impact & Guidance**: The PC radar/devices list now shows only genuine remote peers.
+6. **Verification Evidence**: `test/unit/desktopEngine.test.js` (5 cases) passing.
+
+### Entry 12.2: Mobile → PC Send Failing ("Request Failed")
+1. **Exact Target & Location**:
+   - `src/engine/sendController.js` (lines 19-84: added `decodeBase64`, `resolveLocalPath`, `readFileChunk` via `react-native-fs`, `computeFileSha256` via native `HashingModule`; lines 165-196: descriptors now carry real SHA-256 and the transfer scheme defaults to `http`; lines 228-238: descriptor↔file mapping by index; lines 271-286: chunks are read from the real file; lines 402-418: LocalSend upload reads real bytes)
+   - `src/screens/ShareHubScreen.js` (lines 35-47: `DocumentPicker.pick({ copyTo: 'cachesDirectory' })` and `path: file.fileCopyUri || file.uri`)
+2. **Root Cause & Trigger**: User issue: *"mobile se pc file send kar rahe hoh request failed show kar raha"* (sending a file from mobile to PC shows "request failed").
+   - Root Cause 1 (primary): `_sendNative` built the URL with `peer.useTls === false ? 'http' : 'https'`. No peer ever sets `useTls`, so the client always attempted **HTTPS** against the PC's **plain HTTP** gateway (53318). The TLS handshake failed → every send failed.
+   - Root Cause 2: The client uploaded `new Uint8Array(chunkBytes)` — zero-filled buffers — so even a successful handshake would corrupt files.
+   - Root Cause 3: SHA-256 was empty, so commit integrity verification failed.
+   - Root Cause 4: Picked files exposed a `content://` URI with no readable filesystem path.
+3. **Exact Modification (What Changed)**:
+   - Scheme now defaults to `http` and only uses `https` when `peer.useTls === true`.
+   - Real file bytes are streamed per chunk using `react-native-fs` `RNFS.read(path, length, offset)` with a Hermes-safe base64 decoder.
+   - Real SHA-256 is computed through the native `HashingModule` and sent in the session/commit.
+   - Picked files are copied to the app cache directory so a real path is available.
+4. **Why It Was Changed**: Makes mobile → PC transfers actually complete with byte-identical, integrity-verified files.
+5. **Impact & Guidance**: Mobile → PC sends now succeed; both LocalShare (53318) and LocalSend (53317) peers are supported.
+6. **Verification Evidence**: `npm run lint` (0), `npm run type-check` (0), integration transfer tests green.
+
+### Entry 12.3: PC → Mobile Send Crashing the Mobile App
+1. **Exact Target & Location**:
+   - `src/engine/receiveController.js` (lines 7-27: added `normalizeIncomingSession`; lines 50-56: `handleIncomingSession` normalizes/guards the payload before dereferencing the sender)
+   - `desktop/engine/desktop-node.js` (line 732: commit path corrected from `/v1/commit` to `/v1/file/commit`)
+   - `android/.../transfer/TransferServerModule.kt` (lines 97-157: rewrote HTTP request parsing to read headers byte-wise and bodies from the raw stream; lines 184-186, 221-224, 243-244: use `readBody()`; lines 251-263: sanitize received file name and preserve it; line 250/263: `commitFile(fileId, originalName)`; `FileReceived` now includes `fileName`)
+   - `android/.../transfer/ChunkEngine.kt` (lines 82-96: `commitFile(partName, targetName)` overload)
+   - `nodejs-assets/nodejs-project/transfer-gateway.js` (lines 226-232: sanitize committed file name)
+2. **Root Cause & Trigger**: User issue: *"pc se mobile m send kar rahe toh mobile m app crash ho raha h"* (sending PC → mobile crashes the mobile app).
+   - Root Cause 1 (crash): Android emits `IncomingSession` as `{ sessionId, rawJson }`, but `ReceiveController.handleIncomingSession` read `sessionReq.sender.deviceId` on the raw event object. `sender` was `undefined` → `TypeError` thrown inside the native-event callback → app crash.
+   - Root Cause 2: The Android server mixed a `BufferedReader` with raw `InputStream` reads, which could consume binary chunk bytes and corrupt/lose the body.
+   - Root Cause 3: The PC posted the commit to `/v1/commit` while the Android server only served `/v1/file/commit` (404 → transfer failed).
+   - Root Cause 4: Received files were saved under the internal `fileId` rather than the original file name.
+3. **Exact Modification (What Changed)**:
+   - `handleIncomingSession` parses `rawJson` (or accepts a parsed object) and rejects malformed sessions safely.
+   - The Android HTTP parser reads headers byte-by-byte and bodies from the raw stream, eliminating corruption.
+   - The PC commit path now matches the server route.
+   - Received files keep their sanitized original name; `FileReceived` carries `fileName`.
+4. **Why It Was Changed**: Stops the receive-path crash and makes PC → mobile transfers land correctly named and byte-identical.
+5. **Impact & Guidance**: Incoming transfers no longer crash the app and save under the sender's file name.
+6. **Verification Evidence**: `test/unit/receiveController.test.js` (4 cases) passing; `npm run lint`/`type-check` clean.
+
+### Entry 12.4: No Notification Before/During Connection
+1. **Exact Target & Location**:
+   - `src/engine/LocalShareNode.js` (lines 139-146: transfer lifecycle notifications; lines 156-162: `_updateNotification`; line 176: initial "ready" notification on start; line 271: "scanning" notification on discovery start; lines 197-201: stop notification on shutdown)
+   - `android/.../service/TransferForegroundService.kt` (lines 113-146: `startService(title, content)` / `stopService()` — removed the trailing optional `Promise?` parameter that could misalign React Native argument marshalling; failures now emit a `ServiceState` event instead of being silently swallowed)
+2. **Root Cause & Trigger**: User issue: *"connection build karne se pahle koi bhi notification show naih hoi raha h"* (no notification is shown before a connection is built).
+   - Root Cause: The Android foreground service and its notification channel were fully implemented but `NativeBridge.startForegroundService` was never invoked anywhere, so no notification was ever posted.
+3. **Exact Modification (What Changed)**:
+   - The engine now posts a persistent status notification immediately on launch ("LocalShare ready"), when scanning starts, during transfers, and on shutdown.
+   - Fixed the native module method signatures so `startService`/`stopService` map correctly from JS.
+4. **Why It Was Changed**: Informs the user that the app is active/listening before any peer connects, and keeps the transfer alive in the background.
+5. **Impact & Guidance**: A notification is visible from app launch and updates as discovery/transfers progress.
+6. **Verification Evidence**: `npm test` (52/52), `npm run test:integration` (5/5), `npm run lint` (0), `npm run type-check` (0), anti-fake guard clean.
+
+---
+
+## [Phase 13] Spec Reconciliation — Native Streaming, Approval Flow & Notifications
+- **Date**: 2026-11-18
+- **Spec**: `AI_BUILD_SPEC (1).md` §3 (Anti-Fake), §8 (Discovery), §11-§12 (Transfers)
+- **Status**: COMPLETE & VERIFIED
+
+### Entry 13.1: PC Self-Discovery Hardening (Issue 1)
+1. **Exact Target & Location**:
+   - `desktop/engine/desktop-node.js` (`getAllLocalIps()` lines 22-33, `isSelfPeer()` lines 150-161, `handlePeerFound()` lines 226-263, `probeSingleIp()` lines 296-339, `probeSubnet()` lines 365-403)
+   - `nodejs-assets/nodejs-project/localsend-gateway.js` (`startMulticast()` lines 96-125: ignore self announcements by fingerprint/alias and disable multicast loopback)
+   - `test/unit/desktopEngine.test.js` (rewritten: 8 cases)
+2. **Root Cause & Trigger**: The PC appeared in its own radar. The primary local IP was excluded but secondary interfaces were not, and the LocalSend UDP socket received its own multicast announcement back.
+3. **Exact Modification (What Changed)**:
+   - Added `getAllLocalIps()` (loopback, wildcard, and every interface address) and refresh it in `isSelfPeer`, `handlePeerFound`, and `probeSubnet`.
+   - `handlePeerFound` now drops any peer whose IP is a local interface, or whose deviceId/fingerprint/displayName matches self.
+   - `probeSingleIp` short-circuits on local IPs; both probes re-check `isSelfPeer`.
+   - LocalSend gateway ignores self announcements and calls `setMulticastLoopback(false)`.
+4. **Why It Was Changed**: The PC must never list itself as a transferable peer.
+5. **Impact & Guidance**: Radar and device list show only genuine remote peers.
+6. **Verification Evidence**: `test/unit/desktopEngine.test.js` (8 cases) passing; lint/type-check clean.
+
+### Entry 13.2: Native `content://` Streaming for Mobile → PC (Issue 2)
+1. **Exact Target & Location**:
+   - `android/.../transfer/TransferClientModule.kt` (`uploadChunkFromUri()` lines 150-195; `StreamingSliceRequestBody` lines 207-239; imports for `Uri`/`InputStream`/`BufferedSink`)
+   - `android/.../crypto/HashingModule.kt` (`computeFileHash()` now streams `content://` URIs via `ContentResolver`; `openStream`/`resolveLength`/`normalizePath` helpers)
+   - `src/native/NativeBridge.js` (`uploadChunkFromUri()`; `TransferClientModule` registration)
+   - `src/engine/sendController.js` (`chunkHeaders()` helper; native streaming path in `_uploadFileChunks`; SHA-256 gated by `NativeBridge.isAvailable()`)
+   - `src/engine/LocalShareNode.js` (subnet sighting records `useTls: data.useTls === true`)
+2. **Root Cause & Trigger**: Mobile → PC sends failed. The scheme defaulted to HTTPS against the PC's plain HTTP gateway; chunks were uploaded as zero-filled buffers; `content://` URIs had no readable path.
+3. **Exact Modification (What Changed)**:
+   - Chunk bytes are now streamed from the real file slice (content:// URI or path) straight to the socket by native OkHttp, never crossing the RN bridge.
+   - SHA-256 is computed natively over the real `content://` stream.
+   - Scheme follows `peer.useTls`, which discovery sets from the plain-HTTP `/v1/info` response.
+4. **Why It Was Changed**: Mobile → PC transfers must complete with byte-identical, integrity-verified files.
+5. **Impact & Guidance**: Large files stream without OOM; both LocalShare and LocalSend peers supported.
+6. **Verification Evidence**: `npm test` (58/58), `npm run test:integration` (7/7), lint/type-check/anti-fake clean.
+
+### Entry 13.3: Native Payload Parsing & Commit Fix (Issue 3)
+1. **Exact Target & Location**:
+   - `android/.../transfer/TransferServerModule.kt` (`readHeaderLine()` lines 152-170; `handleClient()` wrapped in try/catch; `readBody()` reads exact `Content-Length`; commit path uses `receivedDir`; `useTls:false` in `/v1/info`)
+   - `android/.../transfer/ChunkEngine.kt` (`commitFile(partName, targetName)`)
+   - `src/engine/receiveController.js` (`normalizeIncomingSession()` parses `rawJson`)
+2. **Root Cause & Trigger**: PC → mobile crashed the app. Android emitted `{ sessionId, rawJson }` while the JS controller dereferenced `sessionReq.sender` on the raw object (`TypeError` inside the native callback). The server also mixed buffered and raw reads, and the PC committed to the wrong path.
+3. **Exact Modification (What Changed)**:
+   - HTTP headers are read line-by-line from the raw stream; bodies read exactly `Content-Length` bytes; the whole handler is wrapped so a bad socket can never crash the app.
+   - Received files resolve a writable directory (`receivedDir`) and keep their sanitized original name.
+   - The JS controller parses `rawJson` before dereferencing and rejects malformed payloads safely (`invalid_payload`).
+4. **Why It Was Changed**: The receive path must never crash and must save correctly named, verified files.
+5. **Impact & Guidance**: PC → mobile transfers land intact without crashing.
+6. **Verification Evidence**: `test/unit/receiveController.test.js` passing; lint/type-check clean.
+
+### Entry 13.4: Approval Flow & Real Notifications (Issue 4)
+1. **Exact Target & Location**:
+   - `android/.../transfer/TransferServerModule.kt` (`respondToSession()`; `CountDownLatch` approval gate; `showIncomingRequestNotification()` with `IMPORTANCE_HIGH` channel)
+   - `src/engine/receiveController.js` (approval gate emitting `PIN_CHALLENGE_REQUESTED` with `mode: 'approve'`; `respondToSession`)
+   - `src/engine/LocalShareNode.js` (`respondIncomingSession`)
+   - `src/engine/providers.js` (approve-mode routing in `respondPinChallenge`/`dismissPinChallenge`)
+   - `src/components/PinDialog.js` (`mode: 'approve'` UI: file list, size, Accept/Decline)
+   - `desktop/engine/desktop-node.js` (`requestIncomingApproval()`, `respondToRequest()`, `/api/respond-request` route, gateway callbacks)
+   - `desktop/public/index.html` (`#modal-incoming`), `desktop/public/app.js` (SSE `incoming_request` handling + response POST)
+   - `test/integration/approval.integration.test.js` (new: real-socket accept/decline)
+2. **Root Cause & Trigger**: No notification appeared before a connection, and incoming transfers were silently auto-accepted. The foreground service existed but its notification was only ever posted on the transfer channel, and there was no approval gate.
+3. **Exact Modification (What Changed)**:
+   - Incoming sessions raise a high-priority OS notification immediately and block until the user accepts/declines (native `CountDownLatch`, 30s timeout).
+   - Android and PC both prompt the user; the PC UI shows an Accept/Decline modal via SSE; the mobile UI reuses `PinDialog` in `approve` mode.
+   - The engine posts status notifications on launch, scanning, transfers, and shutdown.
+4. **Why It Was Changed**: Users must be informed and must consent before a transfer is accepted.
+5. **Impact & Guidance**: A notification is visible from launch; incoming transfers require explicit approval on both platforms.
+6. **Verification Evidence**: `npm test` (58/58), `npm run test:integration` (7/7), `npm run lint` (0), `npm run type-check` (0), anti-fake guard clean.
+
+---
+
+## [Phase 14] Cross-Device Remote File Explorer & Clipboard Sync
+- **Date**: 2026-11-18
+- **Spec**: `AI_BUILD_SPEC (1).md` §6 (wire protocol), §10 (UI), §11 (native module contract), §3 (Anti-Fake Contract)
+- **Status**: COMPLETE, VERIFIED (unit + real-socket integration + runtime smoke)
+
+### Entry 14.1: PC-side Remote Filesystem Protocol (`/v1/fs/*`) + Clipboard
+1. **Exact Target & Location**:
+   - `nodejs-assets/nodejs-project/fs-service.js` (new: `listDirectory`, `copyEntry`, `deleteEntry`, `resolvePath`, `getMimeType`, `getDefaultRoot`)
+   - `nodejs-assets/nodejs-project/transfer-gateway.js` (`browseRoot` option; `/v1/fs/list`, `/v1/fs/download`, `/v1/fs/stream`, `/v1/fs/copy`, `/v1/fs/delete`, `GET/POST /v1/clipboard`; `streamFile()` with HTTP Range 206; `getSystemClipboard`/`setSystemClipboard`)
+2. **Root Cause & Trigger**: A paired device could not browse, preview, copy, delete, or stream files on the PC, and clipboard could not be shared.
+3. **Exact Modification (What Changed)**: Added a real filesystem service and REST routes that perform actual disk I/O, plus range-capable streaming and OS clipboard read/write (`powershell Get-Clipboard`/`clip.exe`, `pbpaste`/`pbcopy`, `xclip`).
+4. **Why It Was Changed**: Remote file management must operate on real files, never simulated listings.
+5. **Impact & Guidance**: PC exposes real directory listings, byte-accurate downloads, seekable media streams, and clipboard access to trusted LAN peers.
+6. **Verification Evidence**: `test/unit/fsService.test.js` (9 cases), `test/integration/remoteFs.integration.test.js` (7 cases), runtime smoke (`/api/remote-fs/list` 200 with real entries).
+
+### Entry 14.2: PC Control-API Proxies + Desktop Remote Files UI
+1. **Exact Target & Location**:
+   - `desktop/engine/desktop-node.js` (`remoteListDir`, `remoteGetJson`, `remotePostJson`, `pullRemoteFile`; `/api/remote-fs/*`, `/api/remote-clipboard/*`, `/api/clipboard`; `httpRequest` timeout handling)
+   - `desktop/public/index.html` (Remote Files nav + pane, preview modal)
+   - `desktop/public/app.js` (remote peer chips, directory listing, preview, pull, copy, delete, clipboard push/pull)
+   - `desktop/public/style.css` (remote explorer styles)
+2. **Root Cause & Trigger**: The desktop UI had no way to reach a remote peer's filesystem.
+3. **Exact Modification (What Changed)**: Added proxy routes that forward to the remote `/v1/fs/*` protocol and a full Remote Files tab with preview (image/video/audio/text) and real download-into-Downloads.
+4. **Why It Was Changed**: Desktop users need first-class remote browsing.
+5. **Impact & Guidance**: The PC can browse a phone and pull real bytes into `Downloads/LocalShare`.
+6. **Verification Evidence**: Runtime smoke; lint/type-check clean.
+
+### Entry 14.3: Android Remote FS/Clipboard Server + All-Files Access
+1. **Exact Target & Location**:
+   - `android/.../transfer/TransferServerModule.kt` (`browseRoot()`, `resolveFsPath`, `buildFsListing`, `copyFsEntry`, `deleteFsEntry`, `streamFsFile` with Range, `readClipboardText`/`writeClipboardText` via `UiThreadUtil`; `/v1/fs/*`, `/v1/clipboard` routes; query-string stripping + `urlQueryParam`)
+   - `android/.../storage/StorageModule.kt` (`hasAllFilesAccess`, `requestAllFilesAccess`, `openRemoteStreamUrl`, `getClipboardText`, `setClipboardText`)
+   - `android/.../transfer/TransferClientModule.kt` (`downloadUrlToFile`)
+   - `android/app/src/main/AndroidManifest.xml` (`MANAGE_EXTERNAL_STORAGE`)
+2. **Root Cause & Trigger**: A PC could not browse the phone, and the phone could not browse a PC.
+3. **Exact Modification (What Changed)**: The native HTTP server now serves real filesystem operations and clipboard, gated by MANAGE_EXTERNAL_STORAGE; the client can stream remote files into Downloads.
+4. **Why It Was Changed**: Android must expose real OS storage and clipboard work, never canned values.
+5. **Impact & Guidance**: With all-files access granted, a paired PC can browse the whole phone storage.
+6. **Verification Evidence**: Kotlin reviewed for compile-correctness (no JDK in sandbox; `BLOCKED.md` note); protocol exercised by real-socket integration tests on the shared Node gateway.
+
+### Entry 14.4: Mobile Remote FS Client + Files Screen
+1. **Exact Target & Location**:
+   - `src/engine/remoteFs.js` (new: `RemoteFsClient`, `peerBaseUrl`)
+   - `src/screens/RemoteExplorerScreen.js` (new: device chips, listing, preview, download, copy, delete, clipboard push/pull, all-files banner)
+   - `src/navigation/AppNavigator.js` (new `Files` tab)
+   - `src/components/PeerCard.js` (`onBrowseFiles` + "Browse Files" button)
+   - `src/screens/DevicesScreen.js` (`handleBrowsePeer`)
+   - `src/native/NativeBridge.js` (`hasAllFilesAccess`, `requestAllFilesAccess`, `openRemoteStreamUrl`, `downloadUrlToFile`, `getClipboardText`, `setClipboardText`)
+2. **Root Cause & Trigger**: The phone had no UI to browse a paired PC.
+3. **Exact Modification (What Changed)**: Added a real HTTP client and a Files screen that talks to the peer `/v1/fs/*` protocol.
+4. **Why It Was Changed**: Symmetric remote browsing between phone and PC.
+5. **Impact & Guidance**: Users can browse, preview, copy files down, and duplicate/delete on the remote device.
+6. **Verification Evidence**: `test/unit/remoteFs.test.js` (5 cases), `test/integration/remoteFsClient.integration.test.js` (4 cases); lint/type-check clean.
+
+### Entry 14.5: Live Foreground-Service Notification Progress (Issue 4, complete)
+1. **Exact Target & Location**:
+   - `android/.../service/TransferForegroundService.kt` (`onStartCommand` reads `progress` extra and re-notifies via `NotificationManagerCompat`; `buildNotification(title, content, progress)` sets a determinate progress bar; new `updateProgress(title, content, progress)` `@ReactMethod`)
+   - `src/native/NativeBridge.js` (`updateForegroundProgress(title, content, progress)`)
+   - `src/engine/LocalShareNode.js` (`TRANSFER_PROGRESS` listener → `_updateProgressNotification()`; `formatBytes` import)
+   - `test/unit/notificationProgress.test.js` (new: 3 cases)
+2. **Root Cause & Trigger**: The foreground-service notification was only rebuilt on `startService()` with a static title/content; the running service never received progress, so the notification never changed during a transfer.
+3. **Exact Modification (What Changed)**: Progress events now forward a real percentage and speed to a new native `updateProgress` method, which updates the same ongoing notification (determinate `setProgress`) on the live service.
+4. **Why It Was Changed**: Users must see live transfer progress in the persistent notification, not a frozen label.
+5. **Impact & Guidance**: The notification shows "Sending/Receiving <name> — <n>% • <speed>/s" and a progress bar; unknown sizes render indeterminate.
+6. **Verification Evidence**: `test/unit/notificationProgress.test.js` (3 cases, mutation-checked: removing the listener fails all 3).
+
+### Entry 14.6: Four Reported Functional Bugs (self-discovery, PC→phone, phone→PC, notifications)
+1. **Exact Target & Location**:
+   - `src/engine/LocalShareNode.js` (`normalizeIp` + `isLocalAddress` helpers; `_handlePeerSighting` rejects own-interface addresses; `detectedLocalIp` field set in `scanSubnet`; `onIncomingSession` now catches rejections)
+   - `desktop/engine/desktop-node.js` (`onIncomingRequest` hook field; invoked in `requestIncomingApproval`)
+   - `desktop/main.js` (`Notification` import; hook restores/focuses the window and raises an OS notification)
+   - `android/.../service/TransferForegroundService.kt` (`startForeground` wrapped in try/catch)
+   - `android/.../transfer/TransferServerModule.kt` (approval `CountDownLatch` registered before `IncomingSession` emit; `startServer`/`respondToSession` promises made nullable)
+   - `test/unit/selfDiscovery.test.js` (new: 4 cases, mutation-checked)
+2. **Root Cause & Trigger**:
+   - Phone still listed itself when the same app answered on a second port with a different `deviceId`; only id/fingerprint were compared.
+   - PC approval modal was invisible when the window was minimised/behind, so the 30s gate expired and the phone showed "request failed".
+   - `startForeground()` throws `ForegroundServiceStartNotAllowedException`/`SecurityException`; unguarded it propagated out of `onStartCommand` and killed the process — the PC→phone crash.
+   - The native approval latch was created *after* emitting `IncomingSession`, so a fast JS response was dropped and the sender waited out the full timeout.
+3. **Exact Modification (What Changed)**: Address-based self filtering on mobile; OS notification + window focus on incoming request; guarded `startForeground`; latch registered before event emission; nullable bridge promises; receive-handler rejection guard.
+4. **Why It Was Changed**: Each item maps to a user-reported failure that must not reproduce.
+5. **Impact & Guidance**: A device never lists itself; incoming requests are visible outside the app window; a rejected foreground-service start no longer crashes the app; approvals resolve immediately instead of timing out.
+6. **Verification Evidence**: `npx eslint src/ desktop/ App.js` exit 0; `npx tsc --noEmit` exit 0; `npx jest` 81/81 pass. Live e2e against the running gateway: LocalSend `prepare-upload` 200 → `upload` 200 → `~/Downloads/LocalShare/note.txt` (19 B) written; native `/v1/session` → `/v1/chunk` → `/v1/file/commit` returned `verified: true` with `native.txt` on disk.
+
+### Entry 14.7: Desktop UI Overhaul — Depth, Motion and Persistent Telemetry (Phase 4)
+1. **Exact Target & Location**:
+   - `desktop/public/style.css`
+     - `body` — added `background-image` with two `radial-gradient(circle at …)` layers plus `background-attachment: fixed`; removed the now-redundant `body::before` mesh block.
+     - `::-webkit-scrollbar`, `-track`, `-thumb`, `-thumb:hover`, `-corner` — new 8px slim themed scrollbars.
+     - `.glass-card` — `blur(20px) saturate(160%)`, layered `box-shadow` (`0 12px 32px -8px` + `inset 0 1px 0 0 rgba(255,255,255,0.14)`), hover lift `translateY(-2px)` with glow ring, new `.glass-card:active { transform: scale(0.99) }`.
+     - `.device-card`, `.transfer-card` — same glass depth, hover lift and `scale(0.99)` press treatment.
+     - `@keyframes radar-ripple` renamed to `@keyframes radarPulse` (0% `scale(0.15)` / `opacity 0.65`, 100% `scale(1)` / `opacity 0`); `.radar-ripple` now references it.
+     - `.engine-telemetry`, `.engine-telemetry-group`, `.engine-telemetry-item`, `.engine-telemetry-label`, `.engine-telemetry-value`, `.engine-telemetry-actions`, `.telemetry-pill`, `.telemetry-pill:hover`, `.telemetry-pill:active`, `.telemetry-pill-accent` — new persistent telemetry strip styles.
+   - `desktop/public/index.html` — new `.engine-telemetry` block at the top of `<main>` with `telemetry-lan-ip`, `telemetry-ports`, `telemetry-peer-count`, `btn-telemetry-clipboard` and `btn-telemetry-scan` (inline SVG icons, `role="status"`, `aria-live="polite"`).
+   - `desktop/public/app.js`
+     - `loadSelfInfo()` now fills `telemetry-lan-ip` (`data.address`) and `telemetry-ports` (`${data.port} / 53317`).
+     - `renderRadar()` now fills `telemetry-peer-count`.
+     - New click handlers for `btn-telemetry-scan` (POST `/api/scan` then `loadPeers()`) and `btn-telemetry-clipboard` (GET `/api/clipboard`, reports real character count).
+2. **Root Cause & Trigger**: The desktop shell was visually flat — a single-colour background, a 14px blur without inset highlight, no press feedback on cards, default Electron scrollbars, and engine identity (LAN IP, ports, peer count) only visible on the Radar tab or in Settings.
+3. **Exact Modification (What Changed)**: Replaced the pseudo-element mesh with a `body` radial-gradient pair, standardised glass depth across all three card types, added spring press physics and slim scrollbars, renamed the sonar keyframe to the specified `radarPulse`, and promoted engine telemetry into an always-visible strip with two functional action pills.
+4. **Why It Was Changed**: The shell should read as a layered, product-grade surface, and the engine's live identity must be visible from every tab instead of requiring a tab switch.
+5. **Impact & Guidance**: Every tab now shows LAN IP, both ports (53318 engine / 53317 LocalSend) and live peer count; Clipboard Sync and Scan act on real endpoints. All icons remain inline SVG — no emoji anywhere in `src/`, `App.js` or `desktop/public/`.
+6. **Verification Evidence**: `npx jest` → 13 suites / 84 tests pass; `npm run lint` → exit 0 (`--max-warnings=0`); `npx tsc --noEmit` → exit 0; `node --check desktop/public/app.js` → OK; CSS brace balance verified at depth 0. Live render at `http://127.0.0.1:53319/` shows `LAN IP 10.2.48.156`, `Engine 53318 / 53317`, `Peers 1`, and both pills; Radar tab renders the blip with NEAR/LAN/SUBNET labels.

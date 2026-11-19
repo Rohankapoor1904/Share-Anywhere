@@ -11,6 +11,8 @@ import { useLocalShare } from '../engine/providers';
 import { useTheme } from '../theme';
 import TransferTile from '../components/TransferTile';
 import EmptyState from '../components/EmptyState';
+import Icon from '../components/Icon';
+import AmbientBackground from '../components/AmbientBackground';
 import { formatSpeed } from '../utils/byteFormat';
 
 export default function TransfersScreen() {
@@ -36,7 +38,8 @@ export default function TransfersScreen() {
   const aggregateSpeed = activeTransfers.reduce((acc, t) => acc + (t.speed || 0), 0);
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.colors.background }]}>
+    <AmbientBackground>
+      <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
         <View style={styles.header}>
           <View style={styles.headerTitleRow}>
@@ -60,7 +63,9 @@ export default function TransfersScreen() {
               { backgroundColor: theme.colors.card, borderColor: theme.colors.borderHighlight }
             ]}
           >
-            <Text style={styles.speedIcon}>⚡</Text>
+            <View style={[styles.speedIconBadge, { backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.primary }]}>
+              <Icon name="activity" size={17} color={theme.colors.primary} strokeWidth={2.2} />
+            </View>
             <View style={styles.speedInfo}>
               <Text style={[styles.speedLabel, { color: theme.colors.textMuted }]}>COMBINED LAN THROUGHPUT</Text>
               <Text style={[styles.speedVal, { color: theme.colors.primary }]}>
@@ -123,7 +128,8 @@ export default function TransfersScreen() {
           }
         />
       </View>
-    </SafeAreaView>
+      </SafeAreaView>
+    </AmbientBackground>
   );
 }
 
@@ -169,8 +175,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginBottom: 12
   },
-  speedIcon: {
-    fontSize: 20,
+  speedIconBadge: {
+    width: 34,
+    height: 34,
+    borderRadius: 11,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginRight: 10
   },
   speedInfo: {

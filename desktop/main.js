@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { DesktopEngine } = require('./engine/desktop-node');
@@ -65,6 +65,29 @@ if (!gotTheLock) {
     try {
       if (!engine) {
         engine = new DesktopEngine();
+        // An incoming request blocks the peer for 30s. Surface it outside the app
+        // window so the prompt is never silently missed while the app is minimized.
+        engine.onIncomingRequest = (payload) => {
+          if (!mainWindow) return;
+          if (mainWindow.isMinimized()) mainWindow.restore();
+          mainWindow.show();
+          mainWindow.focus();
+
+          if (!Notification.isSupported()) return;
+          const sender = payload.senderName || 'A nearby device';
+          const count = payload.fileCount || 0;
+          const notification = new Notification({
+            title: 'Incoming file transfer',
+            body: `${sender} wants to send you ${count} file(s)`
+          });
+          notification.on('click', () => {
+            if (mainWindow) {
+              mainWindow.show();
+              mainWindow.focus();
+            }
+          });
+          notification.show();
+        };
         await engine.start();
       }
     } catch (err) {

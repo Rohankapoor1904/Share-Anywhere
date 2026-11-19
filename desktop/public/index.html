@@ -11,7 +11,9 @@
     <!-- Sidebar Navigation -->
     <aside class="sidebar">
       <div class="sidebar-brand">
-        <div class="brand-icon">⚡</div>
+        <div class="brand-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg>
+        </div>
         <div class="brand-info">
           <h1>LocalShare</h1>
           <span class="brand-badge">Pure Desktop</span>
@@ -20,29 +22,33 @@
 
       <nav class="nav-menu">
         <button class="nav-item active" data-tab="devices">
-          <span class="nav-icon">📱</span>
+          <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="8" height="15" rx="2"/><path d="M6 17.5h.01"/><rect x="13" y="4" width="9" height="7" rx="1.5"/><path d="M17.5 11v4"/><path d="M15 16.5h5"/></svg></span>
           <span class="nav-label">Devices</span>
           <span class="nav-badge" id="devices-badge">0</span>
         </button>
         <button class="nav-item" data-tab="radar">
-          <span class="nav-icon">📡</span>
+          <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2"/><path d="M12 12l6.4-6.4"/><path d="M12 6.5a5.5 5.5 0 0 1 5.5 5.5"/><path d="M12 2.8a9.2 9.2 0 0 1 9.2 9.2"/></svg></span>
           <span class="nav-label">Radar</span>
         </button>
         <button class="nav-item" data-tab="share">
-          <span class="nav-icon">📤</span>
+          <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg></span>
           <span class="nav-label">Share Hub</span>
         </button>
         <button class="nav-item" data-tab="transfers">
-          <span class="nav-icon">🔄</span>
+          <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l4-4 4 4"/><path d="M7 4.5v9"/><path d="M21 15.5l-4 4-4-4"/><path d="M17 19.5v-9"/></svg></span>
           <span class="nav-label">Transfers</span>
           <span class="nav-badge" id="transfers-badge">0</span>
         </button>
         <button class="nav-item" data-tab="received">
-          <span class="nav-icon">📥</span>
+          <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.1L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.7 4H7.3a2 2 0 0 0-1.8 1.1z"/></svg></span>
           <span class="nav-label">Received</span>
         </button>
+        <button class="nav-item" data-tab="remotefiles">
+          <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M8 12.5h8"/><path d="M8 16h5"/></svg></span>
+          <span class="nav-label">Remote Files</span>
+        </button>
         <button class="nav-item" data-tab="settings">
-          <span class="nav-icon">⚙️</span>
+          <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21v-7"/><path d="M4 10V3"/><path d="M12 21v-9"/><path d="M12 8V3"/><path d="M20 21v-5"/><path d="M20 12V3"/><path d="M1.5 14h5"/><path d="M9.5 8h5"/><path d="M17.5 16h5"/></svg></span>
           <span class="nav-label">Settings</span>
         </button>
       </nav>
@@ -60,6 +66,34 @@
 
     <!-- Main Content Area -->
     <main class="main-content">
+      <!-- Persistent engine telemetry: always visible above the active tab. -->
+      <div class="engine-telemetry" role="status" aria-live="polite">
+        <div class="engine-telemetry-group">
+          <span class="engine-telemetry-item">
+            <span class="engine-telemetry-label">LAN IP</span>
+            <strong class="engine-telemetry-value" id="telemetry-lan-ip">--</strong>
+          </span>
+          <span class="engine-telemetry-item">
+            <span class="engine-telemetry-label">Engine</span>
+            <strong class="engine-telemetry-value" id="telemetry-ports">53318 / 53317</strong>
+          </span>
+          <span class="engine-telemetry-item">
+            <span class="engine-telemetry-label">Peers</span>
+            <strong class="engine-telemetry-value" id="telemetry-peer-count">0</strong>
+          </span>
+        </div>
+        <div class="engine-telemetry-actions">
+          <button id="btn-telemetry-clipboard" class="telemetry-pill" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>
+            <span id="btn-telemetry-clipboard-label">Clipboard Sync</span>
+          </button>
+          <button id="btn-telemetry-scan" class="telemetry-pill telemetry-pill-accent" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="2"/><path d="M12 12l6.4-6.4"/><path d="M12 6.5a5.5 5.5 0 0 1 5.5 5.5"/><path d="M12 2.8a9.2 9.2 0 0 1 9.2 9.2"/></svg>
+            <span>Scan</span>
+          </button>
+        </div>
+      </div>
+
       <!-- Devices Tab -->
       <section id="tab-devices" class="tab-pane active">
         <header class="pane-header">
@@ -68,8 +102,14 @@
             <p>Devices discovered on your local network broadcasting via mDNS or UDP.</p>
           </div>
           <div class="header-actions">
-            <button id="btn-scan" class="btn btn-primary">▶ Scan Network</button>
-            <button id="btn-manual" class="btn btn-secondary">+ Manual IP</button>
+            <button id="btn-scan" class="btn btn-primary">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2"/><path d="M12 12l6.4-6.4"/><path d="M12 6.5a5.5 5.5 0 0 1 5.5 5.5"/><path d="M12 2.8a9.2 9.2 0 0 1 9.2 9.2"/></svg>
+              <span>Scan Network</span>
+            </button>
+            <button id="btn-manual" class="btn btn-secondary">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+              <span>Manual IP</span>
+            </button>
           </div>
         </header>
 
@@ -80,7 +120,10 @@
               <h3 id="self-device-name">Windows PC</h3>
               <p id="self-device-details">127.0.0.1:53318 • Port 53317 (LocalSend Interop)</p>
             </div>
-            <button id="btn-open-folder" class="btn btn-secondary">📂 Open Downloads Folder</button>
+            <button id="btn-open-folder" class="btn btn-secondary">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+              <span>Open Downloads Folder</span>
+            </button>
           </div>
         </div>
 
@@ -100,14 +143,39 @@
 
         <div class="radar-container">
           <div class="radar-sweep-box">
+            <div class="radar-ripple radar-ripple-1"></div>
+            <div class="radar-ripple radar-ripple-2"></div>
             <div class="radar-ring radar-ring-outer"></div>
             <div class="radar-ring radar-ring-mid"></div>
             <div class="radar-ring radar-ring-inner"></div>
+            <div class="radar-ticks" id="radar-ticks"></div>
             <div class="radar-crosshair-h"></div>
             <div class="radar-crosshair-v"></div>
             <div class="radar-sweep-arm"></div>
             <div class="radar-beacon"></div>
             <div id="radar-blips-container"></div>
+            <span class="radar-range-label radar-range-near">NEAR</span>
+            <span class="radar-range-label radar-range-lan">LAN</span>
+            <span class="radar-range-label radar-range-subnet">SUBNET</span>
+          </div>
+        </div>
+
+        <div class="telemetry-bar glass-card">
+          <div class="telemetry-item">
+            <span class="telemetry-label">Sweep</span>
+            <strong class="telemetry-value" id="telem-sweep">ACTIVE</strong>
+          </div>
+          <div class="telemetry-item">
+            <span class="telemetry-label">Peers</span>
+            <strong class="telemetry-value" id="telem-peers">0</strong>
+          </div>
+          <div class="telemetry-item">
+            <span class="telemetry-label">Subnet</span>
+            <strong class="telemetry-value" id="telem-subnet">--</strong>
+          </div>
+          <div class="telemetry-item">
+            <span class="telemetry-label">TLS Port</span>
+            <strong class="telemetry-value">53318</strong>
           </div>
         </div>
       </section>
@@ -133,7 +201,9 @@
 
             <div class="glass-card dropzone-card" id="dropzone">
               <div class="dropzone-content">
-                <span class="dropzone-icon">📁</span>
+                <span class="dropzone-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+                </span>
                 <h4>Drag & Drop Files Here</h4>
                 <p>or click to browse your computer</p>
                 <input type="file" id="file-input" multiple style="display: none;">
@@ -151,7 +221,10 @@
               <ul id="staged-list" class="staged-file-list">
                 <li class="empty-list-notice">No files staged yet.</li>
               </ul>
-              <button id="btn-send-files" class="btn btn-primary btn-block" disabled>🚀 Send Files</button>
+              <button id="btn-send-files" class="btn btn-primary btn-block" disabled>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+                <span>Send Files</span>
+              </button>
             </div>
           </div>
         </div>
@@ -168,7 +241,9 @@
 
         <div id="transfers-list" class="transfers-container">
           <div class="empty-state">
-            <span class="empty-icon">🔄</span>
+            <span class="empty-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l4-4 4 4"/><path d="M7 4.5v9"/><path d="M21 15.5l-4 4-4-4"/><path d="M17 19.5v-9"/></svg>
+            </span>
             <h3>No Active Transfers</h3>
             <p>When you send or receive files, real-time progress will stream here.</p>
           </div>
@@ -182,11 +257,63 @@
             <h2>Received Files</h2>
             <p>Files received and verified on your local PC storage.</p>
           </div>
-          <button id="btn-open-received-folder" class="btn btn-secondary">📂 Open in File Explorer</button>
+          <button id="btn-open-received-folder" class="btn btn-secondary">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            <span>Open in File Explorer</span>
+          </button>
         </header>
 
         <div id="received-list" class="received-grid">
           <!-- Populated dynamically -->
+        </div>
+      </section>
+
+      <!-- Remote Files Tab -->
+      <section id="tab-remotefiles" class="tab-pane">
+        <header class="pane-header">
+          <div>
+            <h2>Remote File Explorer</h2>
+            <p>Browse, preview, copy, and delete files on a paired phone or PC over the LAN.</p>
+          </div>
+          <div class="header-actions">
+            <button id="btn-remote-clipboard-push" class="btn btn-secondary">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1.5"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>
+              <span>Push Clipboard</span>
+            </button>
+            <button id="btn-remote-clipboard-pull" class="btn btn-secondary">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+              <span>Pull Clipboard</span>
+            </button>
+          </div>
+        </header>
+
+        <div class="glass-card">
+          <h3>Target Device</h3>
+          <div id="remote-peer-chips" class="recipient-chips-list">
+            <p style="font-size: 13px; color: var(--text-muted);">No peers detected. Scan the network from the Devices tab.</p>
+          </div>
+        </div>
+
+        <div class="remote-path-bar">
+          <button id="btn-remote-up" class="btn btn-secondary">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="M6 11l6-6 6 6"/></svg>
+            <span>Up</span>
+          </button>
+          <span id="remote-current-path" class="remote-path-text">Select a device</span>
+          <button id="btn-remote-refresh" class="btn btn-secondary">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 12a8.5 8.5 0 1 1-2.6-6.1"/><path d="M21 3.5V9h-5.5"/></svg>
+            <span>Refresh</span>
+          </button>
+        </div>
+
+        <div id="remote-files-list" class="remote-files-list">
+          <div class="empty-state" style="padding: 32px; text-align: center;">
+            <span class="empty-icon" style="display: block; margin-bottom: 8px;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M8 12.5h8"/><path d="M8 16h5"/></svg>
+            </span>
+            <h3>No device selected</h3>
+            <p style="color: var(--text-secondary); margin-top: 4px;">Pick a discovered device above to browse its files.</p>
+          </div>
         </div>
       </section>
 
@@ -287,6 +414,30 @@
       <div class="modal-actions">
         <button id="btn-cancel-manual" class="btn btn-secondary">Cancel</button>
         <button id="btn-confirm-manual" class="btn btn-primary">Connect</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Remote File Preview Modal -->
+  <div id="modal-preview" class="modal-overlay">
+    <div class="modal-card">
+      <h3 id="preview-title">Preview</h3>
+      <div id="preview-body" class="preview-body"></div>
+      <div class="modal-actions">
+        <button id="btn-close-preview" class="btn btn-secondary">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Incoming Transfer Request Modal -->
+  <div id="modal-incoming" class="modal-overlay">
+    <div class="modal-card">
+      <h3>Incoming File Transfer</h3>
+      <p id="incoming-summary">A nearby device wants to send you files.</p>
+      <ul id="incoming-file-list" class="staged-file-list"></ul>
+      <div class="modal-actions">
+        <button id="btn-reject-incoming" class="btn btn-secondary">Decline</button>
+        <button id="btn-accept-incoming" class="btn btn-primary">Accept</button>
       </div>
     </div>
   </div>

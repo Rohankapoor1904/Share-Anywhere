@@ -1,11 +1,21 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, Text, TouchableOpacity, Animated, StyleSheet } from 'react-native';
 import GlassCard from './GlassCard';
+import Icon from './Icon';
+import { fileTypeIcon } from './iconPaths';
 import { formatBytes, formatSpeed, formatEta } from '../utils/byteFormat';
 import { useTheme } from '../theme';
 
+const AnimatedView = /** @type {any} */ (Animated.View);
+
+/** @param {number} percent */
+function clampPercent(percent) {
+  return Math.min(100, Math.max(0, percent));
+}
+
 /**
- * Renders an active or finished file transfer tile with progress, speed, ETA, and actions.
+ * Renders an active or finished file transfer tile with smooth progress,
+ * live speed, ETA and verification status.
  * @param {object} props
  * @param {object} props.transfer
  * @param {string} props.transfer.sessionId
@@ -15,6 +25,7 @@ import { useTheme } from '../theme';
  * @param {number} props.transfer.speed - Bytes per second.
  * @param {string} props.transfer.status - 'queued' | 'in_progress' | 'completed' | 'failed' | 'cancelled'
  * @param {'send' | 'receive'} props.transfer.direction
+ * @param {string} [props.transfer.sha256]
  * @param {string} [props.transfer.errorMessage]
  * @param {(sessionId: string) => void} [props.onCancel]
  * @param {(sessionId: string) => void} [props.onRetry]
@@ -30,15 +41,26 @@ export default function TransferTile({ transfer, onCancel, onRetry }) {
     speed = 0,
     status = 'queued',
     direction = 'send',
+    sha256,
     errorMessage
   } = transfer;
 
   const percent = totalBytes > 0
-    ? Math.min(100, Math.max(0, Math.round((transferredBytes / totalBytes) * 100)))
+    ? clampPercent(Math.round((transferredBytes / totalBytes) * 100))
     : 0;
 
   const remainingBytes = Math.max(0, totalBytes - transferredBytes);
   const eta = status === 'in_progress' ? formatEta(remainingBytes, speed) : '--';
+
+  // Animate the fill width so each progress tick glides instead of jumping.
+  const progressAnim = useRef(new Animated.Value(percent)).current;
+  useEffect(() => {
+    Animated.timing(progressAnim, {
+      toValue: percent,
+      duration: 250,
+      useNativeDriver: false
+    }).start();
+  }, [percent, progressAnim]);
 
   const getStatusColor = () => {
     switch (status) {
@@ -50,57 +72,33 @@ export default function TransferTile({ transfer, onCancel, onRetry }) {
     }
   };
 
-  const getFileGlyph = (name) => {
-    const ext = (name || '').split('.').pop()?.toLowerCase();
-    switch (ext) {
-      case 'jpg':
-      case 'jpeg':
-      case 'png':
-      case 'gif':
-      case 'webp': return '🖼️';
-      case 'mp4':
-      case 'mkv':
-      case 'mov':
-      case 'avi': return '🎬';
-      case 'mp3':
-      case 'wav':
-      case 'flac':
-      case 'm4a': return '🎵';
-      case 'pdf': return '📕';
-      case 'zip':
-      case 'rar':
-      case 'tar':
-      case 'gz':
-      case '7z': return '📦';
-      case 'apk': return '🤖';
-      case 'txt':
-      case 'md':
-      case 'doc':
-      case 'docx': return '📄';
-      default: return '📁';
-    }
-  };
-
   const statusColor = getStatusColor();
+  const iconName = fileTypeIcon(fileName);
+  const isVerified = status === 'completed' && Boolean(sha256);
 
   return (
     <GlassCard style={styles.card} variant={status === 'in_progress' ? 'interactive' : 'default'}>
+      {/* Telemetry header */}
       <View style={styles.topRow}>
+        <View style={[styles.fileTypeBadge, { backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.primary }]}>
+          <Icon name={iconName} size={19} color={theme.colors.primary} strokeWidth={1.9} />
+        </View>
+
         <View style={styles.nameContainer}>
           <View style={styles.directionRow}>
-            <Text style={[styles.directionGlyph]}>
-              {direction === 'send' ? '📤' : '📥'}
-            </Text>
+            <Icon
+              name={direction === 'send' ? 'upload' : 'download'}
+              size={11}
+              color={theme.colors.textMuted}
+              strokeWidth={2.4}
+            />
             <Text style={[styles.directionLabel, { color: theme.colors.textMuted }]}>
               {direction === 'send' ? 'OUTGOING' : 'INCOMING'}
             </Text>
           </View>
-          <View style={styles.fileNameRow}>
-            <Text style={styles.fileGlyph}>{getFileGlyph(fileName)}</Text>
-            <Text style={[styles.fileName, { color: theme.colors.text }]} numberOfLines={1}>
-              {fileName}
-            </Text>
-          </View>
+          <Text style={[styles.fileName, { color: theme.colors.text }]} numberOfLines={1}>
+            {fileName}
+          </Text>
         </View>
 
         <View style={[styles.statusBadge, { backgroundColor: statusColor + '25', borderColor: statusColor }]}>
@@ -110,44 +108,72 @@ export default function TransferTile({ transfer, onCancel, onRetry }) {
         </View>
       </View>
 
-      {/* Progress Bar Track */}
+      {/* Smooth animated progress bar */}
       <View style={[styles.progressBarTrack, { backgroundColor: theme.colors.border }]}>
-        <View
+        <AnimatedView
           style={[
             styles.progressBarFill,
-            { width: `${percent}%`, backgroundColor: statusColor }
+            {
+              backgroundColor: statusColor,
+              width: progressAnim.interpolate({
+                inputRange: [0, 100],
+                outputRange: ['0%', '100%']
+              })
+            }
           ]}
         />
       </View>
 
-      {/* Metrics Row */}
+      {/* Telemetry metrics */}
       <View style={styles.metricsRow}>
         <Text style={[styles.metricText, { color: theme.colors.textSecondary }]}>
           {formatBytes(transferredBytes)} / {formatBytes(totalBytes)} ({percent}%)
         </Text>
-        {status === 'in_progress' ? (
-          <Text style={[styles.speedText, { color: theme.colors.primary }]}>
-            ⚡ {formatSpeed(speed)} • ETA {eta}
-          </Text>
-        ) : null}
+
+        <View style={styles.metricPills}>
+          {status === 'in_progress' ? (
+            <>
+              <View style={[styles.metricPill, { backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.primary }]}>
+                <Icon name="activity" size={11} color={theme.colors.primary} strokeWidth={2.4} />
+                <Text style={[styles.metricPillText, { color: theme.colors.primary }]}>
+                  {formatSpeed(speed)}
+                </Text>
+              </View>
+              <View style={[styles.metricPill, { backgroundColor: theme.colors.cardSolid, borderColor: theme.colors.border }]}>
+                <Text style={[styles.metricPillText, { color: theme.colors.textSecondary }]}>
+                  ETA {eta}
+                </Text>
+              </View>
+            </>
+          ) : null}
+
+          {isVerified ? (
+            <View style={[styles.metricPill, { backgroundColor: theme.colors.successGlow, borderColor: theme.colors.success }]}>
+              <Icon name="check" size={11} color={theme.colors.success} strokeWidth={2.6} />
+              <Text style={[styles.metricPillText, { color: theme.colors.success }]}>SHA-256</Text>
+            </View>
+          ) : null}
+        </View>
       </View>
 
       {errorMessage ? (
         <View style={[styles.errorBox, { backgroundColor: theme.colors.dangerGlow, borderColor: theme.colors.danger }]}>
+          <Icon name="alert" size={13} color={theme.colors.danger} strokeWidth={2.2} />
           <Text style={[styles.errorText, { color: theme.colors.danger }]} numberOfLines={2}>
-            ⚠️ {errorMessage}
+            {errorMessage}
           </Text>
         </View>
       ) : null}
 
-      {/* Action Buttons */}
+      {/* Actions */}
       <View style={styles.actionsRow}>
         {status === 'in_progress' || status === 'queued' ? (
           <TouchableOpacity
             style={[styles.btn, { backgroundColor: theme.colors.dangerGlow, borderColor: theme.colors.danger }]}
             onPress={() => onCancel && onCancel(sessionId)}
           >
-            <Text style={[styles.btnText, { color: theme.colors.danger }]}>✕ Cancel</Text>
+            <Icon name="close" size={12} color={theme.colors.danger} strokeWidth={2.6} />
+            <Text style={[styles.btnText, { color: theme.colors.danger }]}>Cancel</Text>
           </TouchableOpacity>
         ) : null}
 
@@ -156,7 +182,8 @@ export default function TransferTile({ transfer, onCancel, onRetry }) {
             style={[styles.btn, { backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.primary }]}
             onPress={() => onRetry && onRetry(sessionId)}
           >
-            <Text style={[styles.btnText, { color: theme.colors.primary }]}>🔄 Retry Transfer</Text>
+            <Icon name="refresh" size={12} color={theme.colors.primary} strokeWidth={2.4} />
+            <Text style={[styles.btnText, { color: theme.colors.primary }]}>Retry Transfer</Text>
           </TouchableOpacity>
         ) : null}
       </View>
@@ -170,9 +197,17 @@ const styles = StyleSheet.create({
   },
   topRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 10
+    alignItems: 'center',
+    marginBottom: 12
+  },
+  fileTypeBadge: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10
   },
   nameContainer: {
     flex: 1,
@@ -183,28 +218,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 2
   },
-  directionGlyph: {
-    fontSize: 11,
-    marginRight: 4
-  },
   directionLabel: {
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '800',
-    letterSpacing: 0.5
-  },
-  fileNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 2
-  },
-  fileGlyph: {
-    fontSize: 16,
-    marginRight: 6
+    letterSpacing: 0.8,
+    marginLeft: 4
   },
   fileName: {
     fontSize: 15,
-    fontWeight: '700',
-    flex: 1
+    fontWeight: '700'
   },
   statusBadge: {
     paddingHorizontal: 8,
@@ -213,16 +235,16 @@ const styles = StyleSheet.create({
     borderWidth: 1
   },
   statusText: {
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '800',
     textTransform: 'uppercase',
-    letterSpacing: 0.3
+    letterSpacing: 0.4
   },
   progressBarTrack: {
     height: 7,
     borderRadius: 4,
     overflow: 'hidden',
-    marginBottom: 8
+    marginBottom: 10
   },
   progressBarFill: {
     height: '100%',
@@ -231,32 +253,56 @@ const styles = StyleSheet.create({
   metricsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center'
+    alignItems: 'center',
+    flexWrap: 'wrap'
   },
   metricText: {
     fontSize: 12,
     fontWeight: '500'
   },
-  speedText: {
-    fontSize: 12,
-    fontWeight: '700'
+  metricPills: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap'
+  },
+  metricPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginLeft: 6,
+    marginTop: 2
+  },
+  metricPillText: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+    marginLeft: 3
   },
   errorBox: {
-    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 10,
     padding: 8,
-    borderRadius: 6,
+    borderRadius: 8,
     borderWidth: 1
   },
   errorText: {
     fontSize: 12,
-    fontWeight: '600'
+    fontWeight: '600',
+    marginLeft: 6,
+    flex: 1
   },
   actionsRow: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    marginTop: 10
+    marginTop: 12
   },
   btn: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 8,
@@ -265,6 +311,7 @@ const styles = StyleSheet.create({
   },
   btnText: {
     fontSize: 12,
-    fontWeight: '700'
+    fontWeight: '700',
+    marginLeft: 5
   }
 });

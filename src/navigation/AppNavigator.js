@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, Animated, StyleSheet } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 
@@ -9,19 +9,70 @@ import RadarScreen from '../screens/RadarScreen';
 import ShareHubScreen from '../screens/ShareHubScreen';
 import TransfersScreen from '../screens/TransfersScreen';
 import ReceivedScreen from '../screens/ReceivedScreen';
+import RemoteExplorerScreen from '../screens/RemoteExplorerScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import Icon from '../components/Icon';
 import { useLocalShare } from '../engine/providers';
 import { useTheme } from '../theme';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
-function TabIcon({ glyph, focused, activeColor, inactiveColor }) {
+const AnimatedView = /** @type {any} */ (Animated.View);
+
+/**
+ * Tab icon inside a glowing pill that springs in when its tab becomes focused.
+ * @param {object} props
+ * @param {string} props.name - Icon identifier.
+ * @param {boolean} props.focused
+ */
+function TabIcon({ name, focused }) {
+  const { theme } = useTheme();
+  const focusAnim = useRef(new Animated.Value(focused ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.spring(focusAnim, {
+      toValue: focused ? 1 : 0,
+      useNativeDriver: true,
+      friction: 8,
+      tension: 120
+    }).start();
+  }, [focused, focusAnim]);
+
+  const pillOpacity = focusAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 1] });
+  const dotScale = focusAnim.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1] });
+  const iconScale = focusAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.06] });
+
   return (
-    <View style={[styles.iconContainer, focused ? styles.iconContainerFocused : null]}>
-      <Text style={[styles.tabGlyph, { color: focused ? activeColor : inactiveColor }]}>
-        {glyph}
-      </Text>
+    <View style={styles.tabIconWrapper}>
+      <AnimatedView
+        pointerEvents="none"
+        style={[
+          styles.iconPill,
+          {
+            backgroundColor: theme.colors.primaryGlow,
+            borderColor: theme.colors.borderHighlight,
+            opacity: pillOpacity
+          }
+        ]}
+      />
+      <AnimatedView style={{ transform: [{ scale: iconScale }] }}>
+        <Icon
+          name={name}
+          size={21}
+          color={focused ? theme.colors.tabBarActive : theme.colors.tabBarInactive}
+        />
+      </AnimatedView>
+      <AnimatedView
+        style={[
+          styles.activeDot,
+          {
+            backgroundColor: theme.colors.tabBarActive,
+            opacity: pillOpacity,
+            transform: [{ scale: dotScale }]
+          }
+        ]}
+      />
     </View>
   );
 }
@@ -33,6 +84,8 @@ function MainTabNavigator() {
   const activeTransfersCount = transfers.filter(
     (t) => t.status === 'in_progress' || t.status === 'queued'
   ).length;
+
+  const tabBarIcon = (name) => ({ focused }) => <TabIcon name={name} focused={focused} />;
 
   return (
     <Tab.Navigator
@@ -52,18 +105,22 @@ function MainTabNavigator() {
           letterSpacing: 0.3
         },
         tabBarStyle: {
+          position: 'absolute',
           backgroundColor: theme.colors.tabBar,
           borderTopColor: theme.colors.border,
           borderTopWidth: 1,
-          height: 64,
-          paddingBottom: 8,
-          paddingTop: 6,
-          elevation: 8,
+          borderTopLeftRadius: theme.radii.xl,
+          borderTopRightRadius: theme.radii.xl,
+          height: 68,
+          paddingTop: 8,
+          paddingBottom: 10,
+          elevation: 18,
           shadowColor: '#000000',
-          shadowOffset: { width: 0, height: -2 },
-          shadowOpacity: 0.15,
-          shadowRadius: 6
+          shadowOffset: { width: 0, height: -6 },
+          shadowOpacity: 0.28,
+          shadowRadius: 18
         },
+        tabBarShowLabel: false,
         tabBarActiveTintColor: theme.colors.tabBarActive,
         tabBarInactiveTintColor: theme.colors.tabBarInactive,
         tabBarLabelStyle: {
@@ -82,47 +139,17 @@ function MainTabNavigator() {
       <Tab.Screen
         name="Devices"
         component={DevicesScreen}
-        options={{
-          tabBarLabel: 'Devices',
-          tabBarIcon: ({ focused }) => (
-            <TabIcon
-              glyph="📱"
-              focused={focused}
-              activeColor={theme.colors.tabBarActive}
-              inactiveColor={theme.colors.tabBarInactive}
-            />
-          )
-        }}
+        options={{ tabBarLabel: 'Devices', tabBarIcon: tabBarIcon('devices') }}
       />
       <Tab.Screen
         name="Radar"
         component={RadarScreen}
-        options={{
-          tabBarLabel: 'Radar',
-          tabBarIcon: ({ focused }) => (
-            <TabIcon
-              glyph="📡"
-              focused={focused}
-              activeColor={theme.colors.tabBarActive}
-              inactiveColor={theme.colors.tabBarInactive}
-            />
-          )
-        }}
+        options={{ tabBarLabel: 'Radar', tabBarIcon: tabBarIcon('radar') }}
       />
       <Tab.Screen
         name="ShareHub"
         component={ShareHubScreen}
-        options={{
-          tabBarLabel: 'Share',
-          tabBarIcon: ({ focused }) => (
-            <TabIcon
-              glyph="📤"
-              focused={focused}
-              activeColor={theme.colors.tabBarActive}
-              inactiveColor={theme.colors.tabBarInactive}
-            />
-          )
-        }}
+        options={{ tabBarLabel: 'Share', tabBarIcon: tabBarIcon('share') }}
       />
       <Tab.Screen
         name="Transfers"
@@ -130,45 +157,23 @@ function MainTabNavigator() {
         options={{
           tabBarLabel: 'Transfers',
           tabBarBadge: activeTransfersCount > 0 ? activeTransfersCount : undefined,
-          tabBarIcon: ({ focused }) => (
-            <TabIcon
-              glyph="🔄"
-              focused={focused}
-              activeColor={theme.colors.tabBarActive}
-              inactiveColor={theme.colors.tabBarInactive}
-            />
-          )
+          tabBarIcon: tabBarIcon('transfers')
         }}
       />
       <Tab.Screen
         name="Received"
         component={ReceivedScreen}
-        options={{
-          tabBarLabel: 'Received',
-          tabBarIcon: ({ focused }) => (
-            <TabIcon
-              glyph="📥"
-              focused={focused}
-              activeColor={theme.colors.tabBarActive}
-              inactiveColor={theme.colors.tabBarInactive}
-            />
-          )
-        }}
+        options={{ tabBarLabel: 'Received', tabBarIcon: tabBarIcon('received') }}
+      />
+      <Tab.Screen
+        name="Files"
+        component={RemoteExplorerScreen}
+        options={{ tabBarLabel: 'Files', tabBarIcon: tabBarIcon('files') }}
       />
       <Tab.Screen
         name="Settings"
         component={SettingsScreen}
-        options={{
-          tabBarLabel: 'Settings',
-          tabBarIcon: ({ focused }) => (
-            <TabIcon
-              glyph="⚙️"
-              focused={focused}
-              activeColor={theme.colors.tabBarActive}
-              inactiveColor={theme.colors.tabBarInactive}
-            />
-          )
-        }}
+        options={{ tabBarLabel: 'Settings', tabBarIcon: tabBarIcon('settings') }}
       />
     </Tab.Navigator>
   );
@@ -192,17 +197,24 @@ export default function AppNavigator() {
 }
 
 const styles = StyleSheet.create({
-  iconContainer: {
+  tabIconWrapper: {
     alignItems: 'center',
     justifyContent: 'center',
-    width: 32,
+    width: 46,
+    height: 34
+  },
+  iconPill: {
+    position: 'absolute',
+    width: 46,
     height: 32,
-    borderRadius: 16
+    borderRadius: 16,
+    borderWidth: 1
   },
-  iconContainerFocused: {
-    transform: [{ scale: 1.1 }]
-  },
-  tabGlyph: {
-    fontSize: 18
+  activeDot: {
+    position: 'absolute',
+    bottom: -5,
+    width: 4,
+    height: 4,
+    borderRadius: 2
   }
 });

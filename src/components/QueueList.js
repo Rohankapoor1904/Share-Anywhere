@@ -1,6 +1,8 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, FlatList, StyleSheet } from 'react-native';
 import GlassCard from './GlassCard';
+import Icon from './Icon';
+import { fileTypeIcon } from './iconPaths';
 import { formatBytes } from '../utils/byteFormat';
 import { useTheme } from '../theme';
 
@@ -18,27 +20,6 @@ export default function QueueList({ files, onRemove }) {
   }
 
   const totalSize = files.reduce((acc, f) => acc + (f.size || 0), 0);
-
-  const getFileGlyph = (name) => {
-    const ext = (name || '').split('.').pop()?.toLowerCase();
-    switch (ext) {
-      case 'jpg':
-      case 'jpeg':
-      case 'png':
-      case 'gif':
-      case 'webp': return '🖼️';
-      case 'mp4':
-      case 'mkv':
-      case 'mov': return '🎬';
-      case 'mp3':
-      case 'wav': return '🎵';
-      case 'pdf': return '📕';
-      case 'zip':
-      case 'rar':
-      case 'apk': return '📦';
-      default: return '📄';
-    }
-  };
 
   return (
     <GlassCard style={styles.card} variant="interactive">
@@ -59,7 +40,9 @@ export default function QueueList({ files, onRemove }) {
         scrollEnabled={false}
         renderItem={({ item }) => (
           <View style={[styles.fileRow, { borderBottomColor: theme.colors.border }]}>
-            <Text style={styles.fileGlyph}>{getFileGlyph(item.name)}</Text>
+            <View style={styles.fileGlyph}>
+              <Icon name={fileTypeIcon(item.name)} size={19} color={theme.colors.primary} strokeWidth={1.9} />
+            </View>
             <View style={styles.fileInfo}>
               <Text style={[styles.fileName, { color: theme.colors.text }]} numberOfLines={1}>
                 {item.name}
@@ -73,7 +56,7 @@ export default function QueueList({ files, onRemove }) {
               onPress={() => onRemove(item.id || item.path)}
               accessibilityLabel={`Remove ${item.name}`}
             >
-              <Text style={[styles.removeBtnText, { color: theme.colors.danger }]}>✕</Text>
+              <Icon name="close" size={13} color={theme.colors.danger} strokeWidth={2.8} />
             </TouchableOpacity>
           </View>
         )}
@@ -113,7 +96,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1
   },
   fileGlyph: {
-    fontSize: 18,
+    width: 22,
+    alignItems: 'center',
     marginRight: 10
   },
   fileInfo: {
@@ -135,8 +119,4 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center'
   },
-  removeBtnText: {
-    fontSize: 13,
-    fontWeight: '800'
-  }
 });

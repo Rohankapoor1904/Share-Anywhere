@@ -14,6 +14,9 @@ import { useLocalShare } from '../engine/providers';
 import { useTheme } from '../theme';
 import GlassCard from '../components/GlassCard';
 import EmptyState from '../components/EmptyState';
+import Icon from '../components/Icon';
+import AmbientBackground from '../components/AmbientBackground';
+import { fileTypeIcon } from '../components/iconPaths';
 import { formatBytes } from '../utils/byteFormat';
 import { defaultLogger } from '../utils/logger';
 
@@ -58,16 +61,6 @@ export default function ReceivedScreen() {
     }
   };
 
-  const getFileGlyph = (name) => {
-    const cat = getFileCategory(name);
-    switch (cat) {
-      case 'media': return '🎬';
-      case 'archive': return '📦';
-      case 'doc': return '📄';
-      default: return '📁';
-    }
-  };
-
   const filteredFiles = useMemo(() => {
     let result = receivedFiles;
     if (category !== 'all') {
@@ -96,7 +89,8 @@ export default function ReceivedScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.colors.background }]}>
+    <AmbientBackground>
+      <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
         <View style={styles.header}>
           <View style={styles.headerTitleRow}>
@@ -115,7 +109,7 @@ export default function ReceivedScreen() {
         {/* Search bar when files exist */}
         {receivedFiles.length > 2 ? (
           <View style={[styles.searchBox, { backgroundColor: theme.colors.inputBg, borderColor: theme.colors.border }]}>
-            <Text style={styles.searchIcon}>🔍</Text>
+            <Icon name="search" size={15} color={theme.colors.textMuted} style={styles.searchIcon} strokeWidth={2.2} />
             <TextInput
               style={[styles.searchInput, { color: theme.colors.text }]}
               placeholder="Search received files..." // justified: TextInput hint
@@ -125,7 +119,7 @@ export default function ReceivedScreen() {
             />
             {searchQuery ? (
               <TouchableOpacity onPress={() => setSearchQuery('')}>
-                <Text style={[styles.clearSearch, { color: theme.colors.textMuted }]}>✕</Text>
+                <Icon name="close" size={14} color={theme.colors.textMuted} strokeWidth={2.6} />
               </TouchableOpacity>
             ) : null}
           </View>
@@ -174,7 +168,9 @@ export default function ReceivedScreen() {
           renderItem={({ item }) => (
             <GlassCard style={styles.fileCard} variant="interactive">
               <View style={styles.fileRow}>
-                <Text style={styles.fileGlyph}>{getFileGlyph(item.name)}</Text>
+                <View style={[styles.fileTypeBadge, { backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.primary }]}>
+                  <Icon name={fileTypeIcon(item.name)} size={19} color={theme.colors.primary} strokeWidth={1.9} />
+                </View>
                 <View style={styles.fileInfo}>
                   <Text style={[styles.fileName, { color: theme.colors.text }]} numberOfLines={1}>
                     {item.name}
@@ -187,6 +183,7 @@ export default function ReceivedScreen() {
                   style={[styles.openBtn, { backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.primary }]}
                   onPress={() => handleOpenFile(item)}
                 >
+                  <Icon name="eye" size={12} color={theme.colors.primary} strokeWidth={2.4} />
                   <Text style={[styles.openBtnText, { color: theme.colors.primary }]}>Open</Text>
                 </TouchableOpacity>
               </View>
@@ -200,7 +197,8 @@ export default function ReceivedScreen() {
           }
         />
       </View>
-    </SafeAreaView>
+      </SafeAreaView>
+    </AmbientBackground>
   );
 }
 
@@ -248,7 +246,6 @@ const styles = StyleSheet.create({
     marginBottom: 10
   },
   searchIcon: {
-    fontSize: 14,
     marginRight: 8
   },
   searchInput: {
@@ -257,7 +254,6 @@ const styles = StyleSheet.create({
     padding: 0
   },
   clearSearch: {
-    fontSize: 14,
     paddingHorizontal: 4
   },
   categoryBar: {
@@ -285,8 +281,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center'
   },
-  fileGlyph: {
-    fontSize: 22,
+  fileTypeBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 13,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginRight: 12
   },
   fileInfo: {
@@ -302,13 +303,16 @@ const styles = StyleSheet.create({
     marginTop: 2
   },
   openBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
     borderWidth: 1,
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 8
   },
   openBtnText: {
     fontSize: 12,
-    fontWeight: '800'
+    fontWeight: '800',
+    marginLeft: 5
   }
 });

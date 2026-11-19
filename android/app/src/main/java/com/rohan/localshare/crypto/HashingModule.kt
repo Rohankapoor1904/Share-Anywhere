@@ -5,9 +5,11 @@ import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import android.net.Uri
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import java.io.File
 import java.io.FileInputStream
+import java.io.InputStream
 import java.security.MessageDigest
 
 /**
@@ -19,21 +21,15 @@ class HashingModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
 
     @ReactMethod
     fun computeFileHash(filePath: String, promise: Promise) {
-        val file = File(filePath)
-        if (!file.exists() || !file.isFile) {
-            promise.reject("ERR_FILE_NOT_FOUND", "File does not exist: $filePath")
-            return
-        }
-
         try {
-            val totalBytes = file.length()
+            val totalBytes = resolveLength(filePath)
             var processedBytes = 0L
             val digest = MessageDigest.getInstance("SHA-256")
             val buffer = ByteArray(65536) // 64 KB buffer
 
-            FileInputStream(file).use { fis ->
+            openStream(filePath).use { stream ->
                 var read: Int
-                while (fis.read(buffer).also { read = it } != -1) {
+                while (stream.read(buffer).also { read = it } != -1) {
                     digest.update(buffer, 0, read)
                     processedBytes += read
 
@@ -56,6 +52,34 @@ class HashingModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
         } catch (e: Exception) {
             promise.reject("ERR_HASHING_FAILED", e.localizedMessage, e)
         }
+    }
+
+    /**
+     * Resolve a readable stream for either a content:// URI or a plain/file:// path.
+     */
+    private fun openStream(pathOrUri: String): InputStream {
+        return if (pathOrUri.startsWith("content://")) {
+            reactApplicationContext.contentResolver.openInputStream(Uri.parse(pathOrUri))
+                ?: throw java.io.FileNotFoundException("Cannot open content URI: $pathOrUri")
+        } else {
+            val file = File(normalizePath(pathOrUri))
+            if (!file.exists() || !file.isFile) {
+                throw java.io.FileNotFoundException("File does not exist: $pathOrUri")
+            }
+            FileInputStream(file)
+        }
+    }
+
+    private fun resolveLength(pathOrUri: String): Long {
+        return if (pathOrUri.startsWith("content://")) {
+            reactApplicationContext.contentResolver.openFileDescriptor(Uri.parse(pathOrUri), "r")?.use { it.statSize } ?: -1L
+        } else {
+            File(normalizePath(pathOrUri)).length()
+        }
+    }
+
+    private fun normalizePath(pathOrUri: String): String {
+        return if (pathOrUri.startsWith("file://")) pathOrUri.removePrefix("file://") else pathOrUri
     }
 
     private fun sendEvent(eventName: String, params: Any?) {
