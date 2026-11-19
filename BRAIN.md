@@ -102,8 +102,8 @@
 3. **Pure Standalone Windows Desktop Application (`desktop/`)**:
    - `desktop/main.js` (Electron native application window, IPC bridge, single instance lock, lifecycle)
    - `desktop/preload.js` (secure `contextBridge` exposing `window.electronAPI`)
-   - `desktop/engine/desktop-node.js` (TransferGateway 53318, LocalSendGateway 53317, `/api/send` socket engine, Control API 53319)
-   - `desktop/public/` (`index.html`, `style.css`, `app.js` with drag & drop, Explorer integration, transfer progress bars)
+   - `desktop/engine/desktop-node.js` (TransferGateway 53318, LocalSendGateway 53317, `/api/send` socket engine, Control API 53319, high-contrast SVG QR generator)
+   - `desktop/public/` (O+ Connect 3-pane layout: Primary sidebar, Secondary category drawer, Main content canvas with date-grouped gallery for APKs, photos, videos, and documents)
    - `scripts/build_desktop.js` (Electron Packager standalone compiler)
    - `dist/LocalShare-win32-x64/LocalShare.exe` (standalone compiled executable)
    - `LocalShare-PC.bat` (native desktop app launcher)

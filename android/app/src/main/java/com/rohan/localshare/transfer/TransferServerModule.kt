@@ -415,15 +415,17 @@ class TransferServerModule(
     private fun queryMediaCategories(type: String, limit: Int, offset: Int): JSONObject {
         val results = mutableListOf<File>()
         val exts: Set<String>? = when (type) {
-            "photos" -> setOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif")
+            "photos", "images" -> setOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif")
             "videos" -> setOf("mp4", "mkv", "webm", "mov", "avi", "3gp")
             "audio" -> setOf("mp3", "wav", "ogg", "m4a", "flac", "aac")
             "documents" -> setOf("pdf", "txt", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "csv", "json")
+            "archives" -> setOf("zip", "rar", "7z", "tar", "gz", "bz2")
+            "apks" -> setOf("apk", "xapk")
             else -> null
         }
 
         val searchDirs = when (type) {
-            "photos" -> listOf(
+            "photos", "images" -> listOf(
                 Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM),
                 Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
             )
@@ -434,12 +436,21 @@ class TransferServerModule(
             "audio" -> listOf(
                 Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
             )
-            "downloads" -> listOf(
+            "downloads", "apks", "archives" -> listOf(
                 Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
             )
             "documents" -> listOf(
                 Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS),
                 Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            )
+            "whatsapp" -> listOf(
+                File(Environment.getExternalStorageDirectory(), "Android/media/com.whatsapp/WhatsApp/Media"),
+                File(Environment.getExternalStorageDirectory(), "WhatsApp/Media")
+            )
+            "recent" -> listOf(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM),
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
             )
             else -> listOf(Environment.getExternalStorageDirectory())
         }

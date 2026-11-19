@@ -782,7 +782,7 @@ class DesktopEngine {
           qrSvg = await QRCode.toString(qrPayload, {
             type: 'svg',
             margin: 1,
-            color: { dark: '#38bdf8', light: '#00000000' }
+            color: { dark: '#111827', light: '#ffffff' }
           });
         } catch (_) {}
 

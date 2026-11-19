@@ -270,10 +270,13 @@ function deleteEntry(targetPath) {
 }
 
 const CATEGORY_EXTENSIONS = {
-  photos: new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg']),
-  videos: new Set(['.mp4', '.mkv', '.webm', '.mov', '.avi', '.m4v']),
+  photos: new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', '.heic', '.heif']),
+  images: new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', '.heic', '.heif']),
+  videos: new Set(['.mp4', '.mkv', '.webm', '.mov', '.avi', '.m4v', '.3gp']),
   audio: new Set(['.mp3', '.wav', '.ogg', '.m4a', '.flac', '.aac']),
-  documents: new Set(['.pdf', '.txt', '.md', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.csv', '.json', '.xml', '.html', '.js', '.ts'])
+  documents: new Set(['.pdf', '.txt', '.md', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.csv', '.json', '.xml', '.html', '.js', '.ts']),
+  archives: new Set(['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.iso']),
+  apks: new Set(['.apk', '.xapk'])
 };
 
 /**
@@ -324,7 +327,7 @@ function listCategory(type = 'photos', limit = 60, offset = 0, rootDir = null) {
 
   if (type === 'downloads') {
     searchRoots = [path.join(home, 'Downloads'), path.join(home, 'Downloads', 'LocalShare')];
-  } else if (type === 'photos') {
+  } else if (type === 'photos' || type === 'images') {
     searchRoots = [path.join(home, 'Pictures'), path.join(home, 'Downloads'), path.join(home, 'Desktop')];
   } else if (type === 'videos') {
     searchRoots = [path.join(home, 'Videos'), path.join(home, 'Downloads'), path.join(home, 'Desktop')];
@@ -332,6 +335,10 @@ function listCategory(type = 'photos', limit = 60, offset = 0, rootDir = null) {
     searchRoots = [path.join(home, 'Music'), path.join(home, 'Downloads')];
   } else if (type === 'documents') {
     searchRoots = [path.join(home, 'Documents'), path.join(home, 'Downloads'), path.join(home, 'Desktop')];
+  } else if (type === 'archives' || type === 'apks') {
+    searchRoots = [path.join(home, 'Downloads'), path.join(home, 'Desktop')];
+  } else if (type === 'recent') {
+    searchRoots = [path.join(home, 'Downloads'), path.join(home, 'Pictures'), path.join(home, 'Desktop'), path.join(home, 'Documents')];
   } else {
     searchRoots = [home];
   }

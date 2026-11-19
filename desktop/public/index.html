@@ -1,564 +1,761 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="midnight">
+<html lang="en" data-theme="daylight">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LocalShare Desktop — Direct LAN File Sharing</title>
+  <title>O+ Connect — LocalShare Ecosystem</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="app-layout">
-    <!-- Sidebar Navigation -->
-    <aside class="sidebar">
-      <div class="sidebar-brand">
-        <div class="brand-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg>
-        </div>
-        <div class="brand-info">
-          <h1>LocalShare</h1>
-          <span class="brand-badge">Pure Desktop</span>
-        </div>
+  <!-- App Container (O+ Connect 3-Pane Layout) -->
+  <div class="op-app">
+    <!-- Top Window Titlebar -->
+    <header class="op-titlebar">
+      <div class="op-titlebar-left">
+        <span class="op-logo-icon">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/>
+          </svg>
+        </span>
+        <span class="op-titlebar-text">O+ Connect</span>
       </div>
+      <div class="op-titlebar-right">
+        <button class="op-titlebar-btn op-btn-min" id="op-btn-minimize" title="Minimize">&#9472;</button>
+        <button class="op-titlebar-btn op-btn-max" id="op-btn-maximize" title="Maximize">&#9633;</button>
+        <button class="op-titlebar-btn op-btn-close" id="op-btn-close" title="Close">&#10005;</button>
+      </div>
+    </header>
 
-      <nav class="nav-menu">
-        <button class="nav-item active" data-tab="devices">
-          <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="8" height="15" rx="2"/><path d="M6 17.5h.01"/><rect x="13" y="4" width="9" height="7" rx="1.5"/><path d="M17.5 11v4"/><path d="M15 16.5h5"/></svg></span>
-          <span class="nav-label">Devices</span>
-          <span class="nav-badge" id="devices-badge">0</span>
-        </button>
-        <button class="nav-item" data-tab="radar">
-          <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2"/><path d="M12 12l6.4-6.4"/><path d="M12 6.5a5.5 5.5 0 0 1 5.5 5.5"/><path d="M12 2.8a9.2 9.2 0 0 1 9.2 9.2"/></svg></span>
-          <span class="nav-label">Radar</span>
-        </button>
-        <button class="nav-item" data-tab="share">
-          <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg></span>
-          <span class="nav-label">Share Hub</span>
-        </button>
-        <button class="nav-item" data-tab="transfers">
-          <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l4-4 4 4"/><path d="M7 4.5v9"/><path d="M21 15.5l-4 4-4-4"/><path d="M17 19.5v-9"/></svg></span>
-          <span class="nav-label">Transfers</span>
-          <span class="nav-badge" id="transfers-badge">0</span>
-        </button>
-        <button class="nav-item" data-tab="received">
-          <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.1L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.7 4H7.3a2 2 0 0 0-1.8 1.1z"/></svg></span>
-          <span class="nav-label">Received</span>
-        </button>
-        <button class="nav-item" data-tab="remotefiles">
-          <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M8 12.5h8"/><path d="M8 16h5"/></svg></span>
-          <span class="nav-label">Remote Files</span>
-        </button>
-        <button class="nav-item" data-tab="settings">
-          <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21v-7"/><path d="M4 10V3"/><path d="M12 21v-9"/><path d="M12 8V3"/><path d="M20 21v-5"/><path d="M20 12V3"/><path d="M1.5 14h5"/><path d="M9.5 8h5"/><path d="M17.5 16h5"/></svg></span>
-          <span class="nav-label">Settings</span>
-        </button>
-      </nav>
+    <!-- Main Workspace: 3-Pane Layout -->
+    <div class="op-workspace">
+      <!-- ================= PANE 1: PRIMARY SIDEBAR ================= -->
+      <aside class="op-primary-sidebar" id="op-sidebar">
+        <!-- Top Search Box -->
+        <div class="op-sidebar-search">
+          <span class="op-search-icon">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="7"/><path d="M20.5 20.5L16.2 16.2"/>
+            </svg>
+          </span>
+          <input type="text" id="op-global-search" class="op-search-input" placeholder="Search" />
+        </div>
 
-      <div class="sidebar-footer">
-        <div class="status-indicator">
-          <span class="status-dot"></span>
-          <div class="status-text">
-            <span class="status-title" id="self-name">Loading...</span>
-            <span class="status-ip" id="self-ip">127.0.0.1:53318</span>
+        <!-- User Profile Card -->
+        <div class="op-profile-card">
+          <div class="op-profile-avatar" id="op-profile-avatar">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+            </svg>
+          </div>
+          <div class="op-profile-details">
+            <span class="op-profile-name" id="op-profile-username">kapoor192003</span>
+            <span class="op-profile-sub" id="self-name">Rohan (PC)</span>
           </div>
         </div>
-      </div>
-    </aside>
 
-    <!-- Main Content Area -->
-    <main class="main-content">
-      <!-- Persistent engine telemetry: always visible above the active tab. -->
-      <div class="engine-telemetry" role="status" aria-live="polite">
-        <div class="engine-telemetry-group">
-          <span class="engine-telemetry-item">
-            <span class="engine-telemetry-label">LAN IP</span>
-            <strong class="engine-telemetry-value" id="telemetry-lan-ip">--</strong>
-          </span>
-          <span class="engine-telemetry-item">
-            <span class="engine-telemetry-label">Engine</span>
-            <strong class="engine-telemetry-value" id="telemetry-ports">53318 / 53317</strong>
-          </span>
-          <span class="engine-telemetry-item">
-            <span class="engine-telemetry-label">Peers</span>
-            <strong class="engine-telemetry-value" id="telemetry-peer-count">0</strong>
-          </span>
-        </div>
-        <div class="engine-telemetry-actions">
-          <button id="btn-telemetry-clipboard" class="telemetry-pill" type="button">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>
-            <span id="btn-telemetry-clipboard-label">Clipboard Sync</span>
-          </button>
-          <button id="btn-telemetry-scan" class="telemetry-pill telemetry-pill-accent" type="button">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="2"/><path d="M12 12l6.4-6.4"/><path d="M12 6.5a5.5 5.5 0 0 1 5.5 5.5"/><path d="M12 2.8a9.2 9.2 0 0 1 9.2 9.2"/></svg>
-            <span>Scan</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- Live Link Session Banner -->
-      <div id="live-connection-banner" class="live-connection-banner" style="display: none;">
-        <div class="live-banner-info">
-          <span class="live-pulse"></span>
-          <span>Live Link Active: <strong id="live-banner-peer">Device</strong></span>
-        </div>
-        <div class="live-banner-actions">
-          <button id="live-banner-clip-btn" class="btn btn-secondary btn-sm" type="button">Clipboard Sync: ON</button>
-          <button id="live-banner-disconnect-btn" class="btn btn-danger btn-sm" type="button">Disconnect</button>
-        </div>
-      </div>
-
-      <!-- Devices Tab -->
-      <section id="tab-devices" class="tab-pane active">
-        <!-- State A: Unconnected (Ready to Link) -->
-        <div id="state-unconnected">
-          <header class="pane-header">
-            <div>
-              <h2>Nearby Devices & Instant Link</h2>
-              <p>Connect with 1-click or scan the QR code from your phone to link without typing.</p>
+        <!-- Navigation Sections -->
+        <div class="op-nav-scroll">
+          <!-- Devices Section -->
+          <div class="op-nav-section">
+            <div class="op-nav-section-title">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="6" width="8" height="15" rx="2"/><path d="M6 17.5h.01"/><rect x="13" y="4" width="9" height="7" rx="1.5"/><path d="M17.5 11v4"/><path d="M15 16.5h5"/>
+              </svg>
+              <span>Devices</span>
             </div>
-            <div class="header-actions">
-              <button id="btn-scan" class="btn btn-primary">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2"/><path d="M12 12l6.4-6.4"/><path d="M12 6.5a5.5 5.5 0 0 1 5.5 5.5"/><path d="M12 2.8a9.2 9.2 0 0 1 9.2 9.2"/></svg>
-                <span>Scan Network</span>
-              </button>
-              <button id="btn-manual" class="btn btn-secondary">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-                <span>Manual IP</span>
+
+            <!-- Connected Device Item -->
+            <div class="op-device-tree" id="op-device-tree-connected">
+              <div class="op-device-header" id="op-device-toggle">
+                <span class="op-dot-green"></span>
+                <span class="op-device-title-text" id="op-connected-device-name">realme GT 6T</span>
+                <span class="op-chevron" id="op-device-chevron">&#8964;</span>
+              </div>
+              <div class="op-device-subnav" id="op-device-subnav">
+                <button class="op-subnav-item active" data-view="files" id="nav-item-files">
+                  <span class="op-subnav-icon">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                    </svg>
+                  </span>
+                  <span class="op-subnav-label">Files</span>
+                </button>
+                <button class="op-subnav-item" data-view="screencast" id="nav-item-screencast">
+                  <span class="op-subnav-icon">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/>
+                    </svg>
+                  </span>
+                  <span class="op-subnav-label">Screencast</span>
+                </button>
+                <button class="op-subnav-item" data-view="clipboard" id="nav-item-clipboard">
+                  <span class="op-subnav-icon">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+                    </svg>
+                  </span>
+                  <span class="op-subnav-label">Live Clipboard</span>
+                  <span class="op-tag-active" id="op-clip-tag">ON</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Unconnected Prompt Item (Hidden when connected) -->
+            <div class="op-unconnected-item" id="op-unconnected-prompt" style="display: none;">
+              <button class="op-subnav-item" data-view="pair" id="nav-item-pair">
+                <span class="op-dot-idle"></span>
+                <span class="op-subnav-label">Connect Phone</span>
+                <span class="op-tag-pill">Pair</span>
               </button>
             </div>
-          </header>
+          </div>
 
-          <div class="unconnected-split">
-            <!-- Left Column: Discovered Devices -->
-            <div class="unconnected-left">
-              <div class="glass-card self-card">
-                <div class="self-card-row">
-                  <div class="self-details">
-                    <span class="chip chip-primary">THIS PC</span>
-                    <h3 id="self-device-name">Windows PC</h3>
-                    <p id="self-device-details">127.0.0.1:53318 • Port 53317 (LocalSend Interop)</p>
-                  </div>
-                  <button id="btn-open-folder" class="btn btn-secondary">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-                    <span>Open Downloads</span>
+          <!-- Toolbox Section -->
+          <div class="op-nav-section">
+            <div class="op-nav-section-title">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+              </svg>
+              <span>Toolbox</span>
+            </div>
+            <button class="op-subnav-item" data-view="transfers" id="nav-item-transfers">
+              <span class="op-subnav-icon">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3 8.5l4-4 4 4"/><path d="M7 4.5v9"/><path d="M21 15.5l-4 4-4-4"/><path d="M17 19.5v-9"/>
+                </svg>
+              </span>
+              <span class="op-subnav-label">Transfers</span>
+              <span class="op-counter-badge" id="transfers-badge">0</span>
+            </button>
+            <button class="op-subnav-item" data-view="radar" id="nav-item-radar">
+              <span class="op-subnav-icon">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="2"/><path d="M12 12l6.4-6.4"/><path d="M12 6.5a5.5 5.5 0 0 1 5.5 5.5"/><path d="M12 2.8a9.2 9.2 0 0 1 9.2 9.2"/>
+                </svg>
+              </span>
+              <span class="op-subnav-label">Radar</span>
+            </button>
+            <button class="op-subnav-item" data-view="received" id="nav-item-received">
+              <span class="op-subnav-icon">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.1L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.7 4H7.3a2 2 0 0 0-1.8 1.1z"/>
+                </svg>
+              </span>
+              <span class="op-subnav-label">Received</span>
+            </button>
+            <button class="op-subnav-item" data-view="share" id="nav-item-share">
+              <span class="op-subnav-icon">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/>
+                </svg>
+              </span>
+              <span class="op-subnav-label">Share Hub</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Sidebar Bottom Footer -->
+        <div class="op-sidebar-footer">
+          <button class="op-footer-btn" id="btn-toggle-sidebar" title="Collapse Sidebar">
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/>
+            </svg>
+          </button>
+          <button class="op-footer-btn" id="btn-open-settings" data-view="settings" title="Settings">
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+          </button>
+        </div>
+      </aside>
+
+      <!-- ================= PANE 2: SECONDARY CATEGORY SIDEBAR ================= -->
+      <aside class="op-category-sidebar" id="op-category-sidebar">
+        <!-- Top Quick Links -->
+        <div class="op-quick-links">
+          <button class="op-category-pill active" data-cat="recent" id="pill-recent-files">
+            <span>Recent files</span>
+          </button>
+          <button class="op-category-pill" data-cat="all" id="pill-all-files">
+            <span>All files</span>
+          </button>
+        </div>
+
+        <!-- Collapsible Section: Type -->
+        <div class="op-category-group">
+          <div class="op-group-header" data-toggle="type">
+            <span class="op-group-title">Type</span>
+            <span class="op-group-chevron">&#8964;</span>
+          </div>
+          <div class="op-group-body" id="group-type-body">
+            <button class="op-cat-item" data-cat="images" id="cat-images">
+              <span class="op-cat-icon">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="3" width="18" height="18" rx="2.5"/><circle cx="8.5" cy="8.5" r="1.6"/><path d="M21 15.5l-4.5-4.5L5.5 22"/>
+                </svg>
+              </span>
+              <span class="op-cat-label">Images</span>
+              <span class="op-cat-count" id="count-images">0</span>
+            </button>
+            <button class="op-cat-item" data-cat="videos" id="cat-videos">
+              <span class="op-cat-icon">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="2" y="6" width="14" height="12" rx="2.5"/><path d="M16 10.5l6-3.2v9.4l-6-3.2z"/>
+                </svg>
+              </span>
+              <span class="op-cat-label">Videos</span>
+              <span class="op-cat-count" id="count-videos">0</span>
+            </button>
+            <button class="op-cat-item" data-cat="audio" id="cat-audio">
+              <span class="op-cat-icon">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M9 18V5.5l12-2V16"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+                </svg>
+              </span>
+              <span class="op-cat-label">Audio</span>
+              <span class="op-cat-count" id="count-audio">0</span>
+            </button>
+            <button class="op-cat-item" data-cat="documents" id="cat-documents">
+              <span class="op-cat-icon">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M14 2H6.5A2.5 2.5 0 0 0 4 4.5v15A2.5 2.5 0 0 0 6.5 22h11a2.5 2.5 0 0 0 2.5-2.5V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h5"/>
+                </svg>
+              </span>
+              <span class="op-cat-label">Documents</span>
+              <span class="op-cat-count" id="count-documents">0</span>
+            </button>
+            <button class="op-cat-item" data-cat="archives" id="cat-archives">
+              <span class="op-cat-icon">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="2" y="3.5" width="20" height="5" rx="1.5"/><path d="M4 8.5v10A2.5 2.5 0 0 0 6.5 21h11a2.5 2.5 0 0 0 2.5-2.5v-10"/><path d="M10 13h4"/>
+                </svg>
+              </span>
+              <span class="op-cat-label">Archives</span>
+              <span class="op-cat-count" id="count-archives">0</span>
+            </button>
+            <button class="op-cat-item" data-cat="apks" id="cat-apks">
+              <span class="op-cat-icon" style="color: #22c55e;">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                  <path d="M6 10.5a6 6 0 0 1 12 0v5a3.5 3.5 0 0 1-3.5 3.5h-5A3.5 3.5 0 0 1 6 15.5z"/><path d="M8.4 5.2L6.7 2.6" stroke="currentColor" stroke-width="1.8"/><path d="M15.6 5.2l1.7-2.6" stroke="currentColor" stroke-width="1.8"/>
+                </svg>
+              </span>
+              <span class="op-cat-label">APKs</span>
+              <span class="op-cat-count" id="count-apks">0</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Collapsible Section: Sources -->
+        <div class="op-category-group">
+          <div class="op-group-header" data-toggle="sources">
+            <span class="op-group-title">Sources</span>
+            <span class="op-group-chevron">&#8964;</span>
+          </div>
+          <div class="op-group-body" id="group-sources-body">
+            <button class="op-cat-item" data-cat="whatsapp" id="cat-whatsapp">
+              <span class="op-cat-icon" style="color: #25d366;">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                  <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L0 24l6.335-1.662c1.746.953 3.71 1.456 5.711 1.457h.004c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+                </svg>
+              </span>
+              <span class="op-cat-label">WhatsApp</span>
+              <span class="op-cat-count" id="count-whatsapp">0</span>
+            </button>
+            <button class="op-cat-item" data-cat="downloads" id="cat-downloads">
+              <span class="op-cat-icon" style="color: #0284c7;">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>
+                </svg>
+              </span>
+              <span class="op-cat-label">Downloads</span>
+              <span class="op-cat-count" id="count-downloads">0</span>
+            </button>
+            <button class="op-cat-item" data-cat="bluetooth" id="cat-bluetooth">
+              <span class="op-cat-icon" style="color: #3b82f6;">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="6.5 6.5 17.5 17.5 12 23 12 1 17.5 6.5 6.5 17.5"/>
+                </svg>
+              </span>
+              <span class="op-cat-label">Bluetooth</span>
+              <span class="op-cat-count" id="count-bluetooth">0</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Bottom Status -->
+        <div class="op-category-footer">
+          <span class="op-cat-footer-text">Recently ...</span>
+          <span class="op-cat-footer-count" id="count-total-storage">--</span>
+        </div>
+      </aside>
+
+      <!-- ================= PANE 3: MAIN CONTENT WORKSPACE ================= -->
+      <main class="op-main-canvas" id="op-main-canvas">
+
+        <!-- ================= VIEW A: FILES (O+ CONNECT GALLERY) ================= -->
+        <section class="op-view-pane active" id="view-files">
+          <!-- Top Header Row -->
+          <div class="op-canvas-header">
+            <div class="op-canvas-title-group">
+              <button class="op-back-btn" id="btn-files-back" title="Back">&lsaquo;</button>
+              <h2 class="op-canvas-title" id="files-view-title">Recent files</h2>
+            </div>
+            <div class="op-canvas-actions">
+              <button class="op-action-pill" id="btn-header-transfers">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
+                </svg>
+                <span>Transfers</span>
+              </button>
+              <button class="op-btn-primary" id="btn-import-files">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+                <span>Import files</span>
+              </button>
+              <input type="file" id="op-import-file-input" multiple style="display: none;" />
+            </div>
+          </div>
+
+          <!-- Sub-toolbar: Select all, Refresh, Grid/List view -->
+          <div class="op-sub-toolbar">
+            <div class="op-toolbar-left">
+              <label class="op-checkbox-label">
+                <input type="checkbox" id="chk-select-all" />
+                <span class="op-checkbox-custom"></span>
+                <span class="op-select-label-text" id="select-all-label">Select all</span>
+              </label>
+              <!-- Batch Actions (visible when 1+ selected) -->
+              <div class="op-batch-actions" id="batch-actions-bar" style="display: none;">
+                <button class="op-batch-btn" id="btn-batch-download" title="Download to PC">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+                  <span>Download</span>
+                </button>
+                <button class="op-batch-btn op-batch-danger" id="btn-batch-delete" title="Delete from phone">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6l-.9 13.1A2 2 0 0 1 16.1 21H7.9a2 2 0 0 1-2-1.9L5 6"/></svg>
+                  <span>Delete</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="op-toolbar-right">
+              <button class="op-toolbar-btn" id="btn-refresh-files" title="Refresh">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+                </svg>
+                <span>Refresh</span>
+              </button>
+              <div class="op-view-mode-toggles">
+                <button class="op-view-toggle-btn" id="btn-view-list" title="List View">
+                  <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                </button>
+                <button class="op-view-toggle-btn active" id="btn-view-grid" title="Grid View">
+                  <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Path Bar for "All files" directory navigation -->
+          <div class="op-path-bar" id="hero-path-bar" style="display: none;">
+            <button class="op-path-up-btn" id="btn-hero-path-up">&larr; Up</button>
+            <span class="op-path-text" id="hero-path-text">/</span>
+            <button class="op-path-refresh-btn" id="btn-hero-path-refresh">Reload</button>
+          </div>
+
+          <!-- Date-Grouped Gallery Container -->
+          <div class="op-gallery-container" id="op-gallery-container">
+            <!-- Rendered dynamically by app.js: Date headers with checkboxes and file cards -->
+          </div>
+
+          <!-- Legacy / Fallback Lists (Kept for compatibility) -->
+          <div id="hero-thumbnail-grid" style="display: none;"></div>
+          <div id="hero-files-list" style="display: none;"></div>
+        </section>
+
+        <!-- ================= VIEW B: CONNECT / PAIR (WHEN UNCONNECTED) ================= -->
+        <section class="op-view-pane" id="view-pair">
+          <div class="op-pair-canvas-center">
+            <!-- O+ Connect Ultra-Clean Pairing Card -->
+            <div class="op-pair-card">
+              <div class="op-pair-header">
+                <span class="op-pill-tag">FAST PAIR</span>
+                <h3 class="op-pair-title">Quick Link with Phone</h3>
+                <p class="op-pair-subtitle">Scan with LocalShare camera on your phone to instantly link without typing.</p>
+              </div>
+
+              <!-- High-Contrast Clean SVG QR Box -->
+              <div class="op-qr-wrapper">
+                <div id="qr-code-box" class="op-qr-code-box">
+                  <!-- Crisp black-on-white SVG QR code inserted here -->
+                </div>
+              </div>
+
+              <!-- 6-Digit PIN Code Box -->
+              <div class="op-pin-section">
+                <span class="op-pin-label">OR ENTER 6-DIGIT CODE</span>
+                <div class="op-pin-row">
+                  <span id="pairing-code-display" class="op-pin-digits">------</span>
+                  <button id="btn-copy-code" class="op-btn-copy" type="button">Copy</button>
+                </div>
+                <p class="op-pin-hint">Open LocalShare on Phone &gt; Tap &quot;Scan PC QR&quot;</p>
+              </div>
+            </div>
+
+            <!-- Nearby Discovered Devices on LAN -->
+            <div class="op-discovered-section">
+              <div class="op-discovered-header">
+                <h4 class="op-discovered-title">Discovered Devices on LAN</h4>
+                <div class="op-discovered-actions">
+                  <button id="btn-scan" class="op-btn-secondary op-btn-sm">
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="2"/><path d="M12 12l6.4-6.4"/></svg>
+                    <span>Scan Network</span>
+                  </button>
+                  <button id="btn-manual" class="op-btn-secondary op-btn-sm">
+                    <span>Manual IP</span>
                   </button>
                 </div>
               </div>
 
-              <h3 style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.6px; margin: 16px 0 10px; color: var(--primary);">Discovered Devices on LAN</h3>
-              <div id="devices-list" class="devices-grid">
+              <!-- Device Grid List -->
+              <div id="devices-list" class="op-devices-grid">
                 <!-- Populated dynamically -->
               </div>
             </div>
+          </div>
+        </section>
 
-            <!-- Right Column: Quick Pair with Phone Hero Card -->
-            <div class="unconnected-right">
-              <div class="glass-card pair-hero-card">
-                <div class="pair-hero-header">
-                  <span class="chip chip-primary">FAST PAIR</span>
-                  <h3>Quick Link with Phone</h3>
-                  <p>Scan with LocalShare camera on your phone to instantly link without typing.</p>
-                </div>
+        <!-- ================= VIEW C: LIVE CLIPBOARD ================= -->
+        <section class="op-view-pane" id="view-clipboard">
+          <div class="op-clipboard-canvas">
+            <div class="op-canvas-header">
+              <div class="op-canvas-title-group">
+                <h2 class="op-canvas-title">Live Synced Clipboard</h2>
+                <span class="op-badge-live">Real-Time Sync Active</span>
+              </div>
+              <button id="btn-hero-clip" class="op-btn-secondary">
+                <span id="btn-hero-clip-text">Sync: Enabled ✓</span>
+              </button>
+            </div>
 
-                <div class="qr-preview-box">
-                  <div id="qr-code-box" class="qr-code-svg-container">
-                    <!-- Crisp SVG QR code rendered here -->
-                  </div>
-                  <div class="qr-center-icon">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-                  </div>
-                </div>
+            <!-- Quick Send Text to Phone Box -->
+            <div class="op-clip-input-card">
+              <textarea id="clip-send-input" class="op-clip-textarea" placeholder="Type or paste text here to send instantly to phone clipboard..."></textarea>
+              <div class="op-clip-input-footer">
+                <span class="op-clip-hint">Text typed here copies automatically to phone clipboard</span>
+                <button id="btn-send-clipboard" class="op-btn-primary op-btn-sm">Push to Phone</button>
+              </div>
+            </div>
 
-                <div class="pair-code-section">
-                  <span class="pair-code-label">OR ENTER 6-DIGIT CODE</span>
-                  <div class="pair-code-row">
-                    <span id="pairing-code-display" class="pair-code-digits">------</span>
-                    <button id="btn-copy-code" class="btn btn-secondary btn-sm" type="button">Copy</button>
-                  </div>
-                  <p class="pair-hint">Open LocalShare on Phone &gt; Tap &quot;Scan PC QR&quot;</p>
+            <!-- Clipboard History Cards -->
+            <div class="op-clip-history-header">
+              <h4>Recent Clipboard History</h4>
+              <span class="op-clip-count" id="clipboard-history-count">0 items</span>
+            </div>
+            <div id="drawer-clip-list" class="op-clip-list">
+              <!-- Dynamically populated clipboard entries -->
+              <p class="op-empty-text">No clipboard entries captured yet. Copy text on either device to start syncing.</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- ================= VIEW D: SCREENCAST ================= -->
+        <section class="op-view-pane" id="view-screencast">
+          <div class="op-screencast-canvas">
+            <div class="op-canvas-header">
+              <h2 class="op-canvas-title">Screencast & Remote Control</h2>
+            </div>
+            <div class="op-screencast-placeholder">
+              <div class="op-cast-phone-frame">
+                <div class="op-cast-notch"></div>
+                <div class="op-cast-screen-inner">
+                  <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/>
+                  </svg>
+                  <p class="op-cast-text">Device Mirroring Ready</p>
+                  <span class="op-cast-sub">Launch screencast on your phone to mirror phone display here</span>
                 </div>
               </div>
             </div>
           </div>
-        </div>
+        </section>
 
-        <!-- State B: Connected (Live Ecosystem Active) -->
-        <div id="state-connected" style="display: none;">
-          <!-- Top Hero Device Bar -->
-          <div class="hero-device-bar glass-card">
-            <div class="hero-bar-left">
-              <div class="hero-avatar" id="hero-device-avatar">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 10.5a6 6 0 0 1 12 0v5a3.5 3.5 0 0 1-3.5 3.5h-5A3.5 3.5 0 0 1 6 15.5z"/><path d="M8.4 5.2L6.7 2.6"/><path d="M15.6 5.2l1.7-2.6"/><path d="M9.6 10.4h.01"/><path d="M14.4 10.4h.01"/></svg>
+        <!-- ================= VIEW E: TRANSFERS ================= -->
+        <section class="op-view-pane" id="view-transfers">
+          <div class="op-canvas-header">
+            <div>
+              <h2 class="op-canvas-title">Active & Recent Transfers</h2>
+              <p class="op-canvas-sub">High-speed streaming TLS chunk transfers with hardware-accelerated SHA-256 verification.</p>
+            </div>
+          </div>
+          <div id="transfers-list" class="op-transfers-container">
+            <div class="op-empty-card">
+              <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.8">
+                <path d="M3 8.5l4-4 4 4"/><path d="M7 4.5v9"/><path d="M21 15.5l-4 4-4-4"/><path d="M17 19.5v-9"/>
+              </svg>
+              <h3>No Active Transfers</h3>
+              <p>When you send or receive files, real-time speed and progress bars will stream here.</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- ================= VIEW F: RADAR ================= -->
+        <section class="op-view-pane" id="view-radar">
+          <div class="op-canvas-header">
+            <div>
+              <h2 class="op-canvas-title">Radar Discovery</h2>
+              <p class="op-canvas-sub">Live 360-degree radar sweep visualizing peers on your local Wi-Fi subnet.</p>
+            </div>
+          </div>
+          <div class="radar-container">
+            <div class="radar-sweep-box">
+              <div class="radar-ripple radar-ripple-1"></div>
+              <div class="radar-ripple radar-ripple-2"></div>
+              <div class="radar-ring radar-ring-outer"></div>
+              <div class="radar-ring radar-ring-mid"></div>
+              <div class="radar-ring radar-ring-inner"></div>
+              <div class="radar-ticks" id="radar-ticks"></div>
+              <div class="radar-crosshair-h"></div>
+              <div class="radar-crosshair-v"></div>
+              <div class="radar-sweep-arm"></div>
+              <div class="radar-beacon"></div>
+              <div id="radar-blips-container"></div>
+              <span class="radar-range-label radar-range-near">NEAR</span>
+              <span class="radar-range-label radar-range-lan">LAN</span>
+              <span class="radar-range-label radar-range-subnet">SUBNET</span>
+            </div>
+          </div>
+          <div class="telemetry-bar">
+            <div class="telemetry-item">
+              <span class="telemetry-label">Sweep</span>
+              <strong class="telemetry-value" id="telem-sweep">ACTIVE</strong>
+            </div>
+            <div class="telemetry-item">
+              <span class="telemetry-label">Peers</span>
+              <strong class="telemetry-value" id="telem-peers">0</strong>
+            </div>
+            <div class="telemetry-item">
+              <span class="telemetry-label">Subnet</span>
+              <strong class="telemetry-value" id="telem-subnet">--</strong>
+            </div>
+            <div class="telemetry-item">
+              <span class="telemetry-label">TLS Port</span>
+              <strong class="telemetry-value">53318</strong>
+            </div>
+          </div>
+        </section>
+
+        <!-- ================= VIEW G: RECEIVED ================= -->
+        <section class="op-view-pane" id="view-received">
+          <div class="op-canvas-header">
+            <div>
+              <h2 class="op-canvas-title">Received Files</h2>
+              <p class="op-canvas-sub">Files received and verified on your local PC storage.</p>
+            </div>
+            <button id="btn-open-received-folder" class="op-btn-secondary">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+              <span>Open in File Explorer</span>
+            </button>
+          </div>
+          <div id="received-list" class="op-received-grid">
+            <!-- Populated dynamically -->
+          </div>
+        </section>
+
+        <!-- ================= VIEW H: SHARE HUB ================= -->
+        <section class="op-view-pane" id="view-share">
+          <div class="op-canvas-header">
+            <div>
+              <h2 class="op-canvas-title">Share Hub</h2>
+              <p class="op-canvas-sub">Drag and drop files to stage them, choose a recipient device, and transfer directly.</p>
+            </div>
+          </div>
+          <div class="share-hub-grid">
+            <div class="share-column">
+              <div class="op-card-box">
+                <h3 style="font-size: 14px; margin-bottom: 8px;">1. Recipient Device</h3>
+                <div id="selected-peer-box" class="selected-peer-empty">
+                  <p>No recipient selected. Click on a device below:</p>
+                  <div id="recipient-chips" class="recipient-chips-list"></div>
+                </div>
               </div>
-              <div class="hero-device-meta">
-                <div class="hero-name-row">
-                  <h3 id="hero-device-name">Phone Device</h3>
-                  <span class="live-pill">
-                    <span class="live-pulse-dot"></span>
-                    <span>Live Linked</span>
+              <div class="op-card-box dropzone-card" id="dropzone">
+                <div class="dropzone-content">
+                  <span class="dropzone-icon">
+                    <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
                   </span>
+                  <h4>Drag &amp; Drop Files Here</h4>
+                  <p>or click to browse your computer</p>
+                  <input type="file" id="file-input" multiple style="display: none;">
+                  <button id="btn-browse-files" class="op-btn-primary op-btn-sm">Browse Files</button>
                 </div>
-                <p id="hero-device-sub" style="font-size: 11px; color: var(--text-secondary); margin-top: 2px;">192.168.1.100:53318</p>
               </div>
             </div>
-
-            <!-- Real-time Telemetry (Battery & Storage) -->
-            <div class="hero-bar-telemetry">
-              <div class="telem-badge telem-battery" id="hero-battery-badge">
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="6" width="18" height="12" rx="2"/><path d="M23 11v2"/></svg>
-                <span id="hero-battery-text">--%</span>
-              </div>
-              <div class="telem-badge telem-storage" id="hero-storage-badge">
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-                <span id="hero-storage-text">-- GB Free</span>
-              </div>
-            </div>
-
-            <div class="hero-bar-actions">
-              <button id="btn-hero-clip" class="btn btn-secondary btn-sm" type="button">
-                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>
-                <span id="btn-hero-clip-text">Clipboard Synced ✓</span>
-              </button>
-              <button id="btn-hero-disconnect" class="btn btn-danger btn-sm" type="button">Disconnect</button>
-            </div>
-          </div>
-
-          <!-- Connected Quick Drop Zone -->
-          <div class="hero-quick-drop glass-card" id="hero-dropzone">
-            <div class="quick-drop-content">
-              <div class="drop-icon-circle">
-                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
-              </div>
-              <div>
-                <strong style="font-size: 14px;">Drop files anywhere to send to <span id="hero-target-name">Phone</span></strong>
-                <p style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">High-speed streaming over direct LAN TLS sockets</p>
-              </div>
-              <button id="btn-hero-browse" class="btn btn-primary btn-sm">Choose Files</button>
-            </div>
-          </div>
-
-          <!-- Connected Remote Explorer -->
-          <div class="glass-card connected-explorer">
-            <div class="explorer-header-row">
-              <div class="category-tabs">
-                <button class="cat-tab active" data-cat="photos">Photos</button>
-                <button class="cat-tab" data-cat="videos">Videos</button>
-                <button class="cat-tab" data-cat="documents">Documents</button>
-                <button class="cat-tab" data-cat="downloads">Downloads</button>
-                <button class="cat-tab" data-cat="all">All Storage</button>
-              </div>
-              <div class="explorer-search-box">
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20.5 20.5L16.2 16.2"/></svg>
-                <input type="text" id="hero-search-input" placeholder="Search files on phone...">
-                <button id="btn-clear-search" class="btn-icon" style="display: none;">&times;</button>
-              </div>
-            </div>
-
-            <!-- Path Bar for All Storage mode -->
-            <div id="hero-path-bar" class="remote-path-bar" style="display: none; margin-top: 10px;">
-              <button id="btn-hero-path-up" class="btn btn-secondary btn-sm">Up</button>
-              <span id="hero-path-text" class="remote-path-text">/</span>
-              <button id="btn-hero-path-refresh" class="btn btn-secondary btn-sm">Refresh</button>
-            </div>
-
-            <!-- Media Thumbnail Grid (Photos & Videos) -->
-            <div id="hero-thumbnail-grid" class="media-thumbnail-grid">
-              <!-- Populated dynamically -->
-            </div>
-
-            <!-- Document / Storage Files List -->
-            <div id="hero-files-list" class="remote-files-list" style="display: none;">
-              <!-- Populated dynamically -->
-            </div>
-          </div>
-
-          <!-- Collapsible Live Clipboard Drawer -->
-          <div class="glass-card clipboard-drawer" id="hero-clipboard-drawer">
-            <div class="drawer-header" id="drawer-toggle">
-              <div class="drawer-header-left">
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>
-                <strong style="font-size: 13px;">Live Synced Clipboard</strong>
-                <span class="chip chip-primary" id="clipboard-history-count">0 items</span>
-              </div>
-              <svg id="drawer-arrow" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="transition: transform 0.2s;"><path d="M6 9l6 6 6-6"/></svg>
-            </div>
-            <div class="drawer-content" id="drawer-body">
-              <div id="drawer-clip-list" class="drawer-clip-list">
-                <p style="padding: 12px; font-size: 12px; color: var(--text-muted);">No clipboard history recorded yet.</p>
+            <div class="share-column">
+              <div class="op-card-box staged-card">
+                <div class="staged-header">
+                  <h3 style="font-size: 14px;">Staged Files (<span id="staged-count">0</span>)</h3>
+                  <span id="staged-size" class="op-pill-tag">0 B</span>
+                </div>
+                <ul id="staged-list" class="staged-file-list">
+                  <li class="empty-list-notice">No files staged yet.</li>
+                </ul>
+                <button id="btn-send-files" class="op-btn-primary op-btn-block" disabled>
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+                  <span>Send Files</span>
+                </button>
               </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <!-- Radar Tab -->
-      <section id="tab-radar" class="tab-pane">
-        <header class="pane-header">
-          <div>
-            <h2>Radar Discovery</h2>
-            <p>Live 360-degree radar sweep visualizing peers on your local Wi-Fi subnet.</p>
-          </div>
-        </header>
-
-        <div class="radar-container">
-          <div class="radar-sweep-box">
-            <div class="radar-ripple radar-ripple-1"></div>
-            <div class="radar-ripple radar-ripple-2"></div>
-            <div class="radar-ring radar-ring-outer"></div>
-            <div class="radar-ring radar-ring-mid"></div>
-            <div class="radar-ring radar-ring-inner"></div>
-            <div class="radar-ticks" id="radar-ticks"></div>
-            <div class="radar-crosshair-h"></div>
-            <div class="radar-crosshair-v"></div>
-            <div class="radar-sweep-arm"></div>
-            <div class="radar-beacon"></div>
-            <div id="radar-blips-container"></div>
-            <span class="radar-range-label radar-range-near">NEAR</span>
-            <span class="radar-range-label radar-range-lan">LAN</span>
-            <span class="radar-range-label radar-range-subnet">SUBNET</span>
-          </div>
-        </div>
-
-        <div class="telemetry-bar glass-card">
-          <div class="telemetry-item">
-            <span class="telemetry-label">Sweep</span>
-            <strong class="telemetry-value" id="telem-sweep">ACTIVE</strong>
-          </div>
-          <div class="telemetry-item">
-            <span class="telemetry-label">Peers</span>
-            <strong class="telemetry-value" id="telem-peers">0</strong>
-          </div>
-          <div class="telemetry-item">
-            <span class="telemetry-label">Subnet</span>
-            <strong class="telemetry-value" id="telem-subnet">--</strong>
-          </div>
-          <div class="telemetry-item">
-            <span class="telemetry-label">TLS Port</span>
-            <strong class="telemetry-value">53318</strong>
-          </div>
-        </div>
-      </section>
-
-      <!-- Share Hub Tab -->
-      <section id="tab-share" class="tab-pane">
-        <header class="pane-header">
-          <div>
-            <h2>Share Hub</h2>
-            <p>Drag and drop files to stage them, choose a recipient device, and transfer directly.</p>
-          </div>
-        </header>
-
-        <div class="share-hub-grid">
-          <div class="share-column">
-            <div class="glass-card">
-              <h3>1. Recipient Device</h3>
-              <div id="selected-peer-box" class="selected-peer-empty">
-                <p>No recipient selected. Click on a device below:</p>
-                <div id="recipient-chips" class="recipient-chips-list"></div>
-              </div>
+        <!-- ================= VIEW I: SETTINGS ================= -->
+        <section class="op-view-pane" id="view-settings">
+          <div class="op-canvas-header">
+            <div>
+              <h2 class="op-canvas-title">Settings &amp; Customization</h2>
+              <p class="op-canvas-sub">Choose theme palettes and view desktop network configuration.</p>
             </div>
+          </div>
 
-            <div class="glass-card dropzone-card" id="dropzone">
-              <div class="dropzone-content">
-                <span class="dropzone-icon">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
-                </span>
-                <h4>Drag & Drop Files Here</h4>
-                <p>or click to browse your computer</p>
-                <input type="file" id="file-input" multiple style="display: none;">
-                <button id="btn-browse-files" class="btn btn-primary">Browse Files</button>
+          <div class="op-card-box" style="margin-bottom: 20px;">
+            <h3 style="font-size: 15px; margin-bottom: 4px;">Appearance &amp; Theme</h3>
+            <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 16px;">Select your tailored desktop palette. Changes apply immediately.</p>
+            <div class="theme-grid">
+              <div class="theme-card active" data-theme-id="daylight">
+                <div class="theme-card-header">
+                  <strong>O+ Light (Daylight)</strong>
+                  <span class="op-pill-tag">Recommended</span>
+                </div>
+                <p>Crisp, elegant O+ Connect aesthetics with electric blue accents</p>
+                <div class="swatches">
+                  <span style="background: #ffffff; border: 1px solid #e5e7eb;"></span>
+                  <span style="background: #f3f4f6;"></span>
+                  <span style="background: #1677ff;"></span>
+                  <span style="background: #10b981;"></span>
+                </div>
+              </div>
+
+              <div class="theme-card" data-theme-id="midnight">
+                <div class="theme-card-header">
+                  <strong>Midnight Slate</strong>
+                  <span class="op-pill-tag">Dark</span>
+                </div>
+                <p>Deep navy-slate with electric cyan accents</p>
+                <div class="swatches">
+                  <span style="background: #0a0f1d;"></span>
+                  <span style="background: #1e293b;"></span>
+                  <span style="background: #38bdf8;"></span>
+                  <span style="background: #818cf8;"></span>
+                </div>
+              </div>
+
+              <div class="theme-card" data-theme-id="obsidian">
+                <div class="theme-card-header">
+                  <strong>OLED Obsidian</strong>
+                  <span class="op-pill-tag">Pure Black</span>
+                </div>
+                <p>100% true black for AMOLED battery conservation</p>
+                <div class="swatches">
+                  <span style="background: #000000;"></span>
+                  <span style="background: #141414;"></span>
+                  <span style="background: #00f2fe;"></span>
+                  <span style="background: #00e676;"></span>
+                </div>
+              </div>
+
+              <div class="theme-card" data-theme-id="cyberpunk">
+                <div class="theme-card-header">
+                  <strong>Cyber Neon</strong>
+                  <span class="op-pill-tag">High Voltage</span>
+                </div>
+                <p>Ultraviolet, hot magenta and neon purple</p>
+                <div class="swatches">
+                  <span style="background: #0c0717;"></span>
+                  <span style="background: #23133c;"></span>
+                  <span style="background: #f43f5e;"></span>
+                  <span style="background: #c084fc;"></span>
+                </div>
               </div>
             </div>
           </div>
 
-          <div class="share-column">
-            <div class="glass-card staged-card">
-              <div class="staged-header">
-                <h3>Staged Files (<span id="staged-count">0</span>)</h3>
-                <span id="staged-size" class="chip chip-primary">0 B</span>
-              </div>
-              <ul id="staged-list" class="staged-file-list">
-                <li class="empty-list-notice">No files staged yet.</li>
-              </ul>
-              <button id="btn-send-files" class="btn btn-primary btn-block" disabled>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
-                <span>Send Files</span>
-              </button>
+          <div class="op-card-box">
+            <h3 style="font-size: 15px; margin-bottom: 12px;">System Identity &amp; Ports</h3>
+            <div class="info-table">
+              <div class="info-row"><span>Host Name</span><strong id="info-hostname">...</strong></div>
+              <div class="info-row"><span>Local IP Address</span><strong id="info-ip">...</strong></div>
+              <div class="info-row"><span>Direct TLS Port</span><strong>53318</strong></div>
+              <div class="info-row"><span>LocalSend Port</span><strong>53317</strong></div>
+              <div class="info-row"><span>Downloads Folder</span><strong id="info-folder">...</strong></div>
+              <div class="info-row"><span>Version</span><strong style="color: var(--primary);">v1.2.84</strong></div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <!-- Transfers Tab -->
-      <section id="tab-transfers" class="tab-pane">
-        <header class="pane-header">
-          <div>
-            <h2>Active & Recent Transfers</h2>
-            <p>Real-time streaming TLS transfer sessions with chunk verification.</p>
-          </div>
-        </header>
+      </main>
+    </div>
+  </div>
 
-        <div id="transfers-list" class="transfers-container">
-          <div class="empty-state">
-            <span class="empty-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l4-4 4 4"/><path d="M7 4.5v9"/><path d="M21 15.5l-4 4-4-4"/><path d="M17 19.5v-9"/></svg>
-            </span>
-            <h3>No Active Transfers</h3>
-            <p>When you send or receive files, real-time progress will stream here.</p>
-          </div>
-        </div>
-      </section>
-
-      <!-- Received Files Tab -->
-      <section id="tab-received" class="tab-pane">
-        <header class="pane-header">
-          <div>
-            <h2>Received Files</h2>
-            <p>Files received and verified on your local PC storage.</p>
-          </div>
-          <button id="btn-open-received-folder" class="btn btn-secondary">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-            <span>Open in File Explorer</span>
-          </button>
-        </header>
-
-        <div id="received-list" class="received-grid">
-          <!-- Populated dynamically -->
-        </div>
-      </section>
-
-      <!-- Remote Files Tab -->
-      <section id="tab-remotefiles" class="tab-pane">
-        <header class="pane-header">
-          <div>
-            <h2>Remote File Explorer</h2>
-            <p>Browse, preview, copy, and delete files on a paired phone or PC over the LAN.</p>
-          </div>
-          <div class="header-actions">
-            <button id="btn-remote-clipboard-push" class="btn btn-secondary">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1.5"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>
-              <span>Push Clipboard</span>
-            </button>
-            <button id="btn-remote-clipboard-pull" class="btn btn-secondary">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
-              <span>Pull Clipboard</span>
-            </button>
-          </div>
-        </header>
-
-        <div class="glass-card">
-          <h3>Target Device</h3>
-          <div id="remote-peer-chips" class="recipient-chips-list">
-            <p style="font-size: 13px; color: var(--text-muted);">No peers detected. Scan the network from the Devices tab.</p>
-          </div>
-        </div>
-
-        <div class="remote-path-bar">
-          <button id="btn-remote-up" class="btn btn-secondary">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="M6 11l6-6 6 6"/></svg>
-            <span>Up</span>
-          </button>
-          <span id="remote-current-path" class="remote-path-text">Select a device</span>
-          <button id="btn-remote-refresh" class="btn btn-secondary">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 12a8.5 8.5 0 1 1-2.6-6.1"/><path d="M21 3.5V9h-5.5"/></svg>
-            <span>Refresh</span>
-          </button>
-        </div>
-
-        <div id="remote-files-list" class="remote-files-list">
-          <div class="empty-state" style="padding: 32px; text-align: center;">
-            <span class="empty-icon" style="display: block; margin-bottom: 8px;">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M8 12.5h8"/><path d="M8 16h5"/></svg>
-            </span>
-            <h3>No device selected</h3>
-            <p style="color: var(--text-secondary); margin-top: 4px;">Pick a discovered device above to browse its files.</p>
-          </div>
-        </div>
-      </section>
-
-      <!-- Settings Tab -->
-      <section id="tab-settings" class="tab-pane">
-        <header class="pane-header">
-          <div>
-            <h2>Settings & Customization</h2>
-            <p>Choose theme palettes and view desktop network configuration.</p>
-          </div>
-        </header>
-
-        <div class="glass-card">
-          <h3>Appearance & Theme</h3>
-          <p class="card-subtitle">Select your tailored desktop palette. Changes apply immediately.</p>
-          <div class="theme-grid">
-            <div class="theme-card active" data-theme-id="midnight">
-              <div class="theme-card-header">
-                <strong>Midnight Slate</strong>
-                <span class="chip chip-primary">Default</span>
-              </div>
-              <p>Deep navy-slate with electric cyan accents</p>
-              <div class="swatches">
-                <span style="background: #0a0f1d;"></span>
-                <span style="background: #1e293b;"></span>
-                <span style="background: #38bdf8;"></span>
-                <span style="background: #818cf8;"></span>
-              </div>
-            </div>
-
-            <div class="theme-card" data-theme-id="obsidian">
-              <div class="theme-card-header">
-                <strong>OLED Obsidian</strong>
-                <span class="chip chip-primary">Pure Black</span>
-              </div>
-              <p>100% true black for AMOLED battery conservation</p>
-              <div class="swatches">
-                <span style="background: #000000;"></span>
-                <span style="background: #141414;"></span>
-                <span style="background: #00f2fe;"></span>
-                <span style="background: #00e676;"></span>
-              </div>
-            </div>
-
-            <div class="theme-card" data-theme-id="cyberpunk">
-              <div class="theme-card-header">
-                <strong>Cyber Neon</strong>
-                <span class="chip chip-primary">High Voltage</span>
-              </div>
-              <p>Ultraviolet, hot magenta and neon purple</p>
-              <div class="swatches">
-                <span style="background: #0c0717;"></span>
-                <span style="background: #23133c;"></span>
-                <span style="background: #f43f5e;"></span>
-                <span style="background: #c084fc;"></span>
-              </div>
-            </div>
-
-            <div class="theme-card" data-theme-id="daylight">
-              <div class="theme-card-header">
-                <strong>Daylight Pristine</strong>
-                <span class="chip chip-primary">Light Mode</span>
-              </div>
-              <p>Crisp, accessible high-contrast light aesthetics</p>
-              <div class="swatches">
-                <span style="background: #f1f5f9;"></span>
-                <span style="background: #ffffff;"></span>
-                <span style="background: #0284c7;"></span>
-                <span style="background: #6366f1;"></span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="glass-card" style="margin-top: 16px;">
-          <h3>System Identity & Ports</h3>
-          <div class="info-table">
-            <div class="info-row"><span>Host Name</span><strong id="info-hostname">...</strong></div>
-            <div class="info-row"><span>Local IP Address</span><strong id="info-ip">...</strong></div>
-            <div class="info-row"><span>Direct TLS Port</span><strong>53318</strong></div>
-            <div class="info-row"><span>LocalSend Port</span><strong>53317</strong></div>
-            <div class="info-row"><span>Downloads Folder</span><strong id="info-folder">...</strong></div>
-            <div class="info-row"><span>Version</span><strong style="color: var(--primary);">v1.2.84</strong></div>
-          </div>
-        </div>
-      </section>
-    </main>
+  <!-- Hidden Compatibility Mounts for Legacy Elements / Listeners -->
+  <div style="display: none;" aria-hidden="true">
+    <span id="self-ip">127.0.0.1:53318</span>
+    <span id="self-device-name">Windows PC</span>
+    <span id="self-device-details">127.0.0.1:53318</span>
+    <span id="telemetry-lan-ip">--</span>
+    <span id="telemetry-ports">53318 / 53317</span>
+    <span id="telemetry-peer-count">0</span>
+    <button id="btn-telemetry-clipboard"></button>
+    <button id="btn-telemetry-scan"></button>
+    <div id="live-connection-banner"></div>
+    <span id="live-banner-peer">Device</span>
+    <button id="live-banner-clip-btn"></button>
+    <button id="live-banner-disconnect-btn"></button>
+    <div id="state-unconnected"></div>
+    <div id="state-connected"></div>
+    <div id="hero-device-avatar"></div>
+    <span id="hero-device-name">Phone</span>
+    <span id="hero-device-sub">192.168.1.100</span>
+    <div id="hero-battery-badge"></div>
+    <span id="hero-battery-text">--%</span>
+    <div id="hero-storage-badge"></div>
+    <span id="hero-storage-text">-- GB</span>
+    <button id="btn-hero-disconnect"></button>
+    <div id="hero-dropzone"></div>
+    <span id="hero-target-name">Phone</span>
+    <button id="btn-hero-browse"></button>
+    <input type="text" id="hero-search-input" />
+    <button id="btn-clear-search"></button>
+    <div id="hero-clipboard-drawer"></div>
+    <div id="drawer-toggle"></div>
+    <div id="drawer-arrow"></div>
+    <div id="drawer-body"></div>
+    <button id="btn-open-folder"></button>
+    <span id="devices-badge">0</span>
+    <div id="remote-peer-chips"></div>
+    <button id="btn-remote-up"></button>
+    <span id="remote-current-path">/</span>
+    <button id="btn-remote-refresh"></button>
+    <div id="remote-files-list"></div>
+    <button id="btn-remote-clipboard-push"></button>
+    <button id="btn-remote-clipboard-pull"></button>
+    <!-- Legacy nav-item buttons for querySelectorAll('.nav-item') -->
+    <div class="nav-menu">
+      <button class="nav-item" data-tab="devices"></button>
+      <button class="nav-item" data-tab="radar"></button>
+      <button class="nav-item" data-tab="share"></button>
+      <button class="nav-item" data-tab="transfers"></button>
+      <button class="nav-item" data-tab="received"></button>
+      <button class="nav-item" data-tab="remotefiles"></button>
+      <button class="nav-item" data-tab="settings"></button>
+    </div>
+    <div id="tab-devices" class="tab-pane"></div>
+    <div id="tab-radar" class="tab-pane"></div>
+    <div id="tab-share" class="tab-pane"></div>
+    <div id="tab-transfers" class="tab-pane"></div>
+    <div id="tab-received" class="tab-pane"></div>
+    <div id="tab-remotefiles" class="tab-pane"></div>
+    <div id="tab-settings" class="tab-pane"></div>
   </div>
 
   <!-- Manual IP Modal -->
@@ -570,8 +767,8 @@
       <input type="text" id="manual-port-input" class="form-input" placeholder="Port (default: 53318)" value="53318">
       <input type="text" id="manual-name-input" class="form-input" placeholder="Device Name (optional)">
       <div class="modal-actions">
-        <button id="btn-cancel-manual" class="btn btn-secondary">Cancel</button>
-        <button id="btn-confirm-manual" class="btn btn-primary">Connect</button>
+        <button id="btn-cancel-manual" class="op-btn-secondary">Cancel</button>
+        <button id="btn-confirm-manual" class="op-btn-primary">Connect</button>
       </div>
     </div>
   </div>
@@ -582,7 +779,7 @@
       <h3 id="preview-title">Preview</h3>
       <div id="preview-body" class="preview-body"></div>
       <div class="modal-actions">
-        <button id="btn-close-preview" class="btn btn-secondary">Close</button>
+        <button id="btn-close-preview" class="op-btn-secondary">Close</button>
       </div>
     </div>
   </div>
@@ -594,8 +791,8 @@
       <p id="incoming-summary">A nearby device wants to send you files.</p>
       <ul id="incoming-file-list" class="staged-file-list"></ul>
       <div class="modal-actions">
-        <button id="btn-reject-incoming" class="btn btn-secondary">Decline</button>
-        <button id="btn-accept-incoming" class="btn btn-primary">Accept</button>
+        <button id="btn-reject-incoming" class="op-btn-secondary">Decline</button>
+        <button id="btn-accept-incoming" class="op-btn-primary">Accept</button>
       </div>
     </div>
   </div>
@@ -625,11 +822,11 @@
         <!-- Rendered image / video -->
       </div>
       <div class="lightbox-footer">
-        <button id="btn-lightbox-download" class="btn btn-primary">
+        <button id="btn-lightbox-download" class="op-btn-primary">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
           <span>Download to PC</span>
         </button>
-        <button id="btn-lightbox-delete" class="btn btn-danger">
+        <button id="btn-lightbox-delete" class="op-btn-danger">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6l-.9 13.1A2 2 0 0 1 16.1 21H7.9a2 2 0 0 1-2-1.9L5 6"/></svg>
           <span>Delete from Phone</span>
         </button>
