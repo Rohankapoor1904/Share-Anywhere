@@ -106,19 +106,21 @@ function MainTabNavigator() {
         },
         tabBarStyle: {
           position: 'absolute',
+          bottom: 12,
+          left: 16,
+          right: 16,
           backgroundColor: theme.colors.tabBar,
-          borderTopColor: theme.colors.border,
-          borderTopWidth: 1,
-          borderTopLeftRadius: theme.radii.xl,
-          borderTopRightRadius: theme.radii.xl,
-          height: 68,
-          paddingTop: 8,
-          paddingBottom: 10,
-          elevation: 18,
+          borderColor: theme.colors.borderHighlight || theme.colors.border,
+          borderWidth: 1,
+          borderRadius: 28,
+          height: 64,
+          paddingTop: 6,
+          paddingBottom: 8,
+          elevation: 20,
           shadowColor: '#000000',
-          shadowOffset: { width: 0, height: -6 },
-          shadowOpacity: 0.28,
-          shadowRadius: 18
+          shadowOffset: { width: 0, height: 10 },
+          shadowOpacity: 0.35,
+          shadowRadius: 20
         },
         tabBarShowLabel: false,
         tabBarActiveTintColor: theme.colors.tabBarActive,
@@ -139,23 +141,18 @@ function MainTabNavigator() {
       <Tab.Screen
         name="Devices"
         component={DevicesScreen}
-        options={{ tabBarLabel: 'Devices', tabBarIcon: tabBarIcon('devices') }}
-      />
-      <Tab.Screen
-        name="ShareHub"
-        component={ShareHubScreen}
-        options={{ tabBarLabel: 'Share', tabBarIcon: tabBarIcon('share') }}
+        options={{ tabBarLabel: 'Home', tabBarIcon: tabBarIcon('devices') }}
       />
       <Tab.Screen
         name="Files"
         component={RemoteExplorerScreen}
-        options={{ tabBarLabel: 'Files', tabBarIcon: tabBarIcon('files') }}
+        options={{ tabBarLabel: 'Browse', tabBarIcon: tabBarIcon('files') }}
       />
       <Tab.Screen
         name="Transfers"
         component={TransfersScreen}
         options={{
-          tabBarLabel: 'Transfers',
+          tabBarLabel: 'Activity',
           tabBarBadge: activeTransfersCount > 0 ? activeTransfersCount : undefined,
           tabBarIcon: tabBarIcon('transfers')
         }}
@@ -182,6 +179,7 @@ export default function AppNavigator() {
     >
       <Stack.Screen name="Permissions" component={PermissionsScreen} />
       <Stack.Screen name="Main" component={MainTabNavigator} />
+      <Stack.Screen name="ShareHub" component={ShareHubScreen} />
       <Stack.Screen name="Radar" component={RadarScreen} />
       <Stack.Screen name="Received" component={ReceivedScreen} />
     </Stack.Navigator>

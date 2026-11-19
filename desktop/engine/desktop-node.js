@@ -114,6 +114,10 @@ class DesktopEngine {
     this.liveClipboardEnabled = true;
     this.lastClipboardHash = null;
     this.clipboardPollInterval = null;
+    this.clipboardHistory = [];
+    this.autoReconnect = true;
+    this.lastConnectedPeer = this.loadLastConnectedPeer();
+    this.pairingCode = String(Math.floor(100000 + Math.random() * 900000));
 
     this.localIp = getPrimaryLocalIp();
     this.localIps = getAllLocalIps();
@@ -169,6 +173,52 @@ class DesktopEngine {
     return this.clipboardAdapter ? this.clipboardAdapter.writeText(text) : setSystemClipboard(text);
   }
 
+  addClipboardHistory(text, hash, sender = 'local') {
+    if (!text || typeof text !== 'string') return;
+    const finalHash = hash || crypto.createHash('sha256').update(text).digest('hex');
+    const entry = {
+      text,
+      hash: finalHash,
+      sender,
+      timestamp: Date.now()
+    };
+    this.clipboardHistory = this.clipboardHistory.filter((item) => item.hash !== finalHash);
+    this.clipboardHistory.unshift(entry);
+    if (this.clipboardHistory.length > 15) {
+      this.clipboardHistory.pop();
+    }
+  }
+
+  saveLastConnectedPeer(peer) {
+    if (!peer) return;
+    this.lastConnectedPeer = {
+      deviceId: peer.deviceId,
+      displayName: peer.displayName,
+      fingerprint: peer.fingerprint || '',
+      address: peer.address,
+      port: peer.port
+    };
+    try {
+      const stateFile = path.join(os.homedir(), '.localshare-state.json');
+      fs.writeFileSync(stateFile, JSON.stringify({
+        lastConnectedPeer: this.lastConnectedPeer,
+        autoReconnect: this.autoReconnect
+      }, null, 2));
+    } catch (_) {}
+  }
+
+  loadLastConnectedPeer() {
+    try {
+      const stateFile = path.join(os.homedir(), '.localshare-state.json');
+      if (fs.existsSync(stateFile)) {
+        const data = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+        if (data.autoReconnect !== undefined) this.autoReconnect = data.autoReconnect;
+        return data.lastConnectedPeer || null;
+      }
+    } catch (_) {}
+    return null;
+  }
+
   async start() {
     // 1. Start Native Transfer Gateway (Port 53318 / fallback 53328)
     try {
@@ -219,7 +269,28 @@ class DesktopEngine {
           });
         },
         onClipboardReceived: (clip) => {
-          this.broadcastEvent('clipboard_sync', { text: clip.text, hash: clip.hash });
+          this.lastClipboardHash = clip.hash;
+          this.addClipboardHistory(clip.text, clip.hash, 'remote');
+          this.broadcastEvent('clipboard_sync', {
+            text: clip.text,
+            hash: clip.hash,
+            sender: 'remote',
+            history: this.clipboardHistory
+          });
+        },
+        onLiveConnected: (peer) => {
+          this.connectedPeer = peer;
+          this.peers.set(peer.deviceId, peer);
+          const currentText = this.getClipboardText();
+          if (currentText) {
+            this.lastClipboardHash = crypto.createHash('sha256').update(currentText).digest('hex');
+          }
+          this.saveLastConnectedPeer(peer);
+          this.broadcastEvent('live_connected', { peer: this.connectedPeer });
+        },
+        onLiveDisconnected: () => {
+          this.connectedPeer = null;
+          this.broadcastEvent('live_disconnected', {});
         }
       });
       const bound = await this.transferGateway.start();
@@ -275,11 +346,17 @@ class DesktopEngine {
         const hash = crypto.createHash('sha256').update(text).digest('hex');
         if (hash !== this.lastClipboardHash) {
           this.lastClipboardHash = hash;
-          this.broadcastEvent('clipboard_sync', { text, hash, sender: 'local' });
+          this.addClipboardHistory(text, hash, 'local');
+          this.broadcastEvent('clipboard_sync', {
+            text,
+            hash,
+            sender: 'local',
+            history: this.clipboardHistory
+          });
           this.remotePostJson(this.connectedPeer.address, this.connectedPeer.port, '/v1/clipboard', {
             text,
             hash,
-            sender: this.selfDevice.displayName
+            senderDeviceId: this.selfDevice.deviceId
           }).catch(() => {});
         }
       } catch (_) {}
@@ -456,6 +533,44 @@ class DesktopEngine {
     if (!existing) {
       this.broadcastEvent('peer_found', updated);
     }
+
+    if (this.autoReconnect && !this.connectedPeer && this.lastConnectedPeer) {
+      const match = (this.lastConnectedPeer.deviceId && this.lastConnectedPeer.deviceId === updated.deviceId) ||
+                    (this.lastConnectedPeer.fingerprint && this.lastConnectedPeer.fingerprint === updated.fingerprint);
+      if (match) {
+        this.connectToLivePeer(updated).catch(() => {});
+      }
+    }
+  }
+
+  async connectToLivePeer(peer) {
+    if (!peer || !peer.address) return null;
+    try {
+      const connectRes = await this.remotePostJson(peer.address, peer.port || 53318, '/v1/live/connect', {
+        deviceId: this.selfDevice.deviceId,
+        displayName: this.selfDevice.displayName,
+        address: this.localIp,
+        port: this.selfDevice.port,
+        platform: 'desktop',
+        clipboardSync: true
+      });
+      if (connectRes.statusCode === 200) {
+        this.connectedPeer = peer;
+        if (this.transferGateway) {
+          this.transferGateway.connectedPeer = peer;
+        }
+        if (connectRes.body && connectRes.body.currentClipboard) {
+          const incoming = connectRes.body.currentClipboard;
+          this.lastClipboardHash = crypto.createHash('sha256').update(incoming).digest('hex');
+          this.setClipboardText(incoming);
+          this.addClipboardHistory(incoming, this.lastClipboardHash, 'remote');
+        }
+        this.saveLastConnectedPeer(peer);
+        this.broadcastEvent('live_connected', { peer: this.connectedPeer });
+        return { connected: true, peer: this.connectedPeer };
+      }
+    } catch (_) {}
+    return null;
   }
 
   httpGetFast(targetUrl, timeoutMs = 800) {
@@ -652,11 +767,39 @@ class DesktopEngine {
 
       // API Endpoints
       if (pathname === '/api/self' && method === 'GET') {
+        const qrPayload = JSON.stringify({
+          address: this.localIp,
+          port: this.selfDevice.port,
+          deviceId: this.selfDevice.deviceId,
+          displayName: this.selfDevice.displayName,
+          fingerprint: this.fingerprint,
+          code: this.pairingCode
+        });
+        let qrSvg = '';
+        try {
+          // eslint-disable-next-line global-require
+          const QRCode = require('qrcode');
+          qrSvg = await QRCode.toString(qrPayload, {
+            type: 'svg',
+            margin: 1,
+            color: { dark: '#38bdf8', light: '#00000000' }
+          });
+        } catch (_) {}
+
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
           ...this.selfDevice.toJSON(),
-          storageDir: this.storageDir
+          storageDir: this.storageDir,
+          pairingCode: this.pairingCode,
+          qrPayload,
+          qrSvg
         }));
+        return;
+      }
+
+      if (pathname === '/api/clipboard-history' && method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(this.clipboardHistory));
         return;
       }
 
@@ -800,6 +943,81 @@ class DesktopEngine {
         return;
       }
 
+      if (pathname === '/api/remote-categories' && method === 'GET') {
+        const ip = url.searchParams.get('ip') || (this.connectedPeer ? this.connectedPeer.address : null);
+        const port = parseInt(url.searchParams.get('port'), 10) || (this.connectedPeer ? this.connectedPeer.port : 53318);
+        const type = url.searchParams.get('type') || 'photos';
+        const limit = url.searchParams.get('limit') || '60';
+        const offset = url.searchParams.get('offset') || '0';
+        if (!ip) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'No peer connected or ip supplied' }));
+          return;
+        }
+        const fast = await this.httpGetFast(`http://${ip}:${port}/v1/fs/categories?type=${type}&limit=${limit}&offset=${offset}`, 3000);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(fast || { type, total: 0, entries: [] }));
+        return;
+      }
+
+      if (pathname === '/api/remote-search' && method === 'GET') {
+        const ip = url.searchParams.get('ip') || (this.connectedPeer ? this.connectedPeer.address : null);
+        const port = parseInt(url.searchParams.get('port'), 10) || (this.connectedPeer ? this.connectedPeer.port : 53318);
+        const q = url.searchParams.get('q') || '';
+        if (!ip) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'No peer connected or ip supplied' }));
+          return;
+        }
+        const fast = await this.httpGetFast(`http://${ip}:${port}/v1/fs/search?q=${encodeURIComponent(q)}`, 3000);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(fast || { query: q, count: 0, entries: [] }));
+        return;
+      }
+
+      if (pathname === '/api/remote-telemetry' && method === 'GET') {
+        const ip = url.searchParams.get('ip') || (this.connectedPeer ? this.connectedPeer.address : null);
+        const port = parseInt(url.searchParams.get('port'), 10) || (this.connectedPeer ? this.connectedPeer.port : 53318);
+        if (!ip) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'No peer connected or ip supplied' }));
+          return;
+        }
+        const fast = await this.httpGetFast(`http://${ip}:${port}/v1/telemetry`, 2500);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(fast || { error: 'Telemetry unavailable' }));
+        return;
+      }
+
+      if (pathname === '/api/remote-fs/thumbnail' && method === 'GET') {
+        const ip = url.searchParams.get('ip') || (this.connectedPeer ? this.connectedPeer.address : null);
+        const port = parseInt(url.searchParams.get('port'), 10) || (this.connectedPeer ? this.connectedPeer.port : 53318);
+        const remotePath = url.searchParams.get('path');
+        if (!ip || !remotePath) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Missing ip or path' }));
+          return;
+        }
+        const proxyReq = http.request({
+          hostname: ip,
+          port,
+          path: `/v1/fs/thumbnail?path=${encodeURIComponent(remotePath)}`,
+          method: 'GET',
+          agent: this.httpAgent
+        }, (proxyRes) => {
+          res.writeHead(proxyRes.statusCode, proxyRes.headers);
+          proxyRes.pipe(res);
+        });
+        proxyReq.on('error', () => {
+          if (!res.headersSent) {
+            res.writeHead(502);
+            res.end();
+          }
+        });
+        proxyReq.end();
+        return;
+      }
+
       // Live Link & Bi-directional Clipboard Sync
       if (pathname === '/api/live/connect' && method === 'POST') {
         const body = await this.readJson(req);
@@ -826,7 +1044,9 @@ class DesktopEngine {
             const incoming = connectRes.body.currentClipboard;
             this.lastClipboardHash = crypto.createHash('sha256').update(incoming).digest('hex');
             this.setClipboardText(incoming);
+            this.addClipboardHistory(incoming, this.lastClipboardHash, 'remote');
           }
+          this.saveLastConnectedPeer(peer);
           this.broadcastEvent('live_connected', { peer: this.connectedPeer });
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ connected: true, peer: this.connectedPeer }));

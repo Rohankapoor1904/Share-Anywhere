@@ -97,6 +97,56 @@ export class RemoteFsClient {
   }
 
   /**
+   * Build a thumbnail URL for a remote image/video.
+   * @param {string} path
+   * @param {number} [size=240]
+   * @returns {string}
+   */
+  thumbnailUrl(path, size = 240) {
+    return `${this.baseUrl}/v1/fs/thumbnail?path=${encodeURIComponent(path)}&size=${size}`;
+  }
+
+  /**
+   * Query smart category entries from the peer.
+   * @param {string} [type='photos']
+   * @param {number} [limit=60]
+   * @param {number} [offset=0]
+   * @returns {Promise<{ type: string, total: number, offset: number, limit: number, entries: Array<object> }>}
+   */
+  async categories(type = 'photos', limit = 60, offset = 0) {
+    const res = await fetch(`${this.baseUrl}/v1/fs/categories?type=${encodeURIComponent(type)}&limit=${limit}&offset=${offset}`);
+    if (!res.ok) {
+      throw new Error(`Categories fetch failed: HTTP ${res.status}`);
+    }
+    return res.json();
+  }
+
+  /**
+   * Search files on the remote peer by filename query.
+   * @param {string} q
+   * @returns {Promise<{ query: string, count: number, entries: Array<object> }>}
+   */
+  async search(q) {
+    const res = await fetch(`${this.baseUrl}/v1/fs/search?q=${encodeURIComponent(q || '')}`);
+    if (!res.ok) {
+      throw new Error(`Search failed: HTTP ${res.status}`);
+    }
+    return res.json();
+  }
+
+  /**
+   * Fetch live hardware & storage telemetry from the peer.
+   * @returns {Promise<object>}
+   */
+  async telemetry() {
+    const res = await fetch(`${this.baseUrl}/v1/telemetry`);
+    if (!res.ok) {
+      throw new Error(`Telemetry fetch failed: HTTP ${res.status}`);
+    }
+    return res.json();
+  }
+
+  /**
    * Pull a remote file into this device's Downloads/LocalShare folder.
    * @param {string} path
    * @param {string} fileName

@@ -1,4 +1,5 @@
 import { Platform, AppState } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { EngineEventEmitter, EngineEventType } from './EngineEvents';
 import { TrustStore } from './trustStore';
 import { PairingEngine } from './pairing';
@@ -113,9 +114,56 @@ export class LocalShareNode {
     this.nativeUnsub = null;
     this.connectedPeer = null;
     this.liveClipboardEnabled = true;
+    this.autoReconnectEnabled = true;
+    this.lastConnectedPeer = null;
+    this.clipboardHistory = [];
     this.pingIntervalId = null;
     this.lastClipboardHash = '';
     this.appStateSub = null;
+    this.loadLastConnectedPeer().catch(() => {});
+  }
+
+  async loadLastConnectedPeer() {
+    try {
+      const saved = await AsyncStorage.getItem('@localshare:last_connected_peer');
+      if (saved) {
+        this.lastConnectedPeer = JSON.parse(saved);
+      }
+      const autoVal = await AsyncStorage.getItem('@localshare:auto_reconnect');
+      if (autoVal !== null) {
+        this.autoReconnectEnabled = autoVal === 'true';
+      }
+    } catch (_) {}
+  }
+
+  addClipboardHistory(text, hash, sender = 'local') {
+    if (!text || typeof text !== 'string') return;
+    const finalHash = hash || text;
+    const entry = {
+      text,
+      hash: finalHash,
+      sender,
+      timestamp: Date.now()
+    };
+    this.clipboardHistory = this.clipboardHistory.filter((item) => item.hash !== finalHash);
+    this.clipboardHistory.unshift(entry);
+    if (this.clipboardHistory.length > 15) {
+      this.clipboardHistory.pop();
+    }
+    this.events.emit('CLIPBOARD_HISTORY_UPDATED', this.clipboardHistory);
+  }
+
+  async fetchPeerTelemetry(peer = this.connectedPeer) {
+    if (!peer || !peer.address) return null;
+    try {
+      const res = await fetch(`http://${peer.address}:${peer.port || 53318}/v1/telemetry`);
+      if (res.ok) {
+        const data = await res.json();
+        this.events.emit('LIVE_TELEMETRY_UPDATED', { peer, telemetry: data });
+        return data;
+      }
+    } catch (_) {}
+    return null;
   }
 
   getSelfDevice() {
@@ -185,6 +233,7 @@ export class LocalShareNode {
         if (!this.connectedPeer || !this.liveClipboardEnabled) return;
         if (hash && hash === this.lastClipboardHash) return;
         this.lastClipboardHash = hash;
+        this.addClipboardHistory(text, hash, 'local');
         try {
           await fetch(`http://${this.connectedPeer.address}:${this.connectedPeer.port}/v1/clipboard`, {
             method: 'POST',
@@ -203,6 +252,7 @@ export class LocalShareNode {
       },
       onClipboardSynced: ({ text, hash, senderDeviceId }) => {
         this.lastClipboardHash = hash;
+        this.addClipboardHistory(text, hash, 'remote');
         this.events.emit('CLIPBOARD_SYNCED', { text, hash, senderDeviceId });
       },
       onLivePeerConnected: (peerInfo) => {
@@ -553,6 +603,14 @@ export class LocalShareNode {
     } else {
       this.events.emit(EngineEventType.PEER_FOUND, updated);
     }
+
+    if (this.autoReconnectEnabled && !this.connectedPeer && this.lastConnectedPeer) {
+      const match = (this.lastConnectedPeer.deviceId && this.lastConnectedPeer.deviceId === updated.deviceId) ||
+                    (this.lastConnectedPeer.fingerprint && this.lastConnectedPeer.fingerprint === updated.fingerprint);
+      if (match) {
+        this.connectToPeer(updated).catch(() => {});
+      }
+    }
   }
 
   _handlePeerLost(peerId) {
@@ -664,9 +722,20 @@ export class LocalShareNode {
     const data = await res.json();
     this.connectedPeer = peer;
     this.refreshPeerLastSeen(peer.deviceId);
+    this.lastConnectedPeer = {
+      deviceId: peer.deviceId,
+      displayName: peer.displayName,
+      fingerprint: peer.fingerprint || '',
+      address: peer.address,
+      port: peer.port
+    };
+    try {
+      await AsyncStorage.setItem('@localshare:last_connected_peer', JSON.stringify(this.lastConnectedPeer));
+    } catch (_) {}
     if (data.currentClipboard) {
       try {
         await NativeBridge.setClipboardText(data.currentClipboard);
+        this.addClipboardHistory(data.currentClipboard, null, 'remote');
       } catch (err) {
         logger.warn('Failed to set initial clipboard text on live connect:', err);
       }
@@ -675,6 +744,7 @@ export class LocalShareNode {
     if (NativeBridge.isAvailable()) {
       NativeBridge.startClipboardMonitoring();
     }
+    this.fetchPeerTelemetry(peer).catch(() => {});
     this.events.emit('LIVE_STATUS_CHANGED', { connected: true, peer });
     return data;
   }

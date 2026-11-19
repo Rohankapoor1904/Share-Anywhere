@@ -6,6 +6,7 @@ import AppNavigator from './src/navigation/AppNavigator';
 import { LocalShareProvider, useLocalShare } from './src/engine/providers';
 import { LocalShareNode } from './src/engine/LocalShareNode';
 import PinDialog from './src/components/PinDialog';
+import ToastBanner from './src/components/ToastBanner';
 import { ThemeProvider, useTheme } from './src/theme';
 import { defaultLogger } from './src/utils/logger';
 
@@ -26,12 +27,14 @@ function GlobalPinChallengeModal() {
 
 function MainNavigationShell() {
   const { navTheme, theme } = useTheme();
+  const { toastMessage, showToast } = useLocalShare();
 
   return (
     <NavigationContainer theme={navTheme}>
       <StatusBar style={theme.colors.statusBarStyle} />
       <AppNavigator />
       <GlobalPinChallengeModal />
+      <ToastBanner message={toastMessage} onDismiss={() => showToast(null)} />
     </NavigationContainer>
   );
 }

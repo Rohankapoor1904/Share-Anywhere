@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -15,8 +15,17 @@ import GlassCard from '../components/GlassCard';
 import { formatBytes } from '../utils/byteFormat';
 
 export default function SettingsScreen() {
-  const { settings, updateSettings, selfDevice } = useLocalShare();
+  const {
+    settings,
+    updateSettings,
+    selfDevice,
+    autoReconnect,
+    toggleAutoReconnect,
+    liveClipboardEnabled,
+    toggleLiveClipboard
+  } = useLocalShare();
   const { theme, themeId, setThemeId, availableThemes } = useTheme();
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
 
   const handleToggleAutoAcceptTrusted = (val) => {
     updateSettings({ autoAcceptTrusted: val });
@@ -43,9 +52,47 @@ export default function SettingsScreen() {
         <View style={styles.header}>
           <Text style={[styles.headerTitle, { color: theme.colors.text }]}>Settings & Customization</Text>
           <Text style={[styles.headerSubtitle, { color: theme.colors.textSecondary }]}>
-            Personalize themes, security policies, and network performance.
+            Personalize themes, live ecosystem sync, security policies, and diagnostics.
           </Text>
         </View>
+
+        {/* Live Ecosystem & Automation Card */}
+        <GlassCard style={styles.card}>
+          <Text style={[styles.sectionTitle, { color: theme.colors.primary }]}>Live Ecosystem & Sync</Text>
+          <Text style={[styles.sectionSubtitle, { color: theme.colors.textSecondary }]}>
+            Automatic background linking and seamless clipboard continuity.
+          </Text>
+
+          <View style={styles.settingRow}>
+            <View style={styles.settingTextContainer}>
+              <Text style={[styles.settingLabel, { color: theme.colors.text }]}>Auto-Reconnect to Trusted Devices</Text>
+              <Text style={[styles.settingDesc, { color: theme.colors.textSecondary }]}>
+                Automatically connect to your paired PC when spotted on the same Wi-Fi network.
+              </Text>
+            </View>
+            <Switch
+              value={!!autoReconnect}
+              onValueChange={toggleAutoReconnect}
+              trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
+              thumbColor={autoReconnect ? '#ffffff' : theme.colors.textMuted}
+            />
+          </View>
+
+          <View style={[styles.settingRow, styles.borderTop, { borderTopColor: theme.colors.border }]}>
+            <View style={styles.settingTextContainer}>
+              <Text style={[styles.settingLabel, { color: theme.colors.text }]}>Live Clipboard Auto-Sync</Text>
+              <Text style={[styles.settingDesc, { color: theme.colors.textSecondary }]}>
+                Seamlessly mirror copied text between Phone and PC with echo loop suppression.
+              </Text>
+            </View>
+            <Switch
+              value={!!liveClipboardEnabled}
+              onValueChange={toggleLiveClipboard}
+              trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
+              thumbColor={liveClipboardEnabled ? '#ffffff' : theme.colors.textMuted}
+            />
+          </View>
+        </GlassCard>
 
         {/* Theme & Appearance Card */}
         <GlassCard style={styles.card}>
@@ -177,29 +224,54 @@ export default function SettingsScreen() {
           </View>
         </GlassCard>
 
-        {/* Device & Identity Info Card */}
+        {/* Collapsible Advanced Diagnostics Card */}
         <GlassCard style={styles.card}>
-          <Text style={[styles.sectionTitle, { color: theme.colors.primary }]}>Identity Information</Text>
-          <View style={styles.infoRow}>
-            <Text style={[styles.infoKey, { color: theme.colors.textSecondary }]}>Device Name</Text>
-            <Text style={[styles.infoVal, { color: theme.colors.text }]}>{selfDevice.displayName}</Text>
-          </View>
-          <View style={styles.infoRow}>
-            <Text style={[styles.infoKey, { color: theme.colors.textSecondary }]}>Device ID</Text>
-            <Text style={[styles.infoVal, { color: theme.colors.text }]}>{selfDevice.deviceId}</Text>
-          </View>
-          <View style={styles.infoRow}>
-            <Text style={[styles.infoKey, { color: theme.colors.textSecondary }]}>Direct TLS Port</Text>
-            <Text style={[styles.infoVal, { color: theme.colors.text }]}>{selfDevice.port}</Text>
-          </View>
-          <View style={styles.infoRow}>
-            <Text style={[styles.infoKey, { color: theme.colors.textSecondary }]}>LocalSend Port</Text>
-            <Text style={[styles.infoVal, { color: theme.colors.text }]}>53317</Text>
-          </View>
-          <View style={styles.infoRow}>
-            <Text style={[styles.infoKey, { color: theme.colors.textSecondary }]}>Engine Version</Text>
-            <Text style={[styles.infoVal, { color: theme.colors.primary }]}>v1.2.84</Text>
-          </View>
+          <TouchableOpacity
+            style={styles.diagnosticsHeader}
+            onPress={() => setShowDiagnostics((prev) => !prev)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.diagnosticsHeaderLeft}>
+              <Text style={[styles.sectionTitle, { color: theme.colors.primary, marginBottom: 0 }]}>
+                Advanced & Diagnostics
+              </Text>
+              <Text style={[styles.diagnosticsSub, { color: theme.colors.textSecondary }]}>
+                Hardware ports, device IDs, and engine details
+              </Text>
+            </View>
+            <Icon
+              name="arrow-down"
+              size={16}
+              color={theme.colors.primary}
+              strokeWidth={2.4}
+              style={{ transform: [{ rotate: showDiagnostics ? '180deg' : '0deg' }] }}
+            />
+          </TouchableOpacity>
+
+          {showDiagnostics ? (
+            <View style={styles.diagnosticsBody}>
+              <View style={styles.infoRow}>
+                <Text style={[styles.infoKey, { color: theme.colors.textSecondary }]}>Device Name</Text>
+                <Text style={[styles.infoVal, { color: theme.colors.text }]}>{selfDevice.displayName}</Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={[styles.infoKey, { color: theme.colors.textSecondary }]}>Device ID</Text>
+                <Text style={[styles.infoVal, { color: theme.colors.text }]}>{selfDevice.deviceId}</Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={[styles.infoKey, { color: theme.colors.textSecondary }]}>Direct TLS Port</Text>
+                <Text style={[styles.infoVal, { color: theme.colors.text }]}>{selfDevice.port}</Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={[styles.infoKey, { color: theme.colors.textSecondary }]}>LocalSend Interop Port</Text>
+                <Text style={[styles.infoVal, { color: theme.colors.text }]}>53317</Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={[styles.infoKey, { color: theme.colors.textSecondary }]}>Engine Version</Text>
+                <Text style={[styles.infoVal, { color: theme.colors.primary }]}>v1.2.84</Text>
+              </View>
+            </View>
+          ) : null}
         </GlassCard>
       </ScrollView>
     </SafeAreaView>
@@ -248,13 +320,13 @@ const styles = StyleSheet.create({
   },
   themeCard: {
     width: '48%',
-    borderRadius: 12,
     padding: 12,
-    marginBottom: 10,
+    borderRadius: 14,
+    marginBottom: 12,
     justifyContent: 'space-between'
   },
   themeCardTop: {
-    marginBottom: 8
+    marginBottom: 10
   },
   themeNameRow: {
     flexDirection: 'row',
@@ -264,17 +336,17 @@ const styles = StyleSheet.create({
   },
   themeCardName: {
     fontSize: 13,
-    fontWeight: '700'
+    fontWeight: '800'
   },
   selectedPill: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 6
+    borderRadius: 8,
+    gap: 3
   },
   selectedPillText: {
-    marginLeft: 3,
     fontSize: 9,
     fontWeight: '800'
   },
@@ -284,21 +356,19 @@ const styles = StyleSheet.create({
   },
   swatchRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 6
+    gap: 5
   },
   swatchDot: {
     width: 14,
     height: 14,
     borderRadius: 7,
-    borderWidth: 1,
-    marginRight: 4
+    borderWidth: 1
   },
   settingRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 12
+    paddingVertical: 10
   },
   borderTop: {
     borderTopWidth: 1,
@@ -309,34 +379,54 @@ const styles = StyleSheet.create({
     marginRight: 16
   },
   settingLabel: {
-    fontSize: 15,
-    fontWeight: '600'
+    fontSize: 14,
+    fontWeight: '700'
   },
   settingDesc: {
     fontSize: 12,
     marginTop: 2,
-    lineHeight: 18
+    lineHeight: 16
   },
   pillBtn: {
     borderWidth: 1,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 14
+    borderRadius: 12
   },
   pillBtnText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '800'
+  },
+  diagnosticsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between'
+  },
+  diagnosticsHeaderLeft: {
+    flex: 1
+  },
+  diagnosticsSub: {
+    fontSize: 12,
+    marginTop: 2
+  },
+  diagnosticsBody: {
+    marginTop: 14,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.08)'
   },
   infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 7
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255, 255, 255, 0.06)'
   },
   infoKey: {
     fontSize: 13
   },
   infoVal: {
     fontSize: 13,
-    fontWeight: '600'
+    fontWeight: '700'
   }
 });

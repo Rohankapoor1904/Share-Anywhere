@@ -20,9 +20,11 @@ import com.facebook.react.bridge.UiThreadUtil
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import com.rohan.localshare.crypto.EphemeralCertModule
 import com.rohan.localshare.crypto.HashingModule
+import com.rohan.localshare.storage.ClipboardSyncState
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedInputStream
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.InputStream
@@ -34,6 +36,15 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import android.content.Intent
+import android.content.IntentFilter
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.media.ThumbnailUtils
+import android.os.BatteryManager
+import android.os.StatFs
+import android.provider.MediaStore
+import android.util.LruCache
 
 /**
  * Native Android Transfer Server Module handling HTTP requests for the wire protocol.
@@ -70,6 +81,7 @@ class TransferServerModule(
     private val sessionMetricsMap = ConcurrentHashMap<String, SessionMetrics>()
     private var lastClipboardHash: String = ""
     private var connectedPeer: JSONObject? = null
+    private val thumbnailCache = LruCache<String, ByteArray>(10 * 1024 * 1024)
 
     init {
         receivedDir = resolveReceivedDir(reactContext)
@@ -327,6 +339,213 @@ class TransferServerModule(
             input.copyTo(output)
         }
         output.flush()
+    }
+
+    private fun serveThumbnail(output: OutputStream, filePath: String) {
+        try {
+            val cached = thumbnailCache.get(filePath)
+            if (cached != null) {
+                val header = "HTTP/1.1 200 OK\r\n" +
+                        "Content-Type: image/jpeg\r\n" +
+                        "Content-Length: ${cached.size}\r\n" +
+                        "Cache-Control: public, max-age=300\r\n" +
+                        "Access-Control-Allow-Origin: *\r\n" +
+                        "Connection: close\r\n\r\n"
+                output.write(header.toByteArray(Charsets.UTF_8))
+                output.write(cached)
+                output.flush()
+                return
+            }
+
+            val target = File(filePath)
+            if (!target.exists() || !target.isFile) {
+                sendJsonResponse(output, 404, JSONObject().put("error", "File not found"))
+                return
+            }
+
+            val ext = target.extension.lowercase()
+            val isVideo = ext in listOf("mp4", "mkv", "webm", "mov", "avi", "3gp")
+
+            val bytes: ByteArray? = if (isVideo) {
+                val thumb = ThumbnailUtils.createVideoThumbnail(target.absolutePath, MediaStore.Images.Thumbnails.MINI_KIND)
+                if (thumb != null) {
+                    val baos = ByteArrayOutputStream()
+                    thumb.compress(Bitmap.CompressFormat.JPEG, 80, baos)
+                    thumb.recycle()
+                    baos.toByteArray()
+                } else null
+            } else {
+                val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeFile(target.absolutePath, opts)
+                var sampleSize = 1
+                val reqSize = 240
+                while (opts.outWidth / (sampleSize * 2) >= reqSize && opts.outHeight / (sampleSize * 2) >= reqSize) {
+                    sampleSize *= 2
+                }
+                opts.inJustDecodeBounds = false
+                opts.inSampleSize = sampleSize
+                val bmp = BitmapFactory.decodeFile(target.absolutePath, opts)
+                if (bmp != null) {
+                    val baos = ByteArrayOutputStream()
+                    bmp.compress(Bitmap.CompressFormat.JPEG, 80, baos)
+                    bmp.recycle()
+                    baos.toByteArray()
+                } else null
+            }
+
+            if (bytes != null) {
+                thumbnailCache.put(filePath, bytes)
+                val header = "HTTP/1.1 200 OK\r\n" +
+                        "Content-Type: image/jpeg\r\n" +
+                        "Content-Length: ${bytes.size}\r\n" +
+                        "Cache-Control: public, max-age=300\r\n" +
+                        "Access-Control-Allow-Origin: *\r\n" +
+                        "Connection: close\r\n\r\n"
+                output.write(header.toByteArray(Charsets.UTF_8))
+                output.write(bytes)
+                output.flush()
+            } else {
+                sendJsonResponse(output, 404, JSONObject().put("error", "Thumbnail generation failed"))
+            }
+        } catch (e: Exception) {
+            sendJsonResponse(output, 500, JSONObject().put("error", e.message ?: "Thumbnail error"))
+        }
+    }
+
+    private fun queryMediaCategories(type: String, limit: Int, offset: Int): JSONObject {
+        val results = mutableListOf<File>()
+        val exts: Set<String>? = when (type) {
+            "photos" -> setOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif")
+            "videos" -> setOf("mp4", "mkv", "webm", "mov", "avi", "3gp")
+            "audio" -> setOf("mp3", "wav", "ogg", "m4a", "flac", "aac")
+            "documents" -> setOf("pdf", "txt", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "csv", "json")
+            else -> null
+        }
+
+        val searchDirs = when (type) {
+            "photos" -> listOf(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM),
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+            )
+            "videos" -> listOf(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM),
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES)
+            )
+            "audio" -> listOf(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
+            )
+            "downloads" -> listOf(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            )
+            "documents" -> listOf(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS),
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            )
+            else -> listOf(Environment.getExternalStorageDirectory())
+        }
+
+        fun walk(dir: File, depth: Int) {
+            if (depth > 3 || results.size >= 120) return
+            val files = dir.listFiles() ?: return
+            for (f in files) {
+                if (f.name.startsWith(".")) continue
+                if (f.isDirectory) {
+                    walk(f, depth + 1)
+                } else if (f.isFile) {
+                    val ext = f.extension.lowercase()
+                    if (exts == null || exts.contains(ext)) {
+                        results.add(f)
+                    }
+                }
+            }
+        }
+
+        for (d in searchDirs) {
+            if (d != null && d.exists() && d.isDirectory) {
+                walk(d, 0)
+            }
+        }
+
+        results.sortByDescending { it.lastModified() }
+        val total = results.size
+        val paged = results.drop(offset).take(limit)
+
+        val entriesArr = JSONArray()
+        for (f in paged) {
+            entriesArr.put(JSONObject().apply {
+                put("name", f.name)
+                put("path", f.absolutePath)
+                put("isDirectory", false)
+                put("size", f.length())
+                put("lastModified", f.lastModified())
+                put("mimeType", mimeTypeFor(f))
+            })
+        }
+
+        return JSONObject().apply {
+            put("type", type)
+            put("total", total)
+            put("offset", offset)
+            put("limit", limit)
+            put("entries", entriesArr)
+        }
+    }
+
+    private fun searchFsFiles(query: String): JSONObject {
+        val results = mutableListOf<File>()
+        if (query.isEmpty()) {
+            return JSONObject().apply {
+                put("query", query)
+                put("count", 0)
+                put("entries", JSONArray())
+            }
+        }
+        val q = query.lowercase().trim()
+        val searchDirs = listOf(
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS),
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM),
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+        )
+
+        fun walk(dir: File, depth: Int) {
+            if (depth > 4 || results.size >= 50) return
+            val files = dir.listFiles() ?: return
+            for (f in files) {
+                if (f.name.startsWith(".")) continue
+                if (f.isDirectory) {
+                    walk(f, depth + 1)
+                } else if (f.isFile && f.name.lowercase().contains(q)) {
+                    results.add(f)
+                    if (results.size >= 50) return
+                }
+            }
+        }
+
+        for (d in searchDirs) {
+            if (d != null && d.exists() && d.isDirectory) {
+                walk(d, 0)
+            }
+        }
+
+        results.sortByDescending { it.lastModified() }
+        val entriesArr = JSONArray()
+        for (f in results) {
+            entriesArr.put(JSONObject().apply {
+                put("name", f.name)
+                put("path", f.absolutePath)
+                put("isDirectory", false)
+                put("size", f.length())
+                put("lastModified", f.lastModified())
+                put("mimeType", mimeTypeFor(f))
+            })
+        }
+
+        return JSONObject().apply {
+            put("query", query)
+            put("count", results.size)
+            put("entries", entriesArr)
+        }
     }
 
     /**
@@ -786,9 +1005,73 @@ class TransferServerModule(
                         }
                     }
 
+                    path == "/v1/telemetry" && method == "GET" -> {
+                        val iFilter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+                        val bStatus = reactApplicationContext.registerReceiver(null, iFilter)
+                        val level = bStatus?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+                        val scale = bStatus?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
+                        val batteryPct = if (level >= 0 && scale > 0) (level * 100 / scale) else 100
+                        val status = bStatus?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+                        val isCharging = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL
+
+                        val stat = StatFs(Environment.getExternalStorageDirectory().path)
+                        val blockSize = stat.blockSizeLong
+                        val totalStorage = stat.blockCountLong * blockSize
+                        val freeStorage = stat.availableBlocksLong * blockSize
+
+                        val telemetry = JSONObject().apply {
+                            put("platform", "android")
+                            put("deviceModel", "${Build.MANUFACTURER} ${Build.MODEL}")
+                            put("battery", JSONObject().apply {
+                                put("level", batteryPct)
+                                put("charging", isCharging)
+                                put("hasBattery", true)
+                            })
+                            put("storage", JSONObject().apply {
+                                put("freeBytes", freeStorage)
+                                put("totalBytes", totalStorage)
+                            })
+                            put("memory", JSONObject().apply {
+                                val runtime = Runtime.getRuntime()
+                                put("freeBytes", runtime.freeMemory())
+                                put("totalBytes", runtime.totalMemory())
+                            })
+                        }
+                        sendJsonResponse(output, 200, telemetry)
+                    }
+
+                    path == "/v1/fs/categories" && method == "GET" -> {
+                        val type = urlQueryParam(requestTarget, "type") ?: "photos"
+                        val limit = urlQueryParam(requestTarget, "limit")?.toIntOrNull() ?: 60
+                        val offset = urlQueryParam(requestTarget, "offset")?.toIntOrNull() ?: 0
+                        val categoriesJson = queryMediaCategories(type, limit, offset)
+                        sendJsonResponse(output, 200, categoriesJson)
+                    }
+
+                    path == "/v1/fs/search" && method == "GET" -> {
+                        val q = urlQueryParam(requestTarget, "q") ?: ""
+                        val searchJson = searchFsFiles(q)
+                        sendJsonResponse(output, 200, searchJson)
+                    }
+
+                    path == "/v1/fs/thumbnail" && method == "GET" -> {
+                        val requested = urlQueryParam(requestTarget, "path")
+                        if (requested.isNullOrEmpty()) {
+                            sendJsonResponse(output, 400, JSONObject().put("error", "Missing path"))
+                        } else {
+                            serveThumbnail(output, requested)
+                        }
+                    }
+
                     path == "/v1/live/connect" && method == "POST" -> {
                         val bodyStr = String(readBody(), Charsets.UTF_8)
                         val body = JSONObject(bodyStr)
+                        var resolvedAddress = body.optString("address", "")
+                        val socketRemote = s.inetAddress?.hostAddress?.removePrefix("/") ?: ""
+                        if (resolvedAddress.isEmpty() || resolvedAddress == "127.0.0.1" || resolvedAddress == "0.0.0.0") {
+                            resolvedAddress = if (socketRemote.isNotEmpty()) socketRemote else "127.0.0.1"
+                            body.put("address", resolvedAddress)
+                        }
                         connectedPeer = body
                         val resp = JSONObject().apply {
                             put("connected", true)
@@ -803,7 +1086,7 @@ class TransferServerModule(
                         val eventParams = Arguments.createMap().apply {
                             putString("deviceId", body.optString("deviceId"))
                             putString("displayName", body.optString("displayName"))
-                            putString("address", body.optString("address"))
+                            putString("address", resolvedAddress)
                             putInt("port", body.optInt("port", 53318))
                             putString("platform", body.optString("platform"))
                         }
@@ -817,9 +1100,10 @@ class TransferServerModule(
                         sendJsonResponse(output, 200, JSONObject().put("disconnected", true))
                     }
 
-                    path == "/v1/live/ping" && method == "GET" -> {
+                    path == "/v1/live/ping" && (method == "GET" || method == "POST") -> {
                         sendJsonResponse(output, 200, JSONObject().apply {
                             put("status", "ok")
+                            put("pong", true)
                             put("timestamp", System.currentTimeMillis())
                         })
                     }
@@ -838,19 +1122,25 @@ class TransferServerModule(
                         val hash = body.optString("hash", "")
                         val senderId = body.optString("senderDeviceId", "")
 
-                        if (hash.isNotEmpty() && hash == lastClipboardHash) {
+                        val incomingHash = if (hash.isNotEmpty()) hash else {
+                            val md = java.security.MessageDigest.getInstance("SHA-256")
+                            md.digest(text.toByteArray(Charsets.UTF_8)).joinToString("") { String.format("%02x", it) }
+                        }
+
+                        if (incomingHash.isNotEmpty() && (incomingHash == lastClipboardHash || incomingHash == ClipboardSyncState.lastHash)) {
                             sendJsonResponse(output, 200, JSONObject().apply {
                                 put("success", true)
                                 put("ignored", true)
                             })
                         } else {
-                            if (hash.isNotEmpty()) {
-                                lastClipboardHash = hash
+                            if (incomingHash.isNotEmpty()) {
+                                lastClipboardHash = incomingHash
+                                ClipboardSyncState.lastHash = incomingHash
                             }
                             writeClipboardText(text)
                             val eventParams = Arguments.createMap().apply {
                                 putString("text", text)
-                                putString("hash", lastClipboardHash)
+                                putString("hash", incomingHash)
                                 putString("senderDeviceId", senderId)
                                 putDouble("timestamp", System.currentTimeMillis().toDouble())
                             }

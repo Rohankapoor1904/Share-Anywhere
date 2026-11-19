@@ -110,6 +110,16 @@
       if (lanIpEl) lanIpEl.textContent = data.address || '--';
       const portsEl = document.getElementById('telemetry-ports');
       if (portsEl) portsEl.textContent = `${data.port || 53318} / 53317`;
+
+      // Quick Pair PIN and SVG QR Code
+      const pinDisplay = document.getElementById('pairing-code-display');
+      if (pinDisplay && data.pairingCode) {
+        pinDisplay.textContent = data.pairingCode;
+      }
+      const qrBox = document.getElementById('qr-code-box');
+      if (qrBox && data.qrSvg) {
+        qrBox.innerHTML = data.qrSvg;
+      }
     } catch (err) {
       // eslint-disable-next-line no-console
       console.warn('Failed to load self device info:', err);
@@ -767,25 +777,505 @@
     }
   }
 
+  let connectedLivePeer = null;
+  let activeHeroCategory = 'photos';
+  let heroRemotePath = '';
+  let isDrawerOpen = true;
+
   async function updateLiveStatus() {
     try {
       const res = await fetch('/api/live/status');
       const data = await res.json();
       const banner = document.getElementById('live-connection-banner');
-      if (!banner) return;
+      const stateUnconnected = document.getElementById('state-unconnected');
+      const stateConnected = document.getElementById('state-connected');
+
       if (data.connected && data.peer) {
-        banner.style.display = 'flex';
-        document.getElementById('live-banner-peer').textContent = `${data.peer.displayName || data.peer.address}`;
-        const clipToggle = document.getElementById('live-banner-clip-btn');
-        if (clipToggle) {
-          clipToggle.textContent = data.clipboardSync ? 'Clipboard Sync: ON' : 'Clipboard Sync: OFF';
-          clipToggle.classList.toggle('active', data.clipboardSync);
+        connectedLivePeer = data.peer;
+        remotePeer = data.peer; // Bind remote files explorer
+
+        if (banner) {
+          banner.style.display = 'flex';
+          const bannerPeer = document.getElementById('live-banner-peer');
+          if (bannerPeer) bannerPeer.textContent = `${data.peer.displayName || data.peer.address}`;
+          const clipToggle = document.getElementById('live-banner-clip-btn');
+          if (clipToggle) {
+            clipToggle.textContent = data.clipboardSync ? 'Clipboard Sync: ON' : 'Clipboard Sync: OFF';
+            clipToggle.classList.toggle('active', data.clipboardSync);
+          }
         }
+
+        // Switch to State B: Connected Workspace
+        if (stateUnconnected) stateUnconnected.style.display = 'none';
+        if (stateConnected) stateConnected.style.display = 'block';
+
+        const heroName = document.getElementById('hero-device-name');
+        if (heroName) heroName.textContent = connectedLivePeer.displayName || 'Phone Device';
+        const heroSub = document.getElementById('hero-device-sub');
+        if (heroSub) heroSub.textContent = `${connectedLivePeer.address}:${connectedLivePeer.port || 53318}`;
+        const heroTarget = document.getElementById('hero-target-name');
+        if (heroTarget) heroTarget.textContent = connectedLivePeer.displayName || 'Phone';
+        const overlayTarget = document.getElementById('overlay-target-name');
+        if (overlayTarget) overlayTarget.textContent = connectedLivePeer.displayName || 'Phone';
+
+        const btnHeroClipText = document.getElementById('btn-hero-clip-text');
+        if (btnHeroClipText) {
+          btnHeroClipText.textContent = data.clipboardSync ? 'Clipboard Synced ✓' : 'Clipboard Paused';
+        }
+
+        fetchTelemetry(connectedLivePeer);
+        loadHeroCategory(activeHeroCategory);
+        loadClipboardHistory();
       } else {
-        banner.style.display = 'none';
+        connectedLivePeer = null;
+        if (banner) banner.style.display = 'none';
+        if (stateUnconnected) stateUnconnected.style.display = 'block';
+        if (stateConnected) stateConnected.style.display = 'none';
       }
     } catch (_) {}
   }
+
+  async function fetchTelemetry(peer) {
+    if (!peer) return;
+    try {
+      const res = await fetch(`/api/remote-telemetry?ip=${encodeURIComponent(peer.address)}&port=${peer.port || 53318}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.battery) {
+        const bText = document.getElementById('hero-battery-text');
+        if (bText) {
+          bText.textContent = `${data.battery.level}%${data.battery.isCharging ? ' ⚡' : ''}`;
+        }
+      }
+      if (data.storage) {
+        const sText = document.getElementById('hero-storage-text');
+        if (sText) {
+          sText.textContent = `${formatBytes(data.storage.free)} Free`;
+        }
+      }
+    } catch (_) {}
+  }
+
+  async function loadHeroCategory(cat) {
+    activeHeroCategory = cat;
+    if (!connectedLivePeer) return;
+
+    // Update active tab buttons
+    document.querySelectorAll('.cat-tab').forEach((tab) => {
+      tab.classList.toggle('active', tab.dataset.cat === cat);
+    });
+
+    const grid = document.getElementById('hero-thumbnail-grid');
+    const filesList = document.getElementById('hero-files-list');
+    const pathBar = document.getElementById('hero-path-bar');
+
+    if (cat === 'photos' || cat === 'videos') {
+      if (grid) grid.style.display = 'grid';
+      if (filesList) filesList.style.display = 'none';
+      if (pathBar) pathBar.style.display = 'none';
+
+      if (grid) grid.innerHTML = '<p style="grid-column: 1 / -1; padding: 24px; color: var(--text-secondary); text-align: center;">Loading media...</p>';
+
+      try {
+        const res = await fetch(`/api/remote-categories?ip=${encodeURIComponent(connectedLivePeer.address)}&port=${connectedLivePeer.port || 53318}&type=${cat}&limit=60`);
+        const data = await res.json();
+        const items = data.items || [];
+        if (items.length === 0) {
+          if (grid) grid.innerHTML = `<p style="grid-column: 1 / -1; padding: 24px; color: var(--text-secondary); text-align: center;">No ${cat} found on phone.</p>`;
+          return;
+        }
+
+        if (grid) {
+          grid.innerHTML = items.map((item) => {
+            const thumbUrl = `/api/remote-fs/thumbnail?ip=${encodeURIComponent(connectedLivePeer.address)}&port=${connectedLivePeer.port || 53318}&path=${encodeURIComponent(item.path)}`;
+            return `
+              <div class="thumb-card" data-path="${escapeHtml(item.path)}" data-name="${escapeHtml(item.name)}" data-size="${item.size}">
+                <img src="${thumbUrl}" alt="${escapeHtml(item.name)}" loading="lazy">
+                <span class="thumb-size-pill">${formatBytes(item.size)}</span>
+                <div class="thumb-actions">
+                  <button class="thumb-action-btn thumb-dl" title="Download to PC" data-path="${escapeHtml(item.path)}" data-name="${escapeHtml(item.name)}" data-size="${item.size}">${icon('download', 14, 2)}</button>
+                  <button class="thumb-action-btn thumb-del" title="Delete from Phone" data-path="${escapeHtml(item.path)}" data-name="${escapeHtml(item.name)}">${icon('trash', 14, 2)}</button>
+                </div>
+              </div>
+            `;
+          }).join('');
+
+          grid.querySelectorAll('.thumb-card').forEach((card) => {
+            card.addEventListener('click', (e) => {
+              if (e.target.closest('.thumb-actions')) return;
+              openLightbox({ path: card.dataset.path, name: card.dataset.name, size: Number(card.dataset.size) }, connectedLivePeer);
+            });
+          });
+
+          grid.querySelectorAll('.thumb-dl').forEach((btn) => {
+            btn.addEventListener('click', (e) => {
+              e.stopPropagation();
+              pullRemoteFile(btn.dataset.path, btn.dataset.name, btn.dataset.size);
+            });
+          });
+
+          grid.querySelectorAll('.thumb-del').forEach((btn) => {
+            btn.addEventListener('click', (e) => {
+              e.stopPropagation();
+              if (window.confirm(`Delete "${btn.dataset.name}" from phone?`)) {
+                remoteFsAction('/api/remote-fs/delete', { path: btn.dataset.path }).then(() => {
+                  loadHeroCategory(activeHeroCategory);
+                });
+              }
+            });
+          });
+        }
+      } catch (err) {
+        if (grid) grid.innerHTML = `<p style="grid-column: 1 / -1; padding: 24px; color: var(--danger); text-align: center;">Failed to load: ${escapeHtml(err.message)}</p>`;
+      }
+    } else if (cat === 'documents' || cat === 'downloads') {
+      if (grid) grid.style.display = 'none';
+      if (filesList) filesList.style.display = 'block';
+      if (pathBar) pathBar.style.display = 'none';
+
+      if (filesList) filesList.innerHTML = '<p style="padding: 20px; color: var(--text-secondary); text-align: center;">Loading files...</p>';
+
+      try {
+        const res = await fetch(`/api/remote-categories?ip=${encodeURIComponent(connectedLivePeer.address)}&port=${connectedLivePeer.port || 53318}&type=${cat}&limit=60`);
+        const data = await res.json();
+        const items = data.items || [];
+        renderHeroFileList(items);
+      } catch (err) {
+        if (filesList) filesList.innerHTML = `<p style="padding: 20px; color: var(--danger); text-align: center;">Failed to load: ${escapeHtml(err.message)}</p>`;
+      }
+    } else if (cat === 'all') {
+      if (grid) grid.style.display = 'none';
+      if (filesList) filesList.style.display = 'block';
+      if (pathBar) pathBar.style.display = 'flex';
+      loadHeroRemoteDir(heroRemotePath || '');
+    }
+  }
+
+  async function loadHeroRemoteDir(path) {
+    if (!connectedLivePeer) return;
+    const filesList = document.getElementById('hero-files-list');
+    const pathText = document.getElementById('hero-path-text');
+    if (filesList) filesList.innerHTML = '<p style="padding: 20px; color: var(--text-secondary); text-align: center;">Loading directory...</p>';
+
+    try {
+      const res = await fetch(`/api/remote-fs/list?ip=${encodeURIComponent(connectedLivePeer.address)}&port=${connectedLivePeer.port || 53318}&path=${encodeURIComponent(path || '')}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to list directory');
+      heroRemotePath = data.currentPath || '';
+      if (pathText) pathText.textContent = heroRemotePath || '/';
+      renderHeroFileList(data.entries || []);
+    } catch (err) {
+      if (filesList) filesList.innerHTML = `<p style="padding: 20px; color: var(--danger); text-align: center;">Failed: ${escapeHtml(err.message)}</p>`;
+    }
+  }
+
+  function renderHeroFileList(entries) {
+    const list = document.getElementById('hero-files-list');
+    if (!list) return;
+    if (entries.length === 0) {
+      list.innerHTML = '<p style="padding: 24px; color: var(--text-secondary); text-align: center;">No files found.</p>';
+      return;
+    }
+
+    list.innerHTML = entries.map((e) => `
+      <div class="device-card" style="margin-bottom: 8px;">
+        <div class="device-avatar">${icon(remoteEntryIcon(e), 19, 1.9)}</div>
+        <div class="device-info" style="cursor: ${e.isDirectory ? 'pointer' : 'default'};" ${e.isDirectory ? `data-open-hero-path="${escapeHtml(e.path)}"` : ''}>
+          <h4>${escapeHtml(e.name)}</h4>
+          <p>${e.isDirectory ? 'Folder' : formatBytes(e.size)}</p>
+        </div>
+        <div style="display: flex; gap: 6px;">
+          ${e.isDirectory ? '' : `<button class="btn btn-secondary hero-pull-file" data-path="${escapeHtml(e.path)}" data-name="${escapeHtml(e.name)}" data-size="${e.size}">${icon('download', 14, 2)}</button>`}
+          <button class="btn btn-secondary hero-delete-file" data-path="${escapeHtml(e.path)}" data-name="${escapeHtml(e.name)}">${icon('trash', 14, 2)}</button>
+        </div>
+      </div>
+    `).join('');
+
+    list.querySelectorAll('[data-open-hero-path]').forEach((el) => {
+      el.addEventListener('click', () => loadHeroRemoteDir(el.dataset.openHeroPath));
+    });
+    list.querySelectorAll('.hero-pull-file').forEach((btn) => {
+      btn.addEventListener('click', () => pullRemoteFile(btn.dataset.path, btn.dataset.name, btn.dataset.size));
+    });
+    list.querySelectorAll('.hero-delete-file').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        if (window.confirm(`Delete "${btn.dataset.name}" from phone?`)) {
+          remoteFsAction('/api/remote-fs/delete', { path: btn.dataset.path }).then(() => {
+            if (activeHeroCategory === 'all') loadHeroRemoteDir(heroRemotePath);
+            else loadHeroCategory(activeHeroCategory);
+          });
+        }
+      });
+    });
+  }
+
+  async function performHeroSearch(query) {
+    if (!connectedLivePeer) return;
+    if (!query.trim()) {
+      loadHeroCategory(activeHeroCategory);
+      return;
+    }
+
+    const grid = document.getElementById('hero-thumbnail-grid');
+    const filesList = document.getElementById('hero-files-list');
+    const pathBar = document.getElementById('hero-path-bar');
+    const clearBtn = document.getElementById('btn-clear-search');
+
+    if (grid) grid.style.display = 'none';
+    if (filesList) filesList.style.display = 'block';
+    if (pathBar) pathBar.style.display = 'none';
+    if (clearBtn) clearBtn.style.display = 'inline-block';
+
+    if (filesList) filesList.innerHTML = '<p style="padding: 20px; color: var(--text-secondary); text-align: center;">Searching files...</p>';
+
+    try {
+      const res = await fetch(`/api/remote-search?ip=${encodeURIComponent(connectedLivePeer.address)}&port=${connectedLivePeer.port || 53318}&q=${encodeURIComponent(query.trim())}`);
+      const data = await res.json();
+      renderHeroFileList(data.entries || []);
+    } catch (err) {
+      if (filesList) filesList.innerHTML = `<p style="padding: 20px; color: var(--danger); text-align: center;">Search failed: ${escapeHtml(err.message)}</p>`;
+    }
+  }
+
+  // Full-Screen Media Lightbox
+  let currentLightboxItem = null;
+  function openLightbox(item, peer) {
+    currentLightboxItem = item;
+    const modal = document.getElementById('modal-lightbox');
+    const titleEl = document.getElementById('lightbox-filename');
+    const sizeEl = document.getElementById('lightbox-filesize');
+    const bodyEl = document.getElementById('lightbox-media-container');
+
+    if (titleEl) titleEl.textContent = item.name;
+    if (sizeEl) sizeEl.textContent = formatBytes(item.size);
+
+    const streamUrl = `http://${peer.address}:${peer.port || 53318}/v1/fs/stream?path=${encodeURIComponent(item.path)}`;
+
+    if (item.name.match(/\.(mp4|mkv|mov|avi|webm)$/i)) {
+      if (bodyEl) bodyEl.innerHTML = `<video src="${streamUrl}" controls autoplay style="max-width: 100%; max-height: 60vh; border-radius: 8px;"></video>`;
+    } else {
+      if (bodyEl) bodyEl.innerHTML = `<img src="${streamUrl}" alt="${escapeHtml(item.name)}" style="max-width: 100%; max-height: 60vh; border-radius: 8px;">`;
+    }
+
+    if (modal) modal.style.display = 'flex';
+  }
+
+  function closeLightbox() {
+    const modal = document.getElementById('modal-lightbox');
+    if (modal) modal.style.display = 'none';
+    const bodyEl = document.getElementById('lightbox-media-container');
+    if (bodyEl) bodyEl.innerHTML = '';
+    currentLightboxItem = null;
+  }
+
+  // Live Clipboard Drawer History
+  async function loadClipboardHistory() {
+    try {
+      const res = await fetch('/api/clipboard-history');
+      if (!res.ok) return;
+      const history = await res.json();
+      const countEl = document.getElementById('clipboard-history-count');
+      if (countEl) countEl.textContent = `${history.length} items`;
+
+      const listEl = document.getElementById('drawer-clip-list');
+      if (!listEl) return;
+
+      if (!history || history.length === 0) {
+        listEl.innerHTML = '<p style="padding: 12px; font-size: 12px; color: var(--text-muted);">No clipboard history recorded yet.</p>';
+        return;
+      }
+
+      listEl.innerHTML = history.map((item) => `
+        <div class="clip-row-item">
+          <span class="clip-row-text" title="${escapeHtml(item.text)}">${escapeHtml(item.text)}</span>
+          <div class="clip-row-meta">
+            <span class="chip chip-primary" style="font-size: 10px;">${escapeHtml(item.sender || 'LocalShare')}</span>
+            <button class="btn btn-secondary btn-sm btn-drawer-copy" data-clip="${escapeHtml(item.text)}">Copy to PC</button>
+          </div>
+        </div>
+      `).join('');
+
+      listEl.querySelectorAll('.btn-drawer-copy').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          navigator.clipboard.writeText(btn.dataset.clip).then(() => {
+            const orig = btn.textContent;
+            btn.textContent = 'Copied!';
+            setTimeout(() => { btn.textContent = orig; }, 1500);
+          });
+        });
+      });
+    } catch (_) {}
+  }
+
+  // Full-Window Quick-Drop Zone Sender
+  async function sendFilesDirectlyToPeer(peer, files) {
+    if (!peer || !files || files.length === 0) return;
+    const filePayloads = Array.from(files).map((f) => ({
+      path: f.path || f.name,
+      name: f.name,
+      size: f.size
+    }));
+
+    try {
+      const res = await fetch('/api/transfer/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ peer, files: filePayloads })
+      });
+      if (res.ok) {
+        document.querySelector('[data-tab="transfers"]').click();
+      }
+    } catch (err) {
+      console.error('Send dropped files failed:', err);
+    }
+  }
+
+  // Global Event Listeners & UI Binding
+  window.addEventListener('DOMContentLoaded', () => {
+    // Copy 6-digit PIN
+    const btnCopyCode = document.getElementById('btn-copy-code');
+    if (btnCopyCode) {
+      btnCopyCode.addEventListener('click', () => {
+        const pin = document.getElementById('pairing-code-display').textContent;
+        navigator.clipboard.writeText(pin).then(() => {
+          btnCopyCode.textContent = 'Copied!';
+          setTimeout(() => { btnCopyCode.textContent = 'Copy'; }, 2000);
+        });
+      });
+    }
+
+    // Hero Hero Disconnect & Clip
+    const heroDisc = document.getElementById('btn-hero-disconnect');
+    if (heroDisc) heroDisc.addEventListener('click', () => disconnectPeerLive());
+    const heroClip = document.getElementById('btn-hero-clip');
+    if (heroClip) heroClip.addEventListener('click', () => toggleLiveClipboard());
+
+    // Hero Browse & Send
+    const heroBrowse = document.getElementById('btn-hero-browse');
+    if (heroBrowse) {
+      heroBrowse.addEventListener('click', async () => {
+        if (!connectedLivePeer) return;
+        if (window.electronAPI && typeof window.electronAPI.selectFiles === 'function') {
+          const files = await window.electronAPI.selectFiles();
+          if (files && files.length > 0) {
+            sendFilesDirectlyToPeer(connectedLivePeer, files);
+          }
+        } else {
+          fileInput.click();
+        }
+      });
+    }
+
+    // Category Buttons
+    document.querySelectorAll('.cat-tab').forEach((tab) => {
+      tab.addEventListener('click', () => {
+        loadHeroCategory(tab.dataset.cat);
+      });
+    });
+
+    // Search Box
+    const searchInput = document.getElementById('hero-search-input');
+    const clearBtn = document.getElementById('btn-clear-search');
+    if (searchInput) {
+      searchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') performHeroSearch(searchInput.value);
+      });
+    }
+    if (clearBtn) {
+      clearBtn.addEventListener('click', () => {
+        if (searchInput) searchInput.value = '';
+        clearBtn.style.display = 'none';
+        loadHeroCategory(activeHeroCategory);
+      });
+    }
+
+    // Path bar controls for All Storage
+    const btnPathUp = document.getElementById('btn-hero-path-up');
+    if (btnPathUp) {
+      btnPathUp.addEventListener('click', () => {
+        if (!heroRemotePath) return;
+        const parts = heroRemotePath.split(/[\\/]/).filter(Boolean);
+        parts.pop();
+        loadHeroRemoteDir(parts.join('/') || '/');
+      });
+    }
+    const btnPathRefresh = document.getElementById('btn-hero-path-refresh');
+    if (btnPathRefresh) {
+      btnPathRefresh.addEventListener('click', () => loadHeroRemoteDir(heroRemotePath));
+    }
+
+    // Lightbox Modal Controls
+    const btnCloseLightbox = document.getElementById('btn-lightbox-close');
+    if (btnCloseLightbox) btnCloseLightbox.addEventListener('click', closeLightbox);
+    const btnDlLightbox = document.getElementById('btn-lightbox-download');
+    if (btnDlLightbox) {
+      btnDlLightbox.addEventListener('click', () => {
+        if (currentLightboxItem && connectedLivePeer) {
+          pullRemoteFile(currentLightboxItem.path, currentLightboxItem.name, currentLightboxItem.size);
+        }
+      });
+    }
+    const btnDelLightbox = document.getElementById('btn-lightbox-delete');
+    if (btnDelLightbox) {
+      btnDelLightbox.addEventListener('click', () => {
+        if (currentLightboxItem && connectedLivePeer) {
+          if (window.confirm(`Delete "${currentLightboxItem.name}" from phone?`)) {
+            remoteFsAction('/api/remote-fs/delete', { path: currentLightboxItem.path }).then(() => {
+              closeLightbox();
+              loadHeroCategory(activeHeroCategory);
+            });
+          }
+        }
+      });
+    }
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeLightbox();
+    });
+
+    // Clipboard Drawer Accordion
+    const drawerToggle = document.getElementById('drawer-toggle');
+    const drawerBody = document.getElementById('drawer-body');
+    const drawerArrow = document.getElementById('drawer-arrow');
+    if (drawerToggle && drawerBody) {
+      drawerToggle.addEventListener('click', () => {
+        isDrawerOpen = !isDrawerOpen;
+        drawerBody.style.display = isDrawerOpen ? 'block' : 'none';
+        if (drawerArrow) drawerArrow.style.transform = isDrawerOpen ? 'rotate(0deg)' : 'rotate(180deg)';
+      });
+    }
+
+    // Full-Window Drag and Drop Zone
+    let dragCounter = 0;
+    const dropOverlay = document.getElementById('full-window-drop-overlay');
+    window.addEventListener('dragenter', (e) => {
+      e.preventDefault();
+      dragCounter += 1;
+      if (connectedLivePeer && dropOverlay) {
+        dropOverlay.style.display = 'flex';
+      }
+    });
+    window.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      dragCounter -= 1;
+      if (dragCounter <= 0 && dropOverlay) {
+        dragCounter = 0;
+        dropOverlay.style.display = 'none';
+      }
+    });
+    window.addEventListener('dragover', (e) => {
+      e.preventDefault();
+    });
+    window.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      dragCounter = 0;
+      if (dropOverlay) dropOverlay.style.display = 'none';
+      if (!connectedLivePeer) return;
+      const files = Array.from(e.dataTransfer.files || []);
+      if (files.length > 0) {
+        sendFilesDirectlyToPeer(connectedLivePeer, files);
+      }
+    });
+  });
 
   const liveClipBtn = document.getElementById('live-banner-clip-btn');
   if (liveClipBtn) {

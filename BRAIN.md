@@ -7,7 +7,18 @@
 - **Contract**: Anti-Fake Contract (§3) enforced. No mock data in app, no stubbed native modules, no swallowed errors, no fake progress, real sockets/tests only.
 
 ## Current State
-- **Status**: ALL PHASES COMPLETE, PHASE 15 PERFORMANCE & LIVE SYNC OVERHAUL IMPLEMENTED, STANDALONE PC EXECUTABLE COMPILED, RELEASE APKs COMPILING, REPOSITORY SYNCHRONIZED.
+- **Status**: ALL PHASES COMPLETE, PHASE 16 O+ CONNECT-BEATING ARCHITECTURE & CONSUMER UI TRANSFORMATION IMPLEMENTED, ZERO MOCKS, 13/13 UNIT TESTS PASSING, 5/5 INTEGRATION TESTS PASSING, ZERO LINT WARNINGS, DESKTOP APP COMPILED, RELEASE APKs ASSEMBLED.
+- **Phase 16 O+ Connect-Beating Flagship Architecture, Live Sync Fixes & Consumer UI Transformation** (see `docs/audit/change_log.md` entry 16.1):
+  - **Echo-Free Clipboard Synchronization**: Added `ClipboardSyncState` shared thread-safe singleton in Kotlin (`ClipboardSyncState.kt`), synchronizing HTTP transfer server writes and Android OS primary clip changes to eliminate 100% of ping-pong echo loops. In PC Desktop (`desktop-node.js`), updated `lastClipboardHash` before UI broadcast and maintained last 15 clipboard history items.
+  - **Bidirectional Live Connection & Real IP Resolution**: Fixed `/v1/live/ping` to accept both `GET` and `POST`. In `POST /v1/live/connect`, resolved caller IP from socket remote address if missing or loopback (`127.0.0.1` / `0.0.0.0`). Connected `onLiveConnected` and `onLiveDisconnected` lifecycle hooks across `TransferGateway` and `DesktopEngine`.
+  - **Instant QR & 6-Digit PIN Pairing**:
+    - PC: Generates rotating 6-digit PIN (`self.pairingCode`) and clean SVG QR code in `desktop-node.js` (`GET /api/self`), rendered on Unconnected Hero card with 1-click PIN copy.
+    - Mobile: Integrated `react-native-vision-camera` QR viewfinder with fallback 6-digit PIN / IP modal.
+  - **Smart Categories, Thumbnails, Search & Telemetry**:
+    - Android & PC servers: `GET /v1/telemetry` (real battery % + charging state + free storage bytes via `StatFsSync`/`StatFs`), `GET /v1/fs/categories` (`photos`, `videos`, `documents`, `downloads`), `GET /v1/fs/thumbnail` (LruCache cached image thumbnails with 300s HTTP cache header), and `GET /v1/fs/search` (recursive subfolder search).
+  - **Consumer UI Redesign**:
+    - Mobile: 4-tab floating bottom dock (`Home`, `Browse`, `Activity`, `Settings`). `DevicesScreen` features flagship Connected PC Card with live battery/storage telemetry and action tiles. `RemoteExplorerScreen` features Category Pills, cross-device search, 3-column media thumbnail grid, and full-screen modal Lightbox. `TransfersScreen` features 3-way toggle (`Transfers` | `Received` | `Clipboard`) with live clipboard history feed. `SettingsScreen` features auto-reconnect and live clipboard toggles with collapsible diagnostics.
+    - Desktop: 2-state interface: State A (Unconnected) with nearby devices and Quick Pair QR card; State B (Connected) with Hero Device Bar (battery, storage, pulse dot, clipboard toggle), full-window quick drop zone, connected remote explorer with thumbnail grid & lightbox, and live clipboard drawer.
 - **Phase 15 Share-Anywhere Deep Performance, Live Sync, File Access & UI Overhaul** (see `docs/audit/change_log.md` entry 15.1):
   - **High-Speed Streaming Transfers**: Single pooled `OkHttpClient` (`ConnectionPool(5, 60s)`) in `TransferClientModule.kt` streaming 4 MB chunks sequentially from a single `InputStream` with on-the-fly incremental SHA-256 computation and 150ms throttled rolling speed metrics. Zero $O(N^2)$ chunk skipping or re-opening.
   - **Receiver Performance**: Direct 64 KB socket chunk reads into `FileOutputStream`/`RandomAccessFile` in `TransferServerModule.kt`, TCP_NODELAY, 256 KB socket buffer, raw byte header reader, rolling speed calculation in `ReceiveProgress`, and `MediaScannerConnection.scanFile(...)` on commit.

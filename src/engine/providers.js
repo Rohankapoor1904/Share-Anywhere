@@ -84,6 +84,10 @@ export function LocalShareProvider({ children, nodeInstance }) {
   const [isDiscovering, setIsDiscovering] = useState(false);
   const [activeChallenge, setActiveChallenge] = useState(null);
   const [connectedPeer, setConnectedPeer] = useState(null);
+  const [connectedPeerTelemetry, setConnectedPeerTelemetry] = useState(null);
+  const [clipboardHistory, setClipboardHistory] = useState([]);
+  const [autoReconnect, setAutoReconnect] = useState(true);
+  const [toastMessage, setToastMessage] = useState(null);
   const [liveClipboardEnabled, setLiveClipboardEnabled] = useState(true);
   const [settings, setSettings] = useState({
     autoAcceptTrusted: true,
@@ -181,9 +185,24 @@ export function LocalShareProvider({ children, nodeInstance }) {
 
     const unsubLive = nodeInstance.events.on('LIVE_STATUS_CHANGED', (status) => {
       setConnectedPeer(status?.connected ? status.peer : null);
+      if (status?.connected) {
+        setToastMessage(`Connected to ${status.peer?.displayName || 'PC'}`);
+      }
       if (status?.clipboardSync !== undefined) {
         setLiveClipboardEnabled(status.clipboardSync);
       }
+    });
+
+    const unsubTelemetry = nodeInstance.events.on('LIVE_TELEMETRY_UPDATED', ({ telemetry }) => {
+      setConnectedPeerTelemetry(telemetry);
+    });
+
+    const unsubClipHistory = nodeInstance.events.on('CLIPBOARD_HISTORY_UPDATED', (history) => {
+      setClipboardHistory([...history]);
+    });
+
+    const unsubClipSynced = nodeInstance.events.on('CLIPBOARD_SYNCED', ({ text }) => {
+      setToastMessage(`Clipboard synced: "${(text || '').slice(0, 24)}…"`);
     });
 
     return () => {
@@ -197,6 +216,9 @@ export function LocalShareProvider({ children, nodeInstance }) {
       unsubFailed();
       unsubCancelled();
       unsubLive();
+      unsubTelemetry();
+      unsubClipHistory();
+      unsubClipSynced();
     };
   }, [nodeInstance]);
 
@@ -297,6 +319,21 @@ export function LocalShareProvider({ children, nodeInstance }) {
     return liveClipboardEnabled;
   }, [nodeInstance, liveClipboardEnabled]);
 
+  const toggleAutoReconnect = useCallback(() => {
+    setAutoReconnect((prev) => {
+      const next = !prev;
+      AsyncStorage.setItem('@localshare:auto_reconnect', String(next)).catch(() => {});
+      if (nodeInstance) {
+        nodeInstance.autoReconnectEnabled = next;
+      }
+      return next;
+    });
+  }, [nodeInstance]);
+
+  const showToast = useCallback((msg) => {
+    setToastMessage(msg);
+  }, []);
+
   const value = {
     selfDevice,
     peers,
@@ -306,6 +343,10 @@ export function LocalShareProvider({ children, nodeInstance }) {
     activeChallenge,
     settings,
     connectedPeer,
+    connectedPeerTelemetry,
+    clipboardHistory,
+    autoReconnect,
+    toastMessage,
     isLiveConnected: Boolean(connectedPeer),
     liveClipboardEnabled,
     startDiscovery,
@@ -320,7 +361,9 @@ export function LocalShareProvider({ children, nodeInstance }) {
     addManualPeer,
     connectToPeer,
     disconnectLive,
-    toggleLiveClipboard
+    toggleLiveClipboard,
+    toggleAutoReconnect,
+    showToast
   };
 
   return (
@@ -343,6 +386,10 @@ export function useLocalShare() {
       activeChallenge: null,
       settings: {},
       connectedPeer: null,
+      connectedPeerTelemetry: null,
+      clipboardHistory: [],
+      autoReconnect: true,
+      toastMessage: null,
       isLiveConnected: false,
       liveClipboardEnabled: true,
       startDiscovery: async () => {},
@@ -357,7 +404,9 @@ export function useLocalShare() {
       addManualPeer: () => {},
       connectToPeer: async () => {},
       disconnectLive: async () => {},
-      toggleLiveClipboard: () => true
+      toggleLiveClipboard: () => true,
+      toggleAutoReconnect: () => {},
+      showToast: () => {}
     };
   }
   return context;

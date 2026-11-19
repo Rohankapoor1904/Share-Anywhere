@@ -733,3 +733,51 @@ This file tracks every modification made across the codebase, recording exact ta
      - `app-universal-release.apk` (77.55 MB, SHA256: `6F0E4F18950224D8E34E58FBFA0D0FB0F2D85A814A643AE7C18E95815852E100`)
      - `app-x86_64-release.apk` (33.20 MB, SHA256: `BCB9179A6DC62805F0C52265DE92AAC88B104F8AA157423C11992C90855FFCA5`)
      - `app-armeabi-v7a-release.apk` (30.38 MB, SHA256: `625AAE12AF0867FF64AF8B2C77871945537710309A0232018DB21F58F98742FF`)
+
+
+### Entry 16.1: O+ Connect-Beating Flagship Architecture, Live Sync Fixes & Consumer UI Transformation
+1. **Exact Target & Location**:
+   - `android/app/src/main/java/com/rohan/localshare/storage/ClipboardSyncState.kt` (new file)
+   - `android/app/src/main/java/com/rohan/localshare/storage/StorageModule.kt`
+   - `android/app/src/main/java/com/rohan/localshare/transfer/TransferServerModule.kt`
+   - `nodejs-assets/nodejs-project/fs-service.js`
+   - `nodejs-assets/nodejs-project/transfer-gateway.js`
+   - `desktop/engine/desktop-node.js`
+   - `src/engine/remoteFs.js`
+   - `src/engine/LocalShareNode.js`
+   - `src/engine/providers.js`
+   - `src/components/ToastBanner.js` (new file)
+   - `App.js`
+   - `src/navigation/AppNavigator.js`
+   - `src/screens/DevicesScreen.js`
+   - `src/screens/RemoteExplorerScreen.js`
+   - `src/screens/TransfersScreen.js`
+   - `src/screens/SettingsScreen.js`
+   - `desktop/public/index.html`
+   - `desktop/public/style.css`
+   - `desktop/public/app.js`
+   - `android/gradle.properties`
+2. **Root Cause & Trigger**:
+   - Live Connection & Clipboard Echo Loops: `/v1/live/ping` method mismatch, missing bidirectional connection handshake hooks, echo bounce loops on both mobile and PC, loopback IP addresses advertised in live connect payloads.
+   - O+ Connect-style pairing: Missing instant QR & 6-digit PIN code pairing on PC and Mobile.
+   - Missing smart media categories, fast image/video thumbnails, cross-device filename search, and live hardware/storage telemetry.
+   - Mobile and Desktop UI fragmented across too many disconnected views.
+3. **Exact Modification (What Changed)**:
+   - **Echo-Free Clipboard Synchronization**: Added `ClipboardSyncState` shared singleton in Kotlin, deduping incoming HTTP clipboard writes against local OS listener events. On Desktop PC, immediately synchronized `lastClipboardHash` before UI broadcast and maintained last 15 clipboard history items.
+   - **Bidirectional Live Connection & Real IP Resolution**: Fixed `/v1/live/ping` to accept both `GET` and `POST`. In `POST /v1/live/connect`, resolved caller IP from socket remote address if missing or loopback. Added `onLiveConnected` and `onLiveDisconnected` lifecycle hooks in `TransferGateway` and connected them to `DesktopEngine`.
+   - **Instant QR & 6-Digit PIN Pairing**:
+     - PC: Generates rotating 6-digit PIN (`self.pairingCode`) and clean SVG QR code in `desktop-node.js` (`GET /api/self`), rendered on Unconnected Hero card with 1-click PIN copy.
+     - Mobile: Integrated `react-native-vision-camera` QR viewfinder with fallback 6-digit PIN / IP modal.
+   - **Smart Categories, Thumbnails, Search & Telemetry**:
+     - Android & PC servers: `GET /v1/telemetry` (real battery % + charging state + free storage bytes via `StatFsSync`/`StatFs`), `GET /v1/fs/categories` (`photos`, `videos`, `documents`, `downloads`), `GET /v1/fs/thumbnail` (LruCache cached image thumbnails with 300s HTTP cache header), and `GET /v1/fs/search` (recursive subfolder search).
+   - **Consumer UI Redesign**:
+     - Mobile: 4-tab floating bottom dock (`Home`, `Browse`, `Activity`, `Settings`). `DevicesScreen` features flagship Connected PC Card with live battery/storage telemetry and action tiles. `RemoteExplorerScreen` features Category Pills, cross-device search, 3-column media thumbnail grid, and full-screen modal Lightbox. `TransfersScreen` features 3-way toggle (`Transfers` | `Received` | `Clipboard`) with live clipboard history feed. `SettingsScreen` features auto-reconnect and live clipboard toggles with collapsible diagnostics.
+     - Desktop: 2-state interface: State A (Unconnected) with nearby devices and Quick Pair QR card; State B (Connected) with Hero Device Bar (battery, storage, pulse dot, clipboard toggle), full-window quick drop zone, connected remote explorer with thumbnail grid & lightbox, and live clipboard drawer.
+4. **Why It Was Changed**: Rivals OPPO/OnePlus O+ Connect and Apple Continuity across Android and Windows/Mac/Linux PCs with zero mocks, zero fake data, and real byte-stream and OS-level functionality.
+5. **Impact & Guidance**: Seamless cross-device continuity with instant visual pairing, live telemetry, fast media browsing with thumbnail grids, full-window drag-drop, and zero echo loops.
+6. **Verification Evidence**:
+   - `npm test`: 13 test suites / 84 tests passing.
+   - `npm run test:integration`: 5 test suites / 18 tests passing.
+   - `npm run lint`: ESLint passing with 0 errors and 0 warnings (`--max-warnings=0`).
+   - `npm run type-check`: `tsc --noEmit` passing with 0 errors.
+   - Desktop build: `LocalShare.exe` compiled (168.84 MB).

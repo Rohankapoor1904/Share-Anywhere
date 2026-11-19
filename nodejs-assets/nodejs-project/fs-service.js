@@ -269,11 +269,195 @@ function deleteEntry(targetPath) {
   return target;
 }
 
+const CATEGORY_EXTENSIONS = {
+  photos: new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg']),
+  videos: new Set(['.mp4', '.mkv', '.webm', '.mov', '.avi', '.m4v']),
+  audio: new Set(['.mp3', '.wav', '.ogg', '.m4a', '.flac', '.aac']),
+  documents: new Set(['.pdf', '.txt', '.md', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.csv', '.json', '.xml', '.html', '.js', '.ts'])
+};
+
+/**
+ * Scan directory recursively up to a depth limit, gathering files matching a predicate.
+ */
+function walkFiles(dir, predicate, maxDepth = 4, currentDepth = 0, results = [], maxResults = 150) {
+  if (currentDepth > maxDepth || results.length >= maxResults) return results;
+  let names;
+  try {
+    names = fs.readdirSync(dir);
+  } catch (_) {
+    return results;
+  }
+  for (const name of names) {
+    if (results.length >= maxResults) break;
+    if (name.startsWith('.') || name === 'node_modules' || name === '$RECYCLE.BIN' || name === 'System Volume Information') continue;
+    const fullPath = path.join(dir, name);
+    try {
+      const stat = fs.statSync(fullPath);
+      if (stat.isDirectory()) {
+        walkFiles(fullPath, predicate, maxDepth, currentDepth + 1, results, maxResults);
+      } else if (stat.isFile() && predicate(name, fullPath, stat)) {
+        results.push({
+          name,
+          path: fullPath,
+          isDirectory: false,
+          size: stat.size,
+          lastModified: stat.mtimeMs,
+          mimeType: getMimeType(fullPath)
+        });
+      }
+    } catch (_) {}
+  }
+  return results;
+}
+
+/**
+ * List files by smart category (photos, videos, documents, downloads, audio).
+ * @param {string} type
+ * @param {number} [limit=60]
+ * @param {number} [offset=0]
+ * @param {string} [rootDir]
+ * @returns {{ type: string, total: number, offset: number, limit: number, entries: Array<object> }}
+ */
+function listCategory(type = 'photos', limit = 60, offset = 0, rootDir = null) {
+  const home = rootDir || getDefaultRoot();
+  let searchRoots = [];
+
+  if (type === 'downloads') {
+    searchRoots = [path.join(home, 'Downloads'), path.join(home, 'Downloads', 'LocalShare')];
+  } else if (type === 'photos') {
+    searchRoots = [path.join(home, 'Pictures'), path.join(home, 'Downloads'), path.join(home, 'Desktop')];
+  } else if (type === 'videos') {
+    searchRoots = [path.join(home, 'Videos'), path.join(home, 'Downloads'), path.join(home, 'Desktop')];
+  } else if (type === 'audio') {
+    searchRoots = [path.join(home, 'Music'), path.join(home, 'Downloads')];
+  } else if (type === 'documents') {
+    searchRoots = [path.join(home, 'Documents'), path.join(home, 'Downloads'), path.join(home, 'Desktop')];
+  } else {
+    searchRoots = [home];
+  }
+
+  const exts = CATEGORY_EXTENSIONS[type];
+  const predicate = (name) => {
+    if (type === 'downloads') return true;
+    if (!exts) return true;
+    const ext = path.extname(name).toLowerCase();
+    return exts.has(ext);
+  };
+
+  const allEntries = [];
+  const seenPaths = new Set();
+
+  for (const root of searchRoots) {
+    if (!fs.existsSync(root)) continue;
+    const found = walkFiles(root, predicate, 3, 0, [], 120);
+    for (const item of found) {
+      if (!seenPaths.has(item.path)) {
+        seenPaths.add(item.path);
+        allEntries.push(item);
+      }
+    }
+  }
+
+  allEntries.sort((a, b) => b.lastModified - a.lastModified);
+  const paged = allEntries.slice(offset, offset + limit);
+
+  return {
+    type,
+    total: allEntries.length,
+    offset,
+    limit,
+    entries: paged
+  };
+}
+
+/**
+ * Fast search files by filename across common user directories.
+ * @param {string} query
+ * @param {number} [limit=50]
+ * @param {number} [maxDepth=4]
+ * @param {string} [rootDir]
+ * @returns {Array<object>}
+ */
+function searchFiles(query = '', limit = 50, maxDepth = 4, rootDir = null) {
+  if (!query || typeof query !== 'string') return [];
+  const q = query.toLowerCase().trim();
+  const home = rootDir || getDefaultRoot();
+  const searchRoots = [
+    path.join(home, 'Desktop'),
+    path.join(home, 'Downloads'),
+    path.join(home, 'Documents'),
+    path.join(home, 'Pictures'),
+    path.join(home, 'Videos')
+  ];
+
+  const results = [];
+  const seenPaths = new Set();
+  const predicate = (name) => name.toLowerCase().includes(q);
+
+  for (const root of searchRoots) {
+    if (results.length >= limit) break;
+    if (!fs.existsSync(root)) continue;
+    const found = walkFiles(root, predicate, maxDepth, 0, [], limit - results.length);
+    for (const item of found) {
+      if (!seenPaths.has(item.path)) {
+        seenPaths.add(item.path);
+        results.push(item);
+        if (results.length >= limit) break;
+      }
+    }
+  }
+
+  results.sort((a, b) => b.lastModified - a.lastModified);
+  return results;
+}
+
+/**
+ * Get system telemetry: disk storage, memory, platform, hostname.
+ * @returns {object}
+ */
+function getTelemetry() {
+  const home = getDefaultRoot();
+  let freeStorage = 0;
+  let totalStorage = 0;
+  try {
+    if (typeof fs.statfsSync === 'function') {
+      const s = fs.statfsSync(home);
+      freeStorage = Number(s.bfree) * Number(s.bsize);
+      totalStorage = Number(s.blocks) * Number(s.bsize);
+    }
+  } catch (_) {}
+
+  const memTotal = os.totalmem();
+  const memFree = os.freemem();
+
+  return {
+    platform: process.platform,
+    hostname: os.hostname(),
+    deviceModel: `${os.type()} ${os.arch()}`,
+    storage: {
+      freeBytes: freeStorage,
+      totalBytes: totalStorage
+    },
+    memory: {
+      freeBytes: memFree,
+      totalBytes: memTotal
+    },
+    battery: {
+      level: 100,
+      charging: true,
+      hasBattery: false
+    }
+  };
+}
+
 module.exports = {
   getMimeType,
   getDefaultRoot,
   resolvePath,
   listDirectory,
   copyEntry,
-  deleteEntry
+  deleteEntry,
+  listCategory,
+  searchFiles,
+  getTelemetry
 };

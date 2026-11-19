@@ -71,6 +71,8 @@ class TransferGateway {
    * @param {(progress: object) => void} [options.onProgress]
    * @param {(file: object) => void} [options.onFileReceived]
    * @param {(clip: object) => void} [options.onClipboardReceived]
+   * @param {(peer: object) => void} [options.onLiveConnected]
+   * @param {() => void} [options.onLiveDisconnected]
    * @param {{ readText: () => string, writeText: (text: string) => boolean }} [options.clipboardAdapter]
    */
   constructor(options = {}) {
@@ -87,6 +89,8 @@ class TransferGateway {
     this.onProgress = options.onProgress || null;
     this.onFileReceived = options.onFileReceived || null;
     this.onClipboardReceived = options.onClipboardReceived || null;
+    this.onLiveConnected = options.onLiveConnected || null;
+    this.onLiveDisconnected = options.onLiveDisconnected || null;
     this.clipboardAdapter = options.clipboardAdapter || null;
 
     this.activeSessions = new Map();
@@ -554,9 +558,81 @@ class TransferGateway {
         return;
       }
 
+      if (pathname === '/v1/fs/categories' && method === 'GET') {
+        const type = url.searchParams.get('type') || 'photos';
+        const limit = parseInt(url.searchParams.get('limit') || '60', 10) || 60;
+        const offset = parseInt(url.searchParams.get('offset') || '0', 10) || 0;
+        try {
+          const result = fsService.listCategory(type, limit, offset, this.browseRoot);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(result));
+        } catch (err) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: err.message }));
+        }
+        return;
+      }
+
+      if (pathname === '/v1/fs/search' && method === 'GET') {
+        const q = url.searchParams.get('q') || '';
+        try {
+          const results = fsService.searchFiles(q, 50, 4, this.browseRoot);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ query: q, count: results.length, entries: results }));
+        } catch (err) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: err.message }));
+        }
+        return;
+      }
+
+      if (pathname === '/v1/fs/thumbnail' && method === 'GET') {
+        const requested = url.searchParams.get('path');
+        if (!requested) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Missing path parameter' }));
+          return;
+        }
+        const target = fsService.resolvePath(this.browseRoot, requested);
+        if (!fs.existsSync(target) || !fs.statSync(target).isFile()) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'File not found' }));
+          return;
+        }
+        res.setHeader('Cache-Control', 'public, max-age=300');
+        this.streamFile(req, res, target);
+        return;
+      }
+
+      if (pathname === '/v1/telemetry' && method === 'GET') {
+        const data = fsService.getTelemetry();
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(data));
+        return;
+      }
+
       if (pathname === '/v1/live/connect' && method === 'POST') {
         const body = await this.readJsonBody(req);
-        this.connectedPeer = body;
+        let resolvedIp = body.address;
+        const remoteIp = req.socket && req.socket.remoteAddress
+          ? req.socket.remoteAddress.replace(/^::ffff:/, '')
+          : '';
+        if (!resolvedIp || resolvedIp === '127.0.0.1' || resolvedIp === '0.0.0.0') {
+          resolvedIp = remoteIp || resolvedIp || '127.0.0.1';
+        }
+        const peerObj = {
+          ...body,
+          address: resolvedIp,
+          port: body.port || protocol.kDefaultPort
+        };
+        this.connectedPeer = peerObj;
+        if (this.onLiveConnected) {
+          try {
+            this.onLiveConnected(peerObj);
+          } catch (e) {
+            // callback non-fatal
+          }
+        }
         const currentClipboard = this.clipboardAdapter
           ? this.clipboardAdapter.readText()
           : getSystemClipboard();
@@ -571,14 +647,21 @@ class TransferGateway {
 
       if (pathname === '/v1/live/disconnect' && method === 'POST') {
         this.connectedPeer = null;
+        if (this.onLiveDisconnected) {
+          try {
+            this.onLiveDisconnected();
+          } catch (e) {
+            // callback non-fatal
+          }
+        }
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ disconnected: true }));
         return;
       }
 
-      if (pathname === '/v1/live/ping' && method === 'POST') {
+      if (pathname === '/v1/live/ping' && (method === 'GET' || method === 'POST')) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ pong: true, timestamp: Date.now() }));
+        res.end(JSON.stringify({ status: 'ok', pong: true, timestamp: Date.now() }));
         return;
       }
 

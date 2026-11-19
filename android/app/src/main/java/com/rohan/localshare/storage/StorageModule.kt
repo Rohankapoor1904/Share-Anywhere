@@ -155,6 +155,7 @@ class StorageModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
     fun setClipboardText(text: String, incomingHash: String? = null, promise: Promise) {
         val hash = if (!incomingHash.isNullOrEmpty()) incomingHash else sha256(text)
         lastWrittenHash = hash
+        ClipboardSyncState.lastHash = hash
         val latch = CountDownLatch(1)
         UiThreadUtil.runOnUiThread {
             try {
@@ -181,8 +182,9 @@ class StorageModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
                             val text = clip.getItemAt(0).coerceToText(reactApplicationContext)?.toString() ?: ""
                             if (text.isNotEmpty()) {
                                 val hash = sha256(text)
-                                if (hash != lastWrittenHash) {
+                                if (hash != lastWrittenHash && hash != ClipboardSyncState.lastHash) {
                                     lastWrittenHash = hash
+                                    ClipboardSyncState.lastHash = hash
                                     val params = Arguments.createMap().apply {
                                         putString("text", text)
                                         putString("hash", hash)
@@ -228,8 +230,9 @@ class StorageModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
                     val text = clip.getItemAt(0).coerceToText(reactApplicationContext)?.toString() ?: ""
                     if (text.isNotEmpty()) {
                         val hash = sha256(text)
-                        if (hash != lastWrittenHash) {
+                        if (hash != lastWrittenHash && hash != ClipboardSyncState.lastHash) {
                             lastWrittenHash = hash
+                            ClipboardSyncState.lastHash = hash
                             val params = Arguments.createMap().apply {
                                 putString("text", text)
                                 putString("hash", hash)

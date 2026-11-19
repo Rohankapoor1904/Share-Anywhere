@@ -19,6 +19,22 @@ import Icon from '../components/Icon';
 import AmbientBackground from '../components/AmbientBackground';
 import RadarView from '../components/RadarView';
 import { PeerBlip, getPositionForPeer } from './RadarScreen';
+import { formatBytes } from '../utils/byteFormat';
+
+/** @type {any} */
+let CameraComponent = null;
+/** @type {any} */
+let useCameraDeviceHook = (_pos) => null;
+/** @type {any} */
+let useCodeScannerHook = (_opts) => null;
+
+try {
+  // eslint-disable-next-line global-require
+  const VC = require('react-native-vision-camera');
+  CameraComponent = VC.Camera;
+  useCameraDeviceHook = VC.useCameraDevice;
+  useCodeScannerHook = VC.useCodeScanner;
+} catch (_) {}
 
 export default function DevicesScreen({ navigation }) {
   const {
@@ -30,6 +46,7 @@ export default function DevicesScreen({ navigation }) {
     scanSubnet,
     addManualPeer,
     connectedPeer,
+    connectedPeerTelemetry,
     isLiveConnected,
     liveClipboardEnabled,
     connectToPeer,
@@ -44,11 +61,65 @@ export default function DevicesScreen({ navigation }) {
 
   const [viewMode, setViewMode] = useState('list');
   const [qrModalVisible, setQrModalVisible] = useState(false);
+  const [scannerModalVisible, setScannerModalVisible] = useState(false);
+  const [pairingInput, setPairingInput] = useState('');
   const [manualModalVisible, setManualModalVisible] = useState(false);
   const [manualIp, setManualIp] = useState('');
   const [manualPort, setManualPort] = useState('53318');
   const [manualFingerprint, setManualFingerprint] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+
+  const cameraDevice = useCameraDeviceHook ? useCameraDeviceHook('back') : null;
+
+  const codeScanner = useCodeScannerHook ? useCodeScannerHook({
+    codeTypes: ['qr'],
+    onCodeScanned: (codes) => {
+      if (codes && codes.length > 0 && codes[0].value) {
+        handleQrPayload(codes[0].value);
+      }
+    }
+  }) : null;
+
+  const handleQrPayload = (payload) => {
+    try {
+      const parsed = typeof payload === 'string' ? JSON.parse(payload) : payload;
+      if (parsed && parsed.address) {
+        setScannerModalVisible(false);
+        const peer = {
+          deviceId: parsed.deviceId || `qr-${parsed.address}`,
+          displayName: parsed.displayName || `PC (${parsed.address})`,
+          address: parsed.address,
+          port: parsed.port || 53318,
+          fingerprint: parsed.fingerprint || '',
+          platform: 'desktop'
+        };
+        connectToPeer(peer);
+      }
+    } catch (_) {}
+  };
+
+  const handleCodeSubmit = () => {
+    const val = pairingInput.trim();
+    if (!val) return;
+    setScannerModalVisible(false);
+    if (val.includes('.')) {
+      addManualPeer(val, 53318, '');
+      connectToPeer({
+        deviceId: `manual-${val}`,
+        displayName: `Device (${val})`,
+        address: val,
+        port: 53318,
+        platform: 'desktop'
+      });
+      return;
+    }
+    const matching = peers.find((p) => p.pairingCode === val);
+    if (matching) {
+      connectToPeer(matching);
+    } else {
+      scanSubnet();
+    }
+  };
 
   const qrData = JSON.stringify({
     deviceId: selfDevice.deviceId,
@@ -138,27 +209,84 @@ export default function DevicesScreen({ navigation }) {
           </TouchableOpacity>
         </View>
 
-        {/* Live Link Banner if connected */}
+        {/* Flagship Connected PC Card (O+ Connect style) */}
         {isLiveConnected && connectedPeer ? (
-          <View style={[styles.liveBanner, { backgroundColor: theme.colors.successGlow, borderColor: theme.colors.success }]}>
-            <View style={styles.liveBannerLeft}>
-              <View style={[styles.statusDot, { backgroundColor: theme.colors.success }]} />
-              <View>
-                <Text style={[styles.liveBannerTitle, { color: theme.colors.text }]}>
-                  Live Link: {connectedPeer.displayName || connectedPeer.address}
-                </Text>
-                <Text style={[styles.liveBannerSub, { color: theme.colors.textSecondary }]}>
-                  {liveClipboardEnabled ? 'Bi-directional clipboard synced' : 'Clipboard sync paused'}
-                </Text>
+          <GlassCard style={styles.connectedHeroCard} variant="interactive">
+            <View style={styles.connectedTopRow}>
+              <View style={[styles.connectedAvatar, { backgroundColor: theme.colors.primaryGlow }]}>
+                <Icon name="desktop" size={22} color={theme.colors.primary} strokeWidth={2.2} />
               </View>
+              <View style={styles.connectedInfo}>
+                <View style={styles.connectedBadgeRow}>
+                  <View style={[styles.statusDot, { backgroundColor: theme.colors.success }]} />
+                  <Text style={[styles.connectedStatusText, { color: theme.colors.success }]}>
+                    CONNECTED
+                  </Text>
+                  {liveClipboardEnabled ? (
+                    <View style={[styles.liveClipBadge, { backgroundColor: theme.colors.primaryGlow }]}>
+                      <Text style={[styles.liveClipText, { color: theme.colors.primary }]}>Clipboard Live</Text>
+                    </View>
+                  ) : null}
+                </View>
+                <Text style={[styles.connectedNameText, { color: theme.colors.text }]} numberOfLines={1}>
+                  {connectedPeer.displayName || connectedPeer.address}
+                </Text>
+                {connectedPeerTelemetry && connectedPeerTelemetry.storage ? (
+                  <Text style={[styles.connectedTelemetryText, { color: theme.colors.textSecondary }]}>
+                    {connectedPeerTelemetry.deviceModel || 'PC'} • {formatBytes(connectedPeerTelemetry.storage.freeBytes)} free
+                  </Text>
+                ) : (
+                  <Text style={[styles.connectedTelemetryText, { color: theme.colors.textSecondary }]}>
+                    {connectedPeer.address} • Ready
+                  </Text>
+                )}
+              </View>
+              <TouchableOpacity
+                style={[styles.disconnectIconBtn, { backgroundColor: theme.colors.cardSolid, borderColor: theme.colors.border }]}
+                onPress={disconnectLive}
+                accessibilityRole="button"
+                accessibilityLabel="Disconnect live peer"
+              >
+                <Icon name="close" size={16} color={theme.colors.danger} strokeWidth={2.6} />
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity
-              style={[styles.disconnectBtn, { backgroundColor: theme.colors.cardSolid, borderColor: theme.colors.danger }]}
-              onPress={disconnectLive}
-            >
-              <Text style={[styles.disconnectBtnText, { color: theme.colors.danger }]}>Disconnect</Text>
-            </TouchableOpacity>
-          </View>
+
+            {/* 3 Large Action Tiles */}
+            <View style={styles.actionTilesRow}>
+              <TouchableOpacity
+                style={[styles.actionTile, { backgroundColor: theme.colors.cardSolid, borderColor: theme.colors.border }]}
+                onPress={() => handleSelectPeer(connectedPeer)}
+              >
+                <View style={[styles.tileIconCircle, { backgroundColor: theme.colors.primaryGlow }]}>
+                  <Icon name="share" size={18} color={theme.colors.primary} strokeWidth={2.2} />
+                </View>
+                <Text style={[styles.tileTitle, { color: theme.colors.text }]}>Send Files</Text>
+                <Text style={[styles.tileSub, { color: theme.colors.textMuted }]}>Photos & docs</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.actionTile, { backgroundColor: theme.colors.cardSolid, borderColor: theme.colors.border }]}
+                onPress={() => handleBrowsePeer(connectedPeer)}
+              >
+                <View style={[styles.tileIconCircle, { backgroundColor: theme.colors.successGlow }]}>
+                  <Icon name="files" size={18} color={theme.colors.success} strokeWidth={2.2} />
+                </View>
+                <Text style={[styles.tileTitle, { color: theme.colors.text }]}>Browse PC</Text>
+                <Text style={[styles.tileSub, { color: theme.colors.textMuted }]}>Explore & pull</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.actionTile, { backgroundColor: theme.colors.cardSolid, borderColor: theme.colors.border }]}
+                onPress={() => navigation.navigate('Transfers')}
+              >
+                <View style={[styles.tileIconCircle, { backgroundColor: 'rgba(236,72,153,0.14)' }]}>
+                  <Icon name="activity" size={18} color="#ec4899" strokeWidth={2.2} />
+                </View>
+                <Text style={[styles.tileTitle, { color: theme.colors.text }]}>Activity</Text>
+                <Text style={[styles.tileSub, { color: theme.colors.textMuted }]}>Transfers & clip</Text>
+              </TouchableOpacity>
+            </View>
+          </GlassCard>
         ) : null}
 
         {viewMode === 'radar' ? (
@@ -181,17 +309,17 @@ export default function DevicesScreen({ navigation }) {
           </View>
         ) : (
           <>
-            {/* Self Device Header Card */}
+            {/* Self Device Header Card (Clean Consumer Design) */}
             <GlassCard style={styles.selfCard} variant="interactive">
               <View style={styles.selfHeaderRow}>
                 <View style={styles.selfInfo}>
                   <View style={styles.selfLabelRow}>
                     <View style={[styles.statusDot, { backgroundColor: theme.colors.success }]} />
-                    <Text style={[styles.selfLabel, { color: theme.colors.primary }]}>THIS DEVICE</Text>
+                    <Text style={[styles.selfLabel, { color: theme.colors.primary }]}>THIS PHONE</Text>
                   </View>
                   <Text style={[styles.selfName, { color: theme.colors.text }]}>{selfDevice.displayName}</Text>
                   <Text style={[styles.selfDetails, { color: theme.colors.textSecondary }]}>
-                    {selfDevice.address}:{selfDevice.port}
+                    Ready to connect & share
                   </Text>
                 </View>
                 <TouchableOpacity
@@ -205,35 +333,34 @@ export default function DevicesScreen({ navigation }) {
                   accessibilityLabel="Show device QR code"
                 >
                   <Icon name="qr" size={14} color={theme.colors.primary} strokeWidth={2.2} />
-                  <Text style={[styles.qrButtonText, { color: theme.colors.primary }]}>QR Code</Text>
+                  <Text style={[styles.qrButtonText, { color: theme.colors.primary }]}>My QR</Text>
                 </TouchableOpacity>
               </View>
             </GlassCard>
 
-            {/* Discovery Controls Bar */}
+            {/* Primary Action & Controls Bar */}
             <View style={styles.controlsBar}>
               <TouchableOpacity
                 style={[
                   styles.actionBtn,
-                  isDiscovering
-                    ? { backgroundColor: theme.colors.primary }
-                    : { backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.primary, borderWidth: 1 }
+                  styles.scanPcBtn,
+                  { backgroundColor: theme.colors.primary }
                 ]}
-                onPress={isDiscovering ? stopDiscovery : startDiscovery}
+                onPress={() => setScannerModalVisible(true)}
               >
                 <Icon
-                  name={isDiscovering ? 'radar' : 'play'}
-                  size={14}
-                  color={isDiscovering && theme.mode === 'light' ? '#ffffff' : isDiscovering ? '#000000' : theme.colors.primary}
+                  name="qr"
+                  size={15}
+                  color={theme.mode === 'light' ? '#ffffff' : '#000000'}
                   strokeWidth={2.4}
                 />
                 <Text
                   style={[
                     styles.actionBtnText,
-                    { color: isDiscovering && theme.mode === 'light' ? '#ffffff' : isDiscovering ? '#000000' : theme.colors.primary }
+                    { color: theme.mode === 'light' ? '#ffffff' : '#000000', fontWeight: '800' }
                   ]}
                 >
-                  {isDiscovering ? 'Scanning for Peers...' : 'Start Scan'}
+                  Scan PC QR
                 </Text>
               </TouchableOpacity>
 
@@ -243,10 +370,12 @@ export default function DevicesScreen({ navigation }) {
                   styles.manualBtn,
                   { backgroundColor: theme.colors.cardSolid, borderColor: theme.colors.border }
                 ]}
-                onPress={scanSubnet}
+                onPress={isDiscovering ? stopDiscovery : startDiscovery}
               >
-                <Icon name="activity" size={14} color={theme.colors.text} strokeWidth={2.2} />
-                <Text style={[styles.actionBtnText, { color: theme.colors.text }]}>Subnet Probe</Text>
+                <Icon name={isDiscovering ? 'radar' : 'play'} size={14} color={theme.colors.text} strokeWidth={2.2} />
+                <Text style={[styles.actionBtnText, { color: theme.colors.text }]}>
+                  {isDiscovering ? 'Scanning…' : 'Scan'}
+                </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -323,6 +452,80 @@ export default function DevicesScreen({ navigation }) {
             />
           </>
         )}
+
+        {/* Scan PC QR / 6-Digit Code Modal */}
+        <Modal
+          visible={scannerModalVisible}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setScannerModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <GlassCard style={styles.scannerModalCard} variant="highlighted">
+              <View style={styles.scannerHeaderRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.modalTitle, { color: theme.colors.text }]}>Connect to PC</Text>
+                  <Text style={[styles.modalSubtitle, { color: theme.colors.textSecondary, textAlign: 'left' }]}>
+                    Scan the QR code shown on your PC screen
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={[styles.closeIconBtn, { backgroundColor: theme.colors.cardSolid }]}
+                  onPress={() => setScannerModalVisible(false)}
+                >
+                  <Icon name="close" size={16} color={theme.colors.text} strokeWidth={2.4} />
+                </TouchableOpacity>
+              </View>
+
+              {CameraComponent && cameraDevice ? (
+                <View style={styles.cameraViewfinder}>
+                  <CameraComponent
+                    style={StyleSheet.absoluteFill}
+                    device={cameraDevice}
+                    isActive={scannerModalVisible}
+                    codeScanner={codeScanner}
+                  />
+                  <View style={styles.viewfinderCorners} />
+                  <Text style={styles.viewfinderHint}>Align PC QR code within frame</Text>
+                </View>
+              ) : (
+                <View style={[styles.cameraFallback, { backgroundColor: theme.colors.cardSolid, borderColor: theme.colors.border }]}>
+                  <Icon name="qr" size={44} color={theme.colors.primary} strokeWidth={1.8} />
+                  <Text style={[styles.fallbackTitle, { color: theme.colors.text }]}>Camera Viewfinder</Text>
+                  <Text style={[styles.fallbackSub, { color: theme.colors.textSecondary }]}>
+                    Scan the PC's QR code or enter the 6-digit pairing code below.
+                  </Text>
+                </View>
+              )}
+
+              {/* Or enter 6-digit code / IP */}
+              <View style={styles.codeEntrySection}>
+                <Text style={[styles.codeEntryLabel, { color: theme.colors.textSecondary }]}>
+                  Or Enter 6-Digit Pairing Code / IP
+                </Text>
+                <View style={styles.codeRow}>
+                  <TextInput
+                    style={[styles.codeInput, { backgroundColor: theme.colors.inputBg, borderColor: theme.colors.border, color: theme.colors.text }]}
+                    placeholder="e.g. 482 915 or 192.168.1.5"
+                    placeholderTextColor={theme.colors.textMuted}
+                    value={pairingInput}
+                    onChangeText={setPairingInput}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                  <TouchableOpacity
+                    style={[styles.codeConnectBtn, { backgroundColor: theme.colors.primary }]}
+                    onPress={handleCodeSubmit}
+                  >
+                    <Text style={[styles.codeConnectBtnText, { color: theme.mode === 'light' ? '#ffffff' : '#000000' }]}>
+                      Connect
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </GlassCard>
+          </View>
+        </Modal>
 
         {/* QR Modal */}
         <Modal
@@ -692,5 +895,186 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     textAlign: 'center'
+  },
+  connectedHeroCard: {
+    padding: 16,
+    borderRadius: 18,
+    marginBottom: 14
+  },
+  connectedTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 14
+  },
+  connectedAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12
+  },
+  connectedInfo: {
+    flex: 1
+  },
+  connectedBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 2
+  },
+  connectedStatusText: {
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.8
+  },
+  liveClipBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 6
+  },
+  liveClipText: {
+    fontSize: 9,
+    fontWeight: '800'
+  },
+  connectedNameText: {
+    fontSize: 16,
+    fontWeight: '800'
+  },
+  connectedTelemetryText: {
+    fontSize: 11,
+    marginTop: 1
+  },
+  disconnectIconBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  actionTilesRow: {
+    flexDirection: 'row',
+    gap: 8
+  },
+  actionTile: {
+    flex: 1,
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 10,
+    alignItems: 'center'
+  },
+  tileIconCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6
+  },
+  tileTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 1
+  },
+  tileSub: {
+    fontSize: 9
+  },
+  scanPcBtn: {
+    flex: 1.3
+  },
+  scannerModalCard: {
+    width: '100%',
+    maxWidth: 380,
+    padding: 20,
+    borderRadius: 20
+  },
+  scannerHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: 14
+  },
+  closeIconBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  cameraViewfinder: {
+    width: '100%',
+    height: 220,
+    borderRadius: 14,
+    overflow: 'hidden',
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  viewfinderCorners: {
+    width: 160,
+    height: 160,
+    borderWidth: 2,
+    borderColor: '#38bdf8',
+    borderRadius: 16
+  },
+  viewfinderHint: {
+    position: 'absolute',
+    bottom: 10,
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '600',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8
+  },
+  cameraFallback: {
+    width: '100%',
+    padding: 24,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  fallbackTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    marginTop: 10,
+    marginBottom: 4
+  },
+  fallbackSub: {
+    fontSize: 12,
+    textAlign: 'center'
+  },
+  codeEntrySection: {
+    marginTop: 16
+  },
+  codeEntryLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 8
+  },
+  codeRow: {
+    flexDirection: 'row',
+    gap: 8
+  },
+  codeInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    fontSize: 13
+  },
+  codeConnectBtn: {
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  codeConnectBtnText: {
+    fontSize: 13,
+    fontWeight: '800'
   }
 });
