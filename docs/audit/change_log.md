@@ -607,3 +607,129 @@ This file tracks every modification made across the codebase, recording exact ta
 4. **Why It Was Changed**: The shell should read as a layered, product-grade surface, and the engine's live identity must be visible from every tab instead of requiring a tab switch.
 5. **Impact & Guidance**: Every tab now shows LAN IP, both ports (53318 engine / 53317 LocalSend) and live peer count; Clipboard Sync and Scan act on real endpoints. All icons remain inline SVG — no emoji anywhere in `src/`, `App.js` or `desktop/public/`.
 6. **Verification Evidence**: `npx jest` → 13 suites / 84 tests pass; `npm run lint` → exit 0 (`--max-warnings=0`); `npx tsc --noEmit` → exit 0; `node --check desktop/public/app.js` → OK; CSS brace balance verified at depth 0. Live render at `http://127.0.0.1:53319/` shows `LAN IP 10.2.48.156`, `Engine 53318 / 53317`, `Peers 1`, and both pills; Radar tab renders the blip with NEAR/LAN/SUBNET labels.
+
+### Entry 14.8: Ephemeral Port Binding for Integration Tests & Full Release Compilation
+1. **Exact Target & Location**:
+   - `nodejs-assets/nodejs-project/transfer-gateway.js` (line 73)
+   - `docs/audit/change_log.md`
+   - `BRAIN.md`
+2. **Root Cause & Trigger**: In `transfer-gateway.js`, `this.port = options.port || protocol.kDefaultPort;` evaluated `0 || 53318` to `53318` because `0` is falsy. Integration tests specifying `port: 0` for dynamic ephemeral OS ports collided on 53318 / 53328 with `EADDRINUSE`.
+3. **Exact Modification (What Changed)**:
+   - Replaced `this.port = options.port || protocol.kDefaultPort;` with `this.port = typeof options.port === 'number' ? options.port : protocol.kDefaultPort;` so `port: 0` dynamically binds to a free port.
+   - Executed standalone PC packaging pipeline (`build_pc.ps1` / `scripts/build_desktop.js`) to produce `dist/LocalShare-win32-x64/LocalShare.exe`.
+   - Executed Android release build pipeline (`build_release.ps1` / `gradlew.bat assembleRelease`) to compile fresh release APKs (`app-arm64-v8a-release.apk`, `app-universal-release.apk`, etc.) reflecting all latest runtime defect fixes from commit `0c7c56a`.
+4. **Why It Was Changed**: Ensures reliable, isolated real-socket testing without port collisions or `TIME_WAIT` conflicts, and generates up-to-date installable binaries for PC and mobile connection testing.
+5. **Impact & Guidance**: Integration tests run completely green in 4.1s. Mobile release APKs and PC executable are fully synchronized with the latest `main` branch.
+6. **Verification Evidence**:
+   - Unit tests: 13 suites / 84 tests pass (`npm test`).
+   - Integration tests: 5 suites / 18 tests pass (`npm run test:integration`).
+   - Linter: ESLint exit 0 with 0 warnings (`npm run lint`).
+   - Type checker: `tsc --noEmit` exit 0 (`npm run type-check`).
+   - Standalone PC Executable: `dist/LocalShare-win32-x64/LocalShare.exe` (168.84 MB).
+   - Android Release APKs:
+     - `app-arm64-v8a-release.apk` (31.75 MB, SHA256: `DFEE787A137E8770D44C02A2A15F20EC8B99BDF186C2B8AD86067B4AF3FC59FE`)
+     - `app-universal-release.apk` (77.55 MB, SHA256: `6F0E4F18950224D8E34E58FBFA0D0FB0F2D85A814A643AE7C18E95815852E100`)
+     - `app-x86_64-release.apk` (33.20 MB, SHA256: `BCB9179A6DC62805F0C52265DE92AAC88B104F8AA157423C11992C90855FFCA5`)
+     - `app-armeabi-v7a-release.apk` (30.38 MB, SHA256: `625AAE12AF0867FF64AF8B2C77871945537710309A0232018DB21F58F98742FF`)
+   - Android Release APKs: `android/app/build/outputs/apk/release/app-arm64-v8a-release.apk` (30.26 MB, SHA256: `23BBB4B029045A42016BED077F7A34EA1E4386A9F8D600D94C28104A9C9CDFDE`), `app-universal-release.apk` (73.94 MB, SHA256: `44C3DA727DEAB6BE6B5B9207727CD00D718AB2986EFB0FB3507E65555ECCAAAD`).
+
+---
+
+## [Phase 15] Share-Anywhere Deep Performance, Live Sync, File Access & UI Overhaul
+- **Date**: 2026-11-19
+- **Spec**: `Share-Anywhere: Deep Performance, Live Sync, File Access & UI Overhaul Specification`
+- **Status**: COMPLETE, VERIFIED & NATIVE BINARIES PACKAGED
+
+### Entry 15.1: High-Speed Streaming Transfers, Persistent Live Link & UI Consolidation
+1. **Exact Target & Location**:
+   - `android/app/src/main/java/com/rohan/localshare/transfer/ChunkEngine.kt`:
+     - Added `writeChunkFromStream(fileName, offset, input, length)` writing directly from stream to `RandomAccessFile`.
+   - `android/app/src/main/java/com/rohan/localshare/transfer/TransferClientModule.kt`:
+     - Pooled singleton `OkHttpClient` (`ConnectionPool(5, 60s)`, timeouts 15s/60s/60s).
+     - Added `@ReactMethod fun sendFileStream(baseUrl, sessionId, fileId, fileUri, fileName, totalBytes, startOffset, chunkSize, promise)` with sequential 4 MB streaming, on-the-fly SHA-256 computation, 150ms throttled rolling speed metrics, and automatic commit.
+     - Added `@ReactMethod fun cancelSession(sessionId: String)`.
+   - `android/app/src/main/java/com/rohan/localshare/transfer/TransferServerModule.kt`:
+     - TCP_NODELAY, 256 KB socket buffers, raw byte header reader `readHeaderLine()` without `BufferedReader`.
+     - Direct 64 KB chunk reads into `FileOutputStream`/`RandomAccessFile`.
+     - Rolling speed metrics in `ReceiveProgress` native events.
+     - Saves to `Downloads/LocalShare` and triggers `MediaScannerConnection.scanFile(...)`.
+     - Added wire endpoints `/v1/live/connect`, `/v1/live/disconnect`, `/v1/live/ping`, `/v1/clipboard` with echo-prevention hash matching.
+   - `android/app/src/main/java/com/rohan/localshare/storage/StorageModule.kt`:
+     - Implemented `listReceivedFiles(promise)` for `Downloads/LocalShare`.
+     - Implemented `startClipboardMonitoring()`, `stopClipboardMonitoring()`, `checkClipboardOnActive()`, `setClipboardText(text, hash)`.
+   - `nodejs-assets/nodejs-project/fs-service.js`:
+     - Added `getAvailableDrives()` detecting Windows drive letters (`C:\`, `D:\`, etc.) and `getQuickFolders()`.
+     - Added virtual root `__ROOT__` listing all system drives and navigating up from drive roots back to `__ROOT__`.
+   - `nodejs-assets/nodejs-project/transfer-gateway.js`:
+     - Ephemeral port fix (`typeof options.port === 'number' ? options.port : protocol.kDefaultPort`).
+     - Added CORS headers (`Access-Control-Allow-Origin: *`) and `OPTIONS` 204 handler.
+     - Emits 150ms rolling progress on `PUT /v1/chunk` and invokes `onFileReceived` on commit.
+     - Added HTTP 206 Partial Content Range streaming in `GET /v1/fs/download`.
+     - Added wire endpoints `/v1/live/connect`, `/v1/live/disconnect`, `/v1/live/ping`, `/v1/clipboard` with `lastClipboardHash` echo-prevention.
+   - `nodejs-assets/nodejs-project/localsend-gateway.js`:
+     - Added `onFileReceived` callback support and updated JSDoc.
+   - `desktop/engine/desktop-node.js`:
+     - Reusable `this.httpAgent = new http.Agent({ keepAlive: true, maxSockets: 8 })`.
+     - Replaced all `fs.readFileSync` with `fs.createReadStream` + streaming SHA-256.
+     - Added live link endpoints (`/api/live/connect`, `/api/live/disconnect`, `/api/live/status`, `/api/live/toggle-clipboard`).
+     - 500ms clipboard polling watcher pushing to `connectedPeer`.
+     - SSE bridge broadcasting incoming transfers and received files live to PC UI.
+   - `desktop/main.js`:
+     - Eliminated startup flash: initializes `DesktopEngine` first, wires `clipboardAdapter` using Electron's `clipboard` module, creates `BrowserWindow` with `show: false`, waits for `ready-to-show`, and loads control URL once.
+   - `desktop/public/`:
+     - Added live link connection banner, clipboard sync toggle, disconnect action, and "Connect" buttons on device cards.
+   - `src/native/NativeBridge.js` & `src/native/NativeEvents.js`:
+     - Exposed `sendFileStream`, `cancelSession`, `listReceivedFiles`, `startClipboardMonitoring`, `stopClipboardMonitoring`, `checkClipboardOnActive`, `setClipboardText(text, hash)`.
+     - Subscribed to `ClipboardChanged`, `ClipboardSynced`, `LivePeerConnected`, `LivePeerDisconnected`.
+   - `src/engine/sendController.js` & `src/engine/receiveController.js`:
+     - Delegated to `NativeBridge.sendFileStream` on Android, preserved JS chunked upload for Jest tests under Node.
+     - Propagated `fileName`, `totalBytes`, `speed`, and `status: 'completed'`.
+   - `src/utils/protocol.js` & `nodejs-assets/nodejs-project/protocol.js`:
+     - Increased `kPeerStaleMs` from `15000` to `45000`.
+   - `src/engine/LocalShareNode.js`:
+     - Implemented `connectedPeer`, `connectToPeer`, `disconnectLive`, `_startLiveHeartbeat`, `toggleLiveClipboard`, AppState clipboard sync, and `refreshPeerLastSeen`.
+   - `src/engine/providers.js`:
+     - Wrapped all context functions in `useCallback` to prevent infinite re-render loops in `useEffect`.
+     - Subscribed to `TRANSFER_QUEUED` and implemented `upsertTransfer` so transfers appear immediately and never disappear.
+     - Hydrated `receivedFiles` from `Downloads/LocalShare` on mount.
+     - Persisted last 50 transfers to `@localshare:transfer_history` in `AsyncStorage`.
+   - `src/screens/ShareHubScreen.js`:
+     - Made `sendFiles` non-blocking: starts upload asynchronously, clears staged files, and immediately navigates to `Transfers`.
+   - `src/navigation/AppNavigator.js`:
+     - Consolidated bottom navigation to 5 tabs: `Devices`, `ShareHub`, `Files`, `Transfers`, `Settings`. Registered `Radar` and `Received` as hidden stack screens.
+   - `src/components/PeerCard.js`:
+     - Added dual-state live link support (`isLiveConnected`, `onConnect`), glowing success ring, "Live" badge, and "Connect" / "Connected" pill button.
+   - `src/screens/DevicesScreen.js`:
+     - Top segmented switcher (`Nearby Devices` | `Live Radar`), live link banner with disconnect button, and embedded `RadarView`.
+   - `src/screens/TransfersScreen.js`:
+     - Top segmented switcher (`Transfers` | `Received Files`), bandwidth throughput banner, and embedded received files view.
+   - `src/screens/RadarScreen.js`:
+     - Exported `PeerBlip` and `getPositionForPeer`.
+2. **Root Cause & Trigger**:
+   - Slow transfers due to $O(N^2)$ chunk skipping, synchronous `fs.readFileSync`, frequent client allocations.
+   - Disappearing transfers due to missing `TRANSFER_QUEUED` subscription and non-upserting state reducer.
+   - Blocking navigation in `ShareHubScreen` preventing real-time progress view.
+   - Peer flickering from tight 15s staleness timeout.
+   - Lack of bi-directional live link and clipboard synchronization.
+   - Limited single-drive file browsing on Windows.
+   - Mobile navigation tab bloat (7 tabs crowded bottom bar).
+   - Electron startup white flash.
+3. **Exact Modification (What Changed)**:
+   - Full streaming architecture with zero in-memory full-file buffering and on-the-fly SHA-256.
+   - Bi-directional live link and clipboard synchronization with echo-loop prevention on port 53318.
+   - Windows multi-drive root browsing (`__ROOT__`) and HTTP 206 range streaming.
+   - Consolidating mobile navigation to 5 bottom tabs with segmented views in Devices and Transfers.
+   - Smooth Electron window launch without white flash.
+4. **Why It Was Changed**: Eliminates performance bottlenecks, improves UX responsiveness, establishes persistent synchronization, and ensures high transfer reliability.
+5. **Impact & Guidance**: Users get real-time rolling throughput, immediate navigation to Transfers, automatic clipboard sync when connected, full drive browsing on Windows, and clean 5-tab mobile interface.
+6. **Verification Evidence**:
+   - Unit tests: 13 suites / 84 tests pass (`npm test`).
+   - Integration tests: 5 suites / 18 tests pass (`npm run test:integration`).
+   - Linter: ESLint exit 0 with 0 warnings (`npm run lint`).
+   - Type checker: `tsc --noEmit` exit 0 (`npm run type-check`).
+   - Standalone PC Executable: `dist/LocalShare-win32-x64/LocalShare.exe` (168.84 MB).
+   - Android Release APKs:
+     - `app-arm64-v8a-release.apk` (31.75 MB, SHA256: `DFEE787A137E8770D44C02A2A15F20EC8B99BDF186C2B8AD86067B4AF3FC59FE`)
+     - `app-universal-release.apk` (77.55 MB, SHA256: `6F0E4F18950224D8E34E58FBFA0D0FB0F2D85A814A643AE7C18E95815852E100`)
+     - `app-x86_64-release.apk` (33.20 MB, SHA256: `BCB9179A6DC62805F0C52265DE92AAC88B104F8AA157423C11992C90855FFCA5`)
+     - `app-armeabi-v7a-release.apk` (30.38 MB, SHA256: `625AAE12AF0867FF64AF8B2C77871945537710309A0232018DB21F58F98742FF`)

@@ -179,11 +179,27 @@
           <h4>${escapeHtml(p.displayName)}</h4>
           <p>${escapeHtml(p.address)}:${p.port} • ${p.platform}</p>
         </div>
-        <button class="btn btn-secondary btn-send-to" data-device-id="${p.deviceId}">
-          <span>Send</span>${icon('arrow-right', 13, 2.3)}
-        </button>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn btn-secondary btn-connect-to" data-device-id="${p.deviceId}">
+            <span>Connect</span>
+          </button>
+          <button class="btn btn-primary btn-send-to" data-device-id="${p.deviceId}">
+            <span>Send</span>${icon('arrow-right', 13, 2.3)}
+          </button>
+        </div>
       </div>
     `).join('');
+
+    list.querySelectorAll('.btn-connect-to').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const devId = btn.dataset.deviceId;
+        const peer = peers.find((p) => p.deviceId === devId);
+        if (peer) {
+          connectToPeerLive(peer);
+        }
+      });
+    });
 
     list.querySelectorAll('.btn-send-to').forEach((btn) => {
       btn.addEventListener('click', (e) => {
@@ -693,6 +709,20 @@
     sse.addEventListener('peer_found', () => loadPeers());
     sse.addEventListener('scan_state', () => loadPeers());
     sse.addEventListener('transfer_update', () => loadTransfers());
+    sse.addEventListener('received_updated', () => {
+      loadReceivedFiles();
+      loadTransfers();
+    });
+    sse.addEventListener('live_connected', () => updateLiveStatus());
+    sse.addEventListener('live_disconnected', () => updateLiveStatus());
+    sse.addEventListener('clipboard_sync', () => {
+      // Subtle pulse on telemetry clipboard icon
+      const btn = document.getElementById('btn-telemetry-clipboard');
+      if (btn) {
+        btn.classList.add('telemetry-pill-accent');
+        setTimeout(() => btn.classList.remove('telemetry-pill-accent'), 800);
+      }
+    });
     sse.addEventListener('incoming_request', (e) => {
       try {
         showIncomingRequest(JSON.parse(e.data));
@@ -701,6 +731,70 @@
       }
     });
     sse.addEventListener('incoming_request_closed', () => hideIncomingRequest());
+  }
+
+  // Live Link Session Management
+  async function connectToPeerLive(peer) {
+    try {
+      const res = await fetch('/api/live/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ peer })
+      });
+      if (res.ok) {
+        await updateLiveStatus();
+      }
+    } catch (err) {
+      console.error('Live connect failed', err);
+    }
+  }
+
+  async function disconnectPeerLive() {
+    try {
+      await fetch('/api/live/disconnect', { method: 'POST' });
+      await updateLiveStatus();
+    } catch (err) {
+      console.error('Live disconnect failed', err);
+    }
+  }
+
+  async function toggleLiveClipboard() {
+    try {
+      await fetch('/api/live/toggle-clipboard', { method: 'POST' });
+      await updateLiveStatus();
+    } catch (err) {
+      console.error('Toggle clipboard failed', err);
+    }
+  }
+
+  async function updateLiveStatus() {
+    try {
+      const res = await fetch('/api/live/status');
+      const data = await res.json();
+      const banner = document.getElementById('live-connection-banner');
+      if (!banner) return;
+      if (data.connected && data.peer) {
+        banner.style.display = 'flex';
+        document.getElementById('live-banner-peer').textContent = `${data.peer.displayName || data.peer.address}`;
+        const clipToggle = document.getElementById('live-banner-clip-btn');
+        if (clipToggle) {
+          clipToggle.textContent = data.clipboardSync ? 'Clipboard Sync: ON' : 'Clipboard Sync: OFF';
+          clipToggle.classList.toggle('active', data.clipboardSync);
+        }
+      } else {
+        banner.style.display = 'none';
+      }
+    } catch (_) {}
+  }
+
+  const liveClipBtn = document.getElementById('live-banner-clip-btn');
+  if (liveClipBtn) {
+    liveClipBtn.addEventListener('click', () => toggleLiveClipboard());
+  }
+
+  const liveDiscBtn = document.getElementById('live-banner-disconnect-btn');
+  if (liveDiscBtn) {
+    liveDiscBtn.addEventListener('click', () => disconnectPeerLive());
   }
 
   // ---- Remote File Explorer ----
@@ -918,4 +1012,5 @@
   loadSelfInfo();
   loadPeers();
   initSSE();
+  updateLiveStatus();
 })();

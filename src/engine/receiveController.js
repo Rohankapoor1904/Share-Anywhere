@@ -123,15 +123,16 @@ export class ReceiveController {
    * Called by NativeBridge or Node Gateway when chunk progress occurs.
    */
   handleChunkProgress(payload) {
-    const { sessionId, fileId, transferredBytes, totalBytes, speed } = payload;
+    const { sessionId, fileId, fileName, transferredBytes, totalBytes, speed, direction, status } = payload;
     this.events.emit(EngineEventType.TRANSFER_PROGRESS, {
       sessionId,
       fileId,
+      fileName,
       transferredBytes,
       totalBytes,
       speed,
-      direction: 'receive',
-      status: 'in_progress'
+      direction: direction || 'receive',
+      status: status || 'in_progress'
     });
   }
 
@@ -139,11 +140,15 @@ export class ReceiveController {
    * Called when a file finishes receiving and passes hash verification.
    */
   handleFileReceived(payload) {
-    const { sessionId, fileId, fileName, savedPath, fileSize } = payload;
+    const { sessionId, fileId, fileName, savedPath, fileSize, totalBytes } = payload;
     logger.info(`File ${fileName} successfully received and verified at ${savedPath}`);
     this.events.emit(EngineEventType.TRANSFER_COMPLETED, {
       sessionId,
       fileId,
+      fileName,
+      totalBytes: totalBytes || fileSize,
+      transferredBytes: totalBytes || fileSize,
+      status: 'completed',
       direction: 'receive',
       file: {
         id: fileId,

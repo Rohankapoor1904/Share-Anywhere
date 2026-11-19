@@ -56,6 +56,28 @@ class ChunkEngine(private val baseDirectory: File) {
     }
 
     /**
+     * Stream chunk data directly from an InputStream into the target partial file.
+     * Prevents buffering huge byte arrays in memory.
+     */
+    @Synchronized
+    fun writeChunkFromStream(fileName: String, offset: Long, input: java.io.InputStream, length: Long): Long {
+        val targetFile = File(baseDirectory, "$fileName.localshare.part")
+        RandomAccessFile(targetFile, "rw").use { raf ->
+            raf.seek(offset)
+            val buffer = ByteArray(64 * 1024)
+            var remaining = length
+            while (remaining > 0) {
+                val toRead = minOf(buffer.size.toLong(), remaining).toInt()
+                val read = input.read(buffer, 0, toRead)
+                if (read == -1) break
+                raf.write(buffer, 0, read)
+                remaining -= read
+            }
+        }
+        return targetFile.length()
+    }
+
+    /**
      * Read a chunk from a local file.
      */
     fun readChunk(file: File, offset: Long, length: Int): ByteArray {

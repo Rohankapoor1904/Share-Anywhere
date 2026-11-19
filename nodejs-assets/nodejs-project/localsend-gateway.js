@@ -18,6 +18,7 @@ class LocalSendGateway {
    * @param {boolean} [options.enableMulticast]
    * @param {(peer: object) => void} [options.onPeerFound]
    * @param {(req: object) => Promise<{ accepted: boolean }>} [options.onUploadRequest]
+   * @param {(fileInfo: object) => void} [options.onFileReceived]
    */
   constructor(options = {}) {
     this.port = options.port !== undefined ? options.port : LOCALSEND_PORT;
@@ -28,6 +29,7 @@ class LocalSendGateway {
     this.enableMulticast = options.enableMulticast !== undefined ? options.enableMulticast : (this.port !== 0);
     this.onPeerFound = options.onPeerFound || (() => {});
     this.onUploadRequest = options.onUploadRequest || (async () => ({ accepted: true }));
+    this.onFileReceived = options.onFileReceived || null;
 
     this.httpServer = null;
     this.udpSocket = null;
@@ -246,6 +248,17 @@ class LocalSendGateway {
         req.pipe(fileStream);
 
         fileStream.on('finish', () => {
+          if (this.onFileReceived) {
+            let stat;
+            try { stat = fs.statSync(destPath); } catch (_) {}
+            this.onFileReceived({
+              sessionId,
+              fileId,
+              fileName: fileMeta.fileName,
+              savedPath: destPath,
+              fileSize: stat ? stat.size : 0
+            });
+          }
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ status: 'ok', fileId }));
         });

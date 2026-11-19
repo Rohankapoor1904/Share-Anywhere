@@ -1,5 +1,6 @@
 const { LocalShareNode } = require('../../src/engine/LocalShareNode');
 const { EngineEventType } = require('../../src/engine/EngineEvents');
+const protocol = require('../../src/utils/protocol');
 
 describe('LocalShareNode Facade Unit Tests (§8, §10, §12.1)', () => {
   let node;
@@ -62,9 +63,9 @@ describe('LocalShareNode Facade Unit Tests (§8, §10, §12.1)', () => {
 
     expect(node.getPeers().length).toBe(1);
 
-    // Fast-forward lastSeen timestamp
+    // Fast-forward lastSeen timestamp beyond kPeerStaleMs
     const peer = node.peerMap.get('stale-peer');
-    peer.lastSeen = Date.now() - 20000;
+    peer.lastSeen = Date.now() - (protocol.kPeerStaleMs + 5000);
 
     // Trigger sweep
     node._sweepStalePeers();

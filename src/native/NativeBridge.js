@@ -158,12 +158,42 @@ export const NativeBridge = {
     throw new Error('TransferClientModule.uploadChunkFromUri is not available');
   },
 
+  // Native single-stream sender (sequential read from single open stream, 4MB chunks, incremental SHA-256)
+  async sendFileStream(baseUrl, sessionId, fileId, fileUri, fileName, totalBytes, startOffset = 0, chunkSize = 4194304) {
+    if (TransferClientModule && TransferClientModule.sendFileStream) {
+      return TransferClientModule.sendFileStream(
+        baseUrl,
+        sessionId,
+        fileId,
+        fileUri,
+        fileName,
+        totalBytes,
+        startOffset,
+        chunkSize
+      );
+    }
+    throw new Error('TransferClientModule.sendFileStream is not available');
+  },
+
+  cancelSession(sessionId) {
+    if (TransferClientModule && TransferClientModule.cancelSession) {
+      TransferClientModule.cancelSession(sessionId);
+    }
+  },
+
   // Storage
   async getDownloadsDirectory() {
     if (StorageModule && StorageModule.getDownloadsDirectory) {
       return StorageModule.getDownloadsDirectory();
     }
     return '/storage/emulated/0/Download';
+  },
+
+  async listReceivedFiles() {
+    if (StorageModule && StorageModule.listReceivedFiles) {
+      return StorageModule.listReceivedFiles();
+    }
+    return [];
   },
 
   async hasAllFilesAccess() {
@@ -195,7 +225,7 @@ export const NativeBridge = {
     throw new Error('TransferClientModule.downloadUrlToFile is not available');
   },
 
-  // System clipboard (read/write on the UI thread)
+  // System clipboard (read/write on the UI thread + monitoring)
   async getClipboardText() {
     if (StorageModule && StorageModule.getClipboardText) {
       return StorageModule.getClipboardText();
@@ -203,9 +233,30 @@ export const NativeBridge = {
     return '';
   },
 
-  async setClipboardText(text) {
+  async setClipboardText(text, hash = '') {
     if (StorageModule && StorageModule.setClipboardText) {
-      return StorageModule.setClipboardText(text);
+      return StorageModule.setClipboardText(text, hash);
+    }
+    return false;
+  },
+
+  async startClipboardMonitoring() {
+    if (StorageModule && StorageModule.startClipboardMonitoring) {
+      return StorageModule.startClipboardMonitoring();
+    }
+    return false;
+  },
+
+  async stopClipboardMonitoring() {
+    if (StorageModule && StorageModule.stopClipboardMonitoring) {
+      return StorageModule.stopClipboardMonitoring();
+    }
+    return false;
+  },
+
+  async checkClipboardOnActive() {
+    if (StorageModule && StorageModule.checkClipboardOnActive) {
+      return StorageModule.checkClipboardOnActive();
     }
     return false;
   }

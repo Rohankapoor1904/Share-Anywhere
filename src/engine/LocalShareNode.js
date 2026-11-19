@@ -1,4 +1,4 @@
-import { Platform } from 'react-native';
+import { Platform, AppState } from 'react-native';
 import { EngineEventEmitter, EngineEventType } from './EngineEvents';
 import { TrustStore } from './trustStore';
 import { PairingEngine } from './pairing';
@@ -111,6 +111,11 @@ export class LocalShareNode {
     this.subnetScanIntervalId = null;
     this.isScanningSubnet = false;
     this.nativeUnsub = null;
+    this.connectedPeer = null;
+    this.liveClipboardEnabled = true;
+    this.pingIntervalId = null;
+    this.lastClipboardHash = '';
+    this.appStateSub = null;
   }
 
   getSelfDevice() {
@@ -175,8 +180,55 @@ export class LocalShareNode {
       onSendProgress: (progress) => this.events.emit(EngineEventType.TRANSFER_PROGRESS, progress),
       onSendFinished: (session) => this.events.emit(EngineEventType.TRANSFER_COMPLETED, session),
       onSendFailed: (err) => this.events.emit(EngineEventType.TRANSFER_FAILED, err),
-      onServiceState: () => {}
+      onServiceState: () => {},
+      onClipboardChanged: async ({ text, hash }) => {
+        if (!this.connectedPeer || !this.liveClipboardEnabled) return;
+        if (hash && hash === this.lastClipboardHash) return;
+        this.lastClipboardHash = hash;
+        try {
+          await fetch(`http://${this.connectedPeer.address}:${this.connectedPeer.port}/v1/clipboard`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              text,
+              hash,
+              senderDeviceId: this.selfDevice.deviceId,
+              timestamp: Date.now()
+            })
+          });
+          this.refreshPeerLastSeen(this.connectedPeer.deviceId);
+        } catch (err) {
+          logger.warn('Failed pushing clipboard to peer:', err.message);
+        }
+      },
+      onClipboardSynced: ({ text, hash, senderDeviceId }) => {
+        this.lastClipboardHash = hash;
+        this.events.emit('CLIPBOARD_SYNCED', { text, hash, senderDeviceId });
+      },
+      onLivePeerConnected: (peerInfo) => {
+        this.connectedPeer = peerInfo;
+        this.refreshPeerLastSeen(peerInfo.deviceId);
+        if (NativeBridge.isAvailable()) {
+          NativeBridge.startClipboardMonitoring();
+        }
+        this.events.emit('LIVE_STATUS_CHANGED', { connected: true, peer: peerInfo });
+      },
+      onLivePeerDisconnected: () => {
+        this.connectedPeer = null;
+        if (NativeBridge.isAvailable()) {
+          NativeBridge.stopClipboardMonitoring();
+        }
+        this.events.emit('LIVE_STATUS_CHANGED', { connected: false, peer: null });
+      }
     });
+
+    if (AppState && typeof AppState.addEventListener === 'function') {
+      this.appStateSub = AppState.addEventListener('change', (nextState) => {
+        if (nextState === 'active' && NativeBridge.isAvailable()) {
+          NativeBridge.checkClipboardOnActive();
+        }
+      });
+    }
 
     // Reflect transfer lifecycle in the status notification
     this.events.on(EngineEventType.TRANSFER_QUEUED, (transfer) => {
@@ -252,6 +304,17 @@ export class LocalShareNode {
       clearInterval(this.subnetScanIntervalId);
       this.subnetScanIntervalId = null;
     }
+    if (this.pingIntervalId) {
+      clearInterval(this.pingIntervalId);
+      this.pingIntervalId = null;
+    }
+    if (this.appStateSub) {
+      if (typeof this.appStateSub.remove === 'function') {
+        this.appStateSub.remove();
+      }
+      this.appStateSub = null;
+    }
+    this.connectedPeer = null;
     try {
       await NativeBridge.stopServer();
     } catch (err) {
@@ -559,6 +622,126 @@ export class LocalShareNode {
   respondIncomingSession(sessionId, accepted) {
     if (!sessionId) return;
     this.receiveController.respondToSession(sessionId, accepted);
+  }
+
+  /**
+   * Refresh a peer's last seen timestamp on activity.
+   * @param {string} idOrAddress
+   */
+  refreshPeerLastSeen(idOrAddress) {
+    if (!idOrAddress) return;
+    for (const peer of this.peerMap.values()) {
+      if (peer.deviceId === idOrAddress || peer.address === idOrAddress) {
+        peer.lastSeen = Date.now();
+        break;
+      }
+    }
+  }
+
+  /**
+   * Establish a persistent live connection session with a peer.
+   * @param {object} peer
+   */
+  async connectToPeer(peer) {
+    if (!peer || !peer.address || !peer.port) {
+      throw new Error('Invalid peer for live connection');
+    }
+    const res = await fetch(`http://${peer.address}:${peer.port}/v1/live/connect`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        deviceId: this.selfDevice.deviceId,
+        displayName: this.selfDevice.displayName,
+        address: this.selfDevice.address,
+        port: this.selfDevice.port,
+        platform: this.selfDevice.platform,
+        clipboardSync: this.liveClipboardEnabled
+      })
+    });
+    if (!res.ok) {
+      throw new Error(`Connection rejected by peer: HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    this.connectedPeer = peer;
+    this.refreshPeerLastSeen(peer.deviceId);
+    if (data.currentClipboard) {
+      try {
+        await NativeBridge.setClipboardText(data.currentClipboard);
+      } catch (err) {
+        logger.warn('Failed to set initial clipboard text on live connect:', err);
+      }
+    }
+    this._startLiveHeartbeat(peer);
+    if (NativeBridge.isAvailable()) {
+      NativeBridge.startClipboardMonitoring();
+    }
+    this.events.emit('LIVE_STATUS_CHANGED', { connected: true, peer });
+    return data;
+  }
+
+  /**
+   * Tear down the live link.
+   */
+  async disconnectLive() {
+    if (this.connectedPeer) {
+      try {
+        await fetch(`http://${this.connectedPeer.address}:${this.connectedPeer.port}/v1/live/disconnect`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+      } catch (err) {
+        logger.warn('Failed to notify peer of live disconnect:', err);
+      }
+    }
+    this.connectedPeer = null;
+    if (this.pingIntervalId) {
+      clearInterval(this.pingIntervalId);
+      this.pingIntervalId = null;
+    }
+    if (NativeBridge.isAvailable()) {
+      NativeBridge.stopClipboardMonitoring();
+    }
+    this.events.emit('LIVE_STATUS_CHANGED', { connected: false, peer: null });
+  }
+
+  _startLiveHeartbeat(peer) {
+    if (this.pingIntervalId) clearInterval(this.pingIntervalId);
+    let failedPings = 0;
+    this.pingIntervalId = setInterval(async () => {
+      if (!this.connectedPeer) return;
+      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const timeoutId = controller ? setTimeout(() => controller.abort(), 4000) : null;
+      try {
+        const res = await fetch(`http://${peer.address}:${peer.port}/v1/live/ping`, {
+          signal: controller ? controller.signal : undefined
+        });
+        if (timeoutId) clearTimeout(timeoutId);
+        if (res.ok) {
+          failedPings = 0;
+          this.refreshPeerLastSeen(peer.deviceId);
+        } else {
+          failedPings += 1;
+        }
+      } catch (err) {
+        if (timeoutId) clearTimeout(timeoutId);
+        failedPings += 1;
+        logger.warn('Live ping failed:', err);
+      }
+      if (failedPings >= 3) {
+        logger.warn('Live peer heartbeat failed 3 times; disconnecting');
+        this.disconnectLive();
+      }
+    }, 5000);
+  }
+
+  toggleLiveClipboard() {
+    this.liveClipboardEnabled = !this.liveClipboardEnabled;
+    this.events.emit('LIVE_STATUS_CHANGED', {
+      connected: Boolean(this.connectedPeer),
+      peer: this.connectedPeer,
+      clipboardSync: this.liveClipboardEnabled
+    });
+    return this.liveClipboardEnabled;
   }
 
   updateSettings(newSettings) {

@@ -68,9 +68,13 @@ class TransferGateway {
    * @param {DeviceInfo} [options.selfDevice]
    * @param {(sessionReq: object) => Promise<{ accepted: boolean, reason?: string }>} [options.onSessionRequest]
    * @param {string} [options.browseRoot] - Root directory exposed to remote /v1/fs/* clients.
+   * @param {(progress: object) => void} [options.onProgress]
+   * @param {(file: object) => void} [options.onFileReceived]
+   * @param {(clip: object) => void} [options.onClipboardReceived]
+   * @param {{ readText: () => string, writeText: (text: string) => boolean }} [options.clipboardAdapter]
    */
   constructor(options = {}) {
-    this.port = options.port || protocol.kDefaultPort;
+    this.port = typeof options.port === 'number' ? options.port : protocol.kDefaultPort;
     this.storageDir = options.storageDir || path.join(__dirname, 'temp_storage');
     this.tls = options.tls || null;
     this.selfDevice = options.selfDevice || new DeviceInfo({
@@ -80,8 +84,15 @@ class TransferGateway {
     });
     this.onSessionRequest = options.onSessionRequest || (async () => ({ accepted: true, reason: undefined }));
     this.browseRoot = options.browseRoot || fsService.getDefaultRoot();
+    this.onProgress = options.onProgress || null;
+    this.onFileReceived = options.onFileReceived || null;
+    this.onClipboardReceived = options.onClipboardReceived || null;
+    this.clipboardAdapter = options.clipboardAdapter || null;
 
     this.activeSessions = new Map();
+    this.sessionMetrics = new Map();
+    this.connectedPeer = null;
+    this.lastClipboardHash = null;
     this.server = null;
 
     if (!fs.existsSync(this.storageDir)) {
@@ -162,6 +173,16 @@ class TransferGateway {
     const method = req.method.toUpperCase();
     const pathname = url.pathname;
 
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', '*');
+
+    if (method === 'OPTIONS') {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+
     try {
       if (pathname === '/v1/info' && method === 'GET') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -176,7 +197,11 @@ class TransferGateway {
 
         const resumeMap = {};
         if (evaluation.accepted && Array.isArray(sessionReq.files)) {
+          let totalSessionBytes = 0;
+          let firstFileName = '';
           for (const file of sessionReq.files) {
+            totalSessionBytes += (file.fileSize || 0);
+            if (!firstFileName && file.fileName) firstFileName = file.fileName;
             const partPath = path.join(this.storageDir, `${file.fileId}${protocol.kPartialSuffix}`);
             if (fs.existsSync(partPath)) {
               const stat = fs.statSync(partPath);
@@ -189,6 +214,14 @@ class TransferGateway {
           this.activeSessions.set(sessionReq.sessionId, {
             ...sessionReq,
             createdAt: Date.now()
+          });
+
+          this.sessionMetrics.set(sessionReq.sessionId, {
+            startTime: Date.now(),
+            lastProgressTime: 0,
+            transferredBytes: 0,
+            totalBytes: totalSessionBytes,
+            fileName: firstFileName || 'File'
           });
         }
 
@@ -222,13 +255,57 @@ class TransferGateway {
         });
 
         let bytesWritten = 0;
+        let metrics = this.sessionMetrics.get(sessionId);
+        if (!metrics) {
+          metrics = {
+            startTime: Date.now(),
+            lastProgressTime: 0,
+            transferredBytes: 0,
+            totalBytes: 0,
+            fileName: 'File'
+          };
+          this.sessionMetrics.set(sessionId, metrics);
+        }
+
         req.on('data', (chunk) => {
           bytesWritten += chunk.length;
+          metrics.transferredBytes += chunk.length;
           writeStream.write(chunk);
+
+          const now = Date.now();
+          if (this.onProgress && now - metrics.lastProgressTime >= 150) {
+            metrics.lastProgressTime = now;
+            const elapsed = (now - metrics.startTime) / 1000;
+            const speed = elapsed > 0 ? metrics.transferredBytes / elapsed : 0;
+            this.onProgress({
+              sessionId,
+              fileId,
+              transferredBytes: metrics.transferredBytes,
+              totalBytes: metrics.totalBytes,
+              speed,
+              fileName: metrics.fileName,
+              direction: 'receive',
+              status: 'in_progress'
+            });
+          }
         });
 
         req.on('end', () => {
           writeStream.end(() => {
+            if (this.onProgress) {
+              const elapsed = (Date.now() - metrics.startTime) / 1000;
+              const speed = elapsed > 0 ? metrics.transferredBytes / elapsed : 0;
+              this.onProgress({
+                sessionId,
+                fileId,
+                transferredBytes: metrics.transferredBytes,
+                totalBytes: metrics.totalBytes,
+                speed,
+                fileName: metrics.fileName,
+                direction: 'receive',
+                status: 'in_progress'
+              });
+            }
             const ack = new ChunkAck({
               sessionId,
               fileId,
@@ -279,6 +356,18 @@ class TransferGateway {
 
           // Atomic rename from partial to final
           fs.renameSync(partPath, finalPath);
+          const stat = fs.statSync(finalPath);
+
+          if (this.onFileReceived) {
+            this.onFileReceived({
+              sessionId,
+              fileId,
+              fileName: targetName,
+              savedPath: finalPath,
+              fileSize: stat.size,
+              totalBytes: stat.size
+            });
+          }
 
           const resp = new CommitResponse({
             sessionId,
@@ -385,10 +474,38 @@ class TransferGateway {
           return;
         }
         const stat = fs.statSync(target);
+        const fileName = encodeURIComponent(path.basename(target));
+        const mimeType = fsService.getMimeType(target);
+        const range = req.headers.range;
+
+        if (range) {
+          const match = /bytes=(\d*)-(\d*)/.exec(range);
+          let start = match && match[1] ? parseInt(match[1], 10) : 0;
+          let end = match && match[2] ? parseInt(match[2], 10) : stat.size - 1;
+          if (Number.isNaN(start) || start < 0) start = 0;
+          if (Number.isNaN(end) || end >= stat.size) end = stat.size - 1;
+          if (start > end) {
+            res.writeHead(416, { 'Content-Range': `bytes */${stat.size}` });
+            res.end();
+            return;
+          }
+          const chunkSize = end - start + 1;
+          res.writeHead(206, {
+            'Content-Type': mimeType,
+            'Content-Length': chunkSize,
+            'Content-Range': `bytes ${start}-${end}/${stat.size}`,
+            'Accept-Ranges': 'bytes',
+            'Content-Disposition': `attachment; filename="${fileName}"`
+          });
+          fs.createReadStream(target, { start, end }).pipe(res);
+          return;
+        }
+
         res.writeHead(200, {
           'Content-Type': 'application/octet-stream',
           'Content-Length': stat.size,
-          'Content-Disposition': `attachment; filename="${encodeURIComponent(path.basename(target))}"`
+          'Accept-Ranges': 'bytes',
+          'Content-Disposition': `attachment; filename="${fileName}"`
         });
         fs.createReadStream(target).pipe(res);
         return;
@@ -437,18 +554,61 @@ class TransferGateway {
         return;
       }
 
-      if (pathname === '/v1/clipboard' && method === 'GET') {
+      if (pathname === '/v1/live/connect' && method === 'POST') {
+        const body = await this.readJsonBody(req);
+        this.connectedPeer = body;
+        const currentClipboard = this.clipboardAdapter
+          ? this.clipboardAdapter.readText()
+          : getSystemClipboard();
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ text: getSystemClipboard(), timestamp: Date.now() }));
+        res.end(JSON.stringify({
+          connected: true,
+          device: this.selfDevice.toJSON(),
+          currentClipboard
+        }));
+        return;
+      }
+
+      if (pathname === '/v1/live/disconnect' && method === 'POST') {
+        this.connectedPeer = null;
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ disconnected: true }));
+        return;
+      }
+
+      if (pathname === '/v1/live/ping' && method === 'POST') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ pong: true, timestamp: Date.now() }));
+        return;
+      }
+
+      if (pathname === '/v1/clipboard' && method === 'GET') {
+        const text = this.clipboardAdapter
+          ? this.clipboardAdapter.readText()
+          : getSystemClipboard();
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ text, timestamp: Date.now() }));
         return;
       }
 
       if (pathname === '/v1/clipboard' && method === 'POST') {
         const body = await this.readJsonBody(req);
         const text = typeof body.text === 'string' ? body.text : '';
-        const written = setSystemClipboard(text);
+        const incomingHash = body.hash || crypto.createHash('sha256').update(text).digest('hex');
+        if (this.lastClipboardHash && incomingHash === this.lastClipboardHash) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true, ignored: true }));
+          return;
+        }
+        this.lastClipboardHash = incomingHash;
+        const written = this.clipboardAdapter
+          ? this.clipboardAdapter.writeText(text)
+          : setSystemClipboard(text);
+        if (this.onClipboardReceived) {
+          this.onClipboardReceived({ text, hash: incomingHash });
+        }
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: written }));
+        res.end(JSON.stringify({ success: !!written }));
         return;
       }
 

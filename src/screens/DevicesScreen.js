@@ -17,6 +17,8 @@ import GlassCard from '../components/GlassCard';
 import EmptyState from '../components/EmptyState';
 import Icon from '../components/Icon';
 import AmbientBackground from '../components/AmbientBackground';
+import RadarView from '../components/RadarView';
+import { PeerBlip, getPositionForPeer } from './RadarScreen';
 
 export default function DevicesScreen({ navigation }) {
   const {
@@ -26,7 +28,12 @@ export default function DevicesScreen({ navigation }) {
     startDiscovery,
     stopDiscovery,
     scanSubnet,
-    addManualPeer
+    addManualPeer,
+    connectedPeer,
+    isLiveConnected,
+    liveClipboardEnabled,
+    connectToPeer,
+    disconnectLive
   } = useLocalShare();
 
   const { theme } = useTheme();
@@ -35,6 +42,7 @@ export default function DevicesScreen({ navigation }) {
     startDiscovery();
   }, [startDiscovery]);
 
+  const [viewMode, setViewMode] = useState('list');
   const [qrModalVisible, setQrModalVisible] = useState(false);
   const [manualModalVisible, setManualModalVisible] = useState(false);
   const [manualIp, setManualIp] = useState('');
@@ -82,138 +90,239 @@ export default function DevicesScreen({ navigation }) {
     <AmbientBackground>
       <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
-        {/* Self Device Header Card */}
-        <GlassCard style={styles.selfCard} variant="interactive">
-          <View style={styles.selfHeaderRow}>
-            <View style={styles.selfInfo}>
-              <View style={styles.selfLabelRow}>
-                <View style={[styles.statusDot, { backgroundColor: theme.colors.success }]} />
-                <Text style={[styles.selfLabel, { color: theme.colors.primary }]}>THIS DEVICE</Text>
-              </View>
-              <Text style={[styles.selfName, { color: theme.colors.text }]}>{selfDevice.displayName}</Text>
-              <Text style={[styles.selfDetails, { color: theme.colors.textSecondary }]}>
-                {selfDevice.address}:{selfDevice.port}
-              </Text>
-            </View>
-            <TouchableOpacity
-              style={[
-                styles.qrButton,
-                { backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.primary }
-              ]}
-              onPress={() => setQrModalVisible(true)}
-              testID="qr-code-button"
-              accessibilityRole="button"
-              accessibilityLabel="Show device QR code"
-            >
-              <Icon name="qr" size={14} color={theme.colors.primary} strokeWidth={2.2} />
-              <Text style={[styles.qrButtonText, { color: theme.colors.primary }]}>QR Code</Text>
-            </TouchableOpacity>
-          </View>
-        </GlassCard>
-
-        {/* Discovery Controls Bar */}
-        <View style={styles.controlsBar}>
+        {/* View Mode Segmented Switcher */}
+        <View style={[styles.segmentedBar, { backgroundColor: theme.colors.cardSolid, borderColor: theme.colors.border }]}>
           <TouchableOpacity
             style={[
-              styles.actionBtn,
-              isDiscovering
-                ? { backgroundColor: theme.colors.primary }
-                : { backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.primary, borderWidth: 1 }
+              styles.segmentedTab,
+              viewMode === 'list' && { backgroundColor: theme.colors.primary }
             ]}
-            onPress={isDiscovering ? stopDiscovery : startDiscovery}
+            onPress={() => setViewMode('list')}
           >
             <Icon
-              name={isDiscovering ? 'radar' : 'play'}
+              name="devices"
               size={14}
-              color={isDiscovering && theme.mode === 'light' ? '#ffffff' : isDiscovering ? '#000000' : theme.colors.primary}
-              strokeWidth={2.4}
+              color={viewMode === 'list' ? (theme.mode === 'light' ? '#ffffff' : '#000000') : theme.colors.textSecondary}
+              strokeWidth={2.2}
             />
             <Text
               style={[
-                styles.actionBtnText,
-                { color: isDiscovering && theme.mode === 'light' ? '#ffffff' : isDiscovering ? '#000000' : theme.colors.primary }
+                styles.segmentedTabText,
+                { color: viewMode === 'list' ? (theme.mode === 'light' ? '#ffffff' : '#000000') : theme.colors.textSecondary }
               ]}
             >
-              {isDiscovering ? 'Scanning for Peers...' : 'Start Scan'}
+              Nearby Devices ({peers.length})
             </Text>
           </TouchableOpacity>
-
           <TouchableOpacity
             style={[
-              styles.actionBtn,
-              styles.manualBtn,
-              { backgroundColor: theme.colors.cardSolid, borderColor: theme.colors.border }
+              styles.segmentedTab,
+              viewMode === 'radar' && { backgroundColor: theme.colors.primary }
             ]}
-            onPress={scanSubnet}
+            onPress={() => setViewMode('radar')}
           >
-            <Icon name="activity" size={14} color={theme.colors.text} strokeWidth={2.2} />
-            <Text style={[styles.actionBtnText, { color: theme.colors.text }]}>Subnet Probe</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.actionBtn,
-              styles.manualBtn,
-              { backgroundColor: theme.colors.cardSolid, borderColor: theme.colors.border }
-            ]}
-            onPress={() => setManualModalVisible(true)}
-          >
-            <Icon name="plus" size={14} color={theme.colors.text} strokeWidth={2.4} />
-            <Text style={[styles.actionBtnText, { color: theme.colors.text }]}>Manual IP</Text>
+            <Icon
+              name="radar"
+              size={14}
+              color={viewMode === 'radar' ? (theme.mode === 'light' ? '#ffffff' : '#000000') : theme.colors.textSecondary}
+              strokeWidth={2.2}
+            />
+            <Text
+              style={[
+                styles.segmentedTabText,
+                { color: viewMode === 'radar' ? (theme.mode === 'light' ? '#ffffff' : '#000000') : theme.colors.textSecondary }
+              ]}
+            >
+              Live Radar
+            </Text>
           </TouchableOpacity>
         </View>
 
-        {/* Search Bar when peers present */}
-        {peers.length > 2 ? (
-          <View style={[styles.searchBox, { backgroundColor: theme.colors.inputBg, borderColor: theme.colors.border }]}>
-            <Icon name="search" size={15} color={theme.colors.textMuted} style={styles.searchIcon} strokeWidth={2.2} />
-            <TextInput
-              style={[styles.searchInput, { color: theme.colors.text }]}
-              placeholder="Search discovered peers..." // justified: TextInput hint
-              placeholderTextColor={theme.colors.textMuted} // justified: TextInput hint
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-            />
-            {searchQuery ? (
-              <TouchableOpacity onPress={() => setSearchQuery('')}>
-                <Icon name="close" size={14} color={theme.colors.textMuted} strokeWidth={2.6} />
-              </TouchableOpacity>
-            ) : null}
+        {/* Live Link Banner if connected */}
+        {isLiveConnected && connectedPeer ? (
+          <View style={[styles.liveBanner, { backgroundColor: theme.colors.successGlow, borderColor: theme.colors.success }]}>
+            <View style={styles.liveBannerLeft}>
+              <View style={[styles.statusDot, { backgroundColor: theme.colors.success }]} />
+              <View>
+                <Text style={[styles.liveBannerTitle, { color: theme.colors.text }]}>
+                  Live Link: {connectedPeer.displayName || connectedPeer.address}
+                </Text>
+                <Text style={[styles.liveBannerSub, { color: theme.colors.textSecondary }]}>
+                  {liveClipboardEnabled ? 'Bi-directional clipboard synced' : 'Clipboard sync paused'}
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              style={[styles.disconnectBtn, { backgroundColor: theme.colors.cardSolid, borderColor: theme.colors.danger }]}
+              onPress={disconnectLive}
+            >
+              <Text style={[styles.disconnectBtnText, { color: theme.colors.danger }]}>Disconnect</Text>
+            </TouchableOpacity>
           </View>
         ) : null}
 
-        {/* Peer List */}
-        <FlatList
-          data={filteredPeers}
-          keyExtractor={(item) => item.deviceId}
-          contentContainerStyle={styles.listContent}
-          renderItem={({ item }) => (
-            <PeerCard
-              peer={item}
-              isTrusted={item.isTrusted}
-              onPress={() => handleSelectPeer(item)}
-              onBrowseFiles={() => handleBrowsePeer(item)}
-            />
-          )}
-          ListEmptyComponent={
-            <EmptyState
-              title={isDiscovering ? 'Looking for nearby devices...' : 'No devices found'}
-              description="Ensure other devices have LocalShare open on the same Wi-Fi subnet or connect directly via manual IP."
-              action={
-                !isDiscovering ? (
-                  <TouchableOpacity
-                    style={[styles.scanNowBtn, { backgroundColor: theme.colors.primary }]}
-                    onPress={startDiscovery}
-                  >
-                    <Text style={[styles.scanNowBtnText, { color: theme.mode === 'light' ? '#ffffff' : '#000000' }]}>
-                      Scan Now
-                    </Text>
+        {viewMode === 'radar' ? (
+          <View style={styles.radarContainer}>
+            <View style={styles.radarWrapper}>
+              <RadarView active={isDiscovering} size={280}>
+                {peers.map((peer, idx) => (
+                  <PeerBlip
+                    key={peer.deviceId}
+                    peer={peer}
+                    position={getPositionForPeer(idx, peers.length)}
+                    onPress={() => handleSelectPeer(peer)}
+                  />
+                ))}
+              </RadarView>
+            </View>
+            <Text style={[styles.radarHint, { color: theme.colors.textMuted }]}>
+              {peers.length} {peers.length === 1 ? 'peer detected' : 'peers detected'} in range • Tap to send
+            </Text>
+          </View>
+        ) : (
+          <>
+            {/* Self Device Header Card */}
+            <GlassCard style={styles.selfCard} variant="interactive">
+              <View style={styles.selfHeaderRow}>
+                <View style={styles.selfInfo}>
+                  <View style={styles.selfLabelRow}>
+                    <View style={[styles.statusDot, { backgroundColor: theme.colors.success }]} />
+                    <Text style={[styles.selfLabel, { color: theme.colors.primary }]}>THIS DEVICE</Text>
+                  </View>
+                  <Text style={[styles.selfName, { color: theme.colors.text }]}>{selfDevice.displayName}</Text>
+                  <Text style={[styles.selfDetails, { color: theme.colors.textSecondary }]}>
+                    {selfDevice.address}:{selfDevice.port}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={[
+                    styles.qrButton,
+                    { backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.primary }
+                  ]}
+                  onPress={() => setQrModalVisible(true)}
+                  testID="qr-code-button"
+                  accessibilityRole="button"
+                  accessibilityLabel="Show device QR code"
+                >
+                  <Icon name="qr" size={14} color={theme.colors.primary} strokeWidth={2.2} />
+                  <Text style={[styles.qrButtonText, { color: theme.colors.primary }]}>QR Code</Text>
+                </TouchableOpacity>
+              </View>
+            </GlassCard>
+
+            {/* Discovery Controls Bar */}
+            <View style={styles.controlsBar}>
+              <TouchableOpacity
+                style={[
+                  styles.actionBtn,
+                  isDiscovering
+                    ? { backgroundColor: theme.colors.primary }
+                    : { backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.primary, borderWidth: 1 }
+                ]}
+                onPress={isDiscovering ? stopDiscovery : startDiscovery}
+              >
+                <Icon
+                  name={isDiscovering ? 'radar' : 'play'}
+                  size={14}
+                  color={isDiscovering && theme.mode === 'light' ? '#ffffff' : isDiscovering ? '#000000' : theme.colors.primary}
+                  strokeWidth={2.4}
+                />
+                <Text
+                  style={[
+                    styles.actionBtnText,
+                    { color: isDiscovering && theme.mode === 'light' ? '#ffffff' : isDiscovering ? '#000000' : theme.colors.primary }
+                  ]}
+                >
+                  {isDiscovering ? 'Scanning for Peers...' : 'Start Scan'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.actionBtn,
+                  styles.manualBtn,
+                  { backgroundColor: theme.colors.cardSolid, borderColor: theme.colors.border }
+                ]}
+                onPress={scanSubnet}
+              >
+                <Icon name="activity" size={14} color={theme.colors.text} strokeWidth={2.2} />
+                <Text style={[styles.actionBtnText, { color: theme.colors.text }]}>Subnet Probe</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.actionBtn,
+                  styles.manualBtn,
+                  { backgroundColor: theme.colors.cardSolid, borderColor: theme.colors.border }
+                ]}
+                onPress={() => setManualModalVisible(true)}
+              >
+                <Icon name="plus" size={14} color={theme.colors.text} strokeWidth={2.4} />
+                <Text style={[styles.actionBtnText, { color: theme.colors.text }]}>Manual IP</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Search Bar when peers present */}
+            {peers.length > 2 ? (
+              <View style={[styles.searchBox, { backgroundColor: theme.colors.inputBg, borderColor: theme.colors.border }]}>
+                <Icon name="search" size={15} color={theme.colors.textMuted} style={styles.searchIcon} strokeWidth={2.2} />
+                <TextInput
+                  style={[styles.searchInput, { color: theme.colors.text }]}
+                  placeholder="Search discovered peers..." // justified: TextInput hint
+                  placeholderTextColor={theme.colors.textMuted} // justified: TextInput hint
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                />
+                {searchQuery ? (
+                  <TouchableOpacity onPress={() => setSearchQuery('')}>
+                    <Icon name="close" size={14} color={theme.colors.textMuted} strokeWidth={2.6} />
                   </TouchableOpacity>
-                ) : null
+                ) : null}
+              </View>
+            ) : null}
+
+            {/* Peer List */}
+            <FlatList
+              data={filteredPeers}
+              keyExtractor={(item) => item.deviceId}
+              contentContainerStyle={styles.listContent}
+              renderItem={({ item }) => (
+                <PeerCard
+                  peer={item}
+                  isTrusted={item.isTrusted}
+                  isLiveConnected={connectedPeer && connectedPeer.deviceId === item.deviceId}
+                  onPress={() => handleSelectPeer(item)}
+                  onBrowseFiles={() => handleBrowsePeer(item)}
+                  onConnect={() => {
+                    if (connectedPeer && connectedPeer.deviceId === item.deviceId) {
+                      disconnectLive();
+                    } else {
+                      connectToPeer(item);
+                    }
+                  }}
+                />
+              )}
+              ListEmptyComponent={
+                <EmptyState
+                  title={isDiscovering ? 'Looking for nearby devices...' : 'No devices found'}
+                  description="Ensure other devices have LocalShare open on the same Wi-Fi subnet or connect directly via manual IP."
+                  action={
+                    !isDiscovering ? (
+                      <TouchableOpacity
+                        style={[styles.scanNowBtn, { backgroundColor: theme.colors.primary }]}
+                        onPress={startDiscovery}
+                      >
+                        <Text style={[styles.scanNowBtnText, { color: theme.mode === 'light' ? '#ffffff' : '#000000' }]}>
+                          Scan Now
+                        </Text>
+                      </TouchableOpacity>
+                    ) : null
+                  }
+                />
               }
             />
-          }
-        />
+          </>
+        )}
 
         {/* QR Modal */}
         <Modal
@@ -512,5 +621,76 @@ const styles = StyleSheet.create({
   },
   confirmModalBtnText: {
     fontWeight: '800'
+  },
+  segmentedBar: {
+    flexDirection: 'row',
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 3,
+    marginBottom: 12
+  },
+  segmentedTab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 9,
+    borderRadius: 9,
+    gap: 6
+  },
+  segmentedTabText: {
+    fontSize: 12,
+    fontWeight: '700'
+  },
+  liveBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 12
+  },
+  liveBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1
+  },
+  liveBannerTitle: {
+    fontSize: 13,
+    fontWeight: '700'
+  },
+  liveBannerSub: {
+    fontSize: 11,
+    marginTop: 1
+  },
+  disconnectBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1
+  },
+  disconnectBtnText: {
+    fontSize: 12,
+    fontWeight: '700'
+  },
+  radarContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 20
+  },
+  radarWrapper: {
+    width: 280,
+    height: 280,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  radarHint: {
+    marginTop: 24,
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center'
   }
 });

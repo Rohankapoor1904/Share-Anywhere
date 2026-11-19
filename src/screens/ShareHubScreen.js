@@ -61,7 +61,7 @@ export default function ShareHubScreen({ route, navigation }) {
     setStagedFiles((prev) => prev.filter((f) => (f.id || f.path) !== fileId));
   };
 
-  const handleSend = async () => {
+  const handleSend = () => {
     if (!selectedPeer) {
       Alert.alert('No Peer Selected', 'Please choose a target device to send files to.');
       return;
@@ -71,14 +71,14 @@ export default function ShareHubScreen({ route, navigation }) {
       return;
     }
 
-    try {
-      await sendFiles(selectedPeer, stagedFiles);
-      setStagedFiles([]);
-      navigation.navigate('Transfers');
-    } catch (err) {
+    const filesToSend = [...stagedFiles];
+    setStagedFiles([]);
+    navigation.navigate('Transfers');
+
+    sendFiles(selectedPeer, filesToSend).catch((err) => {
       logger.error('Send files initiation failed:', err);
-      Alert.alert('Send Error', err.message || 'Failed to start file transfer.');
-    }
+      Alert.alert('Send Error', err.message || 'Failed during file transfer.');
+    });
   };
 
   return (

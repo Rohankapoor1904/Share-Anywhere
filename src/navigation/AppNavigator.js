@@ -142,14 +142,14 @@ function MainTabNavigator() {
         options={{ tabBarLabel: 'Devices', tabBarIcon: tabBarIcon('devices') }}
       />
       <Tab.Screen
-        name="Radar"
-        component={RadarScreen}
-        options={{ tabBarLabel: 'Radar', tabBarIcon: tabBarIcon('radar') }}
-      />
-      <Tab.Screen
         name="ShareHub"
         component={ShareHubScreen}
         options={{ tabBarLabel: 'Share', tabBarIcon: tabBarIcon('share') }}
+      />
+      <Tab.Screen
+        name="Files"
+        component={RemoteExplorerScreen}
+        options={{ tabBarLabel: 'Files', tabBarIcon: tabBarIcon('files') }}
       />
       <Tab.Screen
         name="Transfers"
@@ -159,16 +159,6 @@ function MainTabNavigator() {
           tabBarBadge: activeTransfersCount > 0 ? activeTransfersCount : undefined,
           tabBarIcon: tabBarIcon('transfers')
         }}
-      />
-      <Tab.Screen
-        name="Received"
-        component={ReceivedScreen}
-        options={{ tabBarLabel: 'Received', tabBarIcon: tabBarIcon('received') }}
-      />
-      <Tab.Screen
-        name="Files"
-        component={RemoteExplorerScreen}
-        options={{ tabBarLabel: 'Files', tabBarIcon: tabBarIcon('files') }}
       />
       <Tab.Screen
         name="Settings"
@@ -192,6 +182,8 @@ export default function AppNavigator() {
     >
       <Stack.Screen name="Permissions" component={PermissionsScreen} />
       <Stack.Screen name="Main" component={MainTabNavigator} />
+      <Stack.Screen name="Radar" component={RadarScreen} />
+      <Stack.Screen name="Received" component={ReceivedScreen} />
     </Stack.Navigator>
   );
 }

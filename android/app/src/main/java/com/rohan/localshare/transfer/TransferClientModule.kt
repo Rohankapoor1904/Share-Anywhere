@@ -35,6 +35,30 @@ class TransferClientModule(reactContext: ReactApplicationContext) :
 
     override fun getName(): String = "TransferClientModule"
 
+    private val connectionPool = okhttp3.ConnectionPool(5, 60, TimeUnit.SECONDS)
+
+    private val sharedHttpClient: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .connectionPool(connectionPool)
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .writeTimeout(60, TimeUnit.SECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
+            .build()
+    }
+
+    private val pinnedClients = java.util.concurrent.ConcurrentHashMap<String, OkHttpClient>()
+    private val activeCancelFlags = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicBoolean>()
+
+    private fun getClient(expectedFingerprint: String?): OkHttpClient {
+        if (expectedFingerprint.isNullOrEmpty()) {
+            return sharedHttpClient
+        }
+        return pinnedClients.computeIfAbsent(expectedFingerprint) { fp ->
+            createPinnedClient(fp)
+        }
+    }
+
     private fun createPinnedClient(expectedFingerprint: String?): OkHttpClient {
         val trustManager = object : X509TrustManager {
             override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
@@ -66,12 +90,173 @@ class TransferClientModule(reactContext: ReactApplicationContext) :
         sslContext.init(null, arrayOf<TrustManager>(trustManager), java.security.SecureRandom())
 
         return OkHttpClient.Builder()
+            .connectionPool(connectionPool)
             .sslSocketFactory(sslContext.socketFactory, trustManager)
             .hostnameVerifier { _, _ -> true } // Pinned by cert fingerprint, not DNS name
-            .connectTimeout(10, TimeUnit.SECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .writeTimeout(60, TimeUnit.SECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
             .build()
+    }
+
+    @ReactMethod
+    fun cancelSession(sessionId: String) {
+        activeCancelFlags[sessionId]?.set(true)
+    }
+
+    @ReactMethod
+    fun sendFileStream(
+        baseUrl: String,
+        sessionId: String,
+        fileId: String,
+        fileUri: String,
+        fileName: String,
+        totalBytes: Double,
+        startOffset: Double,
+        chunkSize: Int,
+        promise: Promise
+    ) {
+        Thread {
+            val cancelFlag = java.util.concurrent.atomic.AtomicBoolean(false)
+            activeCancelFlags[sessionId] = cancelFlag
+
+            try {
+                val client = getClient(null)
+                val total = totalBytes.toLong()
+                val actualChunkSize = if (chunkSize > 0) chunkSize else 4 * 1024 * 1024
+                val digest = MessageDigest.getInstance("SHA-256")
+
+                openSliceStream(fileUri).use { stream ->
+                    var offset = startOffset.toLong()
+                    if (offset > 0) {
+                        var skipped = 0L
+                        while (skipped < offset) {
+                            val s = stream.skip(offset - skipped)
+                            if (s <= 0) break
+                            skipped += s
+                        }
+                    }
+
+                    var transferred = offset
+                    var lastEmittedTime = System.currentTimeMillis()
+                    var lastEmittedBytes = transferred
+                    val buffer = ByteArray(actualChunkSize)
+
+                    while (transferred < total) {
+                        if (cancelFlag.get()) {
+                            throw java.util.concurrent.CancellationException("Transfer cancelled by user")
+                        }
+
+                        val toRead = minOf(buffer.size.toLong(), total - transferred).toInt()
+                        var chunkRead = 0
+                        while (chunkRead < toRead) {
+                            val r = stream.read(buffer, chunkRead, toRead - chunkRead)
+                            if (r == -1) break
+                            chunkRead += r
+                        }
+                        if (chunkRead <= 0) break
+
+                        // Incremental SHA-256 calculation on the fly
+                        digest.update(buffer, 0, chunkRead)
+
+                        // Upload chunk
+                        val body = buffer.toRequestBody("application/octet-stream".toMediaType(), 0, chunkRead)
+                        val req = Request.Builder()
+                            .url("$baseUrl/v1/chunk")
+                            .put(body)
+                            .addHeader("x-localshare-session-id", sessionId)
+                            .addHeader("x-file-id", fileId)
+                            .addHeader("x-offset", offset.toString())
+                            .build()
+
+                        client.newCall(req).execute().use { resp ->
+                            if (!resp.isSuccessful) {
+                                throw java.io.IOException("Chunk upload failed with HTTP ${resp.code}")
+                            }
+                        }
+
+                        offset += chunkRead
+                        transferred += chunkRead
+
+                        val now = System.currentTimeMillis()
+                        val elapsed = now - lastEmittedTime
+                        if (elapsed >= 150 || transferred >= total) {
+                            val bytesPerSec = if (elapsed > 0) {
+                                (transferred - lastEmittedBytes) * 1000.0 / elapsed
+                            } else 0.0
+
+                            lastEmittedTime = now
+                            lastEmittedBytes = transferred
+
+                            val progressMap = Arguments.createMap().apply {
+                                putString("sessionId", sessionId)
+                                putString("fileId", fileId)
+                                putString("fileName", fileName)
+                                putDouble("transferredBytes", transferred.toDouble())
+                                putDouble("totalBytes", totalBytes)
+                                putDouble("speed", bytesPerSec)
+                                putString("direction", "send")
+                                putString("status", "in_progress")
+                            }
+                            sendEvent("SendProgress", progressMap)
+                        }
+                    }
+
+                    if (cancelFlag.get()) {
+                        throw java.util.concurrent.CancellationException("Transfer cancelled by user")
+                    }
+
+                    // Automatic /v1/file/commit
+                    val sha256Hex = digest.digest().joinToString("") { String.format("%02x", it) }
+                    val commitPayload = org.json.JSONObject().apply {
+                        put("sessionId", sessionId)
+                        put("fileId", fileId)
+                        put("sha256", sha256Hex)
+                        put("lastChunk", true)
+                    }
+
+                    val commitBody = commitPayload.toString().toRequestBody("application/json".toMediaType())
+                    val commitReq = Request.Builder()
+                        .url("$baseUrl/v1/file/commit")
+                        .post(commitBody)
+                        .build()
+
+                    client.newCall(commitReq).execute().use { commitResp ->
+                        val respStr = commitResp.body?.string() ?: "{}"
+                        if (!commitResp.isSuccessful) {
+                            throw java.io.IOException("Commit failed with HTTP ${commitResp.code}: $respStr")
+                        }
+                        val commitJson = org.json.JSONObject(respStr)
+                        val verified = commitJson.optBoolean("verified", true)
+
+                        val finishedMap = Arguments.createMap().apply {
+                            putString("sessionId", sessionId)
+                            putString("fileId", fileId)
+                            putBoolean("verified", verified)
+                            putString("sha256", sha256Hex)
+                        }
+                        sendEvent("SendFinished", finishedMap)
+
+                        val result = Arguments.createMap().apply {
+                            putBoolean("verified", verified)
+                            putString("sha256", sha256Hex)
+                        }
+                        promise.resolve(result)
+                    }
+                }
+            } catch (e: Exception) {
+                val failMap = Arguments.createMap().apply {
+                    putString("sessionId", sessionId)
+                    putString("fileId", fileId)
+                    putString("error", e.localizedMessage ?: "Upload failed")
+                }
+                sendEvent("SendFailed", failMap)
+                promise.reject("ERR_STREAM_FAILED", e.localizedMessage, e)
+            } finally {
+                activeCancelFlags.remove(sessionId)
+            }
+        }.start()
     }
 
     @ReactMethod
@@ -83,7 +268,7 @@ class TransferClientModule(reactContext: ReactApplicationContext) :
     ) {
         Thread {
             try {
-                val client = createPinnedClient(expectedFingerprint)
+                val client = getClient(expectedFingerprint)
                 val body = payloadJson.toRequestBody("application/json".toMediaType())
                 val request = Request.Builder()
                     .url(url)
@@ -117,7 +302,7 @@ class TransferClientModule(reactContext: ReactApplicationContext) :
                     headers.getString("x-expected-fingerprint")
                 } else null
 
-                val client = createPinnedClient(expectedFingerprint)
+                val client = getClient(expectedFingerprint)
                 val chunkBytes = android.util.Base64.decode(chunkBase64, android.util.Base64.NO_WRAP)
                 val body = chunkBytes.toRequestBody("application/octet-stream".toMediaType())
 
@@ -166,7 +351,7 @@ class TransferClientModule(reactContext: ReactApplicationContext) :
                     headers.getString("x-expected-fingerprint")
                 } else null
 
-                val client = createPinnedClient(expectedFingerprint)
+                val client = getClient(expectedFingerprint)
                 val body = StreamingSliceRequestBody(fileUri, offset.toLong(), length)
                 val reqBuilder = Request.Builder().url(url).put(body)
 
@@ -209,7 +394,7 @@ class TransferClientModule(reactContext: ReactApplicationContext) :
                 if (!dir.exists()) dir.mkdirs()
                 val destFile = File(dir, fileName)
 
-                val client = createPinnedClient(null)
+                val client = getClient(null)
                 val request = Request.Builder().url(url).get().build()
 
                 client.newCall(request).execute().use { response ->

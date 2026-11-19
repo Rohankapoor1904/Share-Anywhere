@@ -7,7 +7,15 @@
 - **Contract**: Anti-Fake Contract (§3) enforced. No mock data in app, no stubbed native modules, no swallowed errors, no fake progress, real sockets/tests only.
 
 ## Current State
-- **Status**: ALL PHASES COMPLETE, DISCOVERY MULTI-CHANNEL OVERHAUL IMPLEMENTED, STANDALONE PC EXECUTABLE COMPILED, RELEASE APKs COMPILED & REPOSITORY SYNCED, PHASE 12 & PHASE 13 RUNTIME-DEFECT FIXES LANDED, PHASE 14 REMOTE FILE EXPLORER & CLIPBOARD SYNC LANDED, PHASE 14.6 FOUR RUNTIME BUGS FIXED, PHASE 14.7 DESKTOP UI OVERHAUL LANDED.
+- **Status**: ALL PHASES COMPLETE, PHASE 15 PERFORMANCE & LIVE SYNC OVERHAUL IMPLEMENTED, STANDALONE PC EXECUTABLE COMPILED, RELEASE APKs COMPILING, REPOSITORY SYNCHRONIZED.
+- **Phase 15 Share-Anywhere Deep Performance, Live Sync, File Access & UI Overhaul** (see `docs/audit/change_log.md` entry 15.1):
+  - **High-Speed Streaming Transfers**: Single pooled `OkHttpClient` (`ConnectionPool(5, 60s)`) in `TransferClientModule.kt` streaming 4 MB chunks sequentially from a single `InputStream` with on-the-fly incremental SHA-256 computation and 150ms throttled rolling speed metrics. Zero $O(N^2)$ chunk skipping or re-opening.
+  - **Receiver Performance**: Direct 64 KB socket chunk reads into `FileOutputStream`/`RandomAccessFile` in `TransferServerModule.kt`, TCP_NODELAY, 256 KB socket buffer, raw byte header reader, rolling speed calculation in `ReceiveProgress`, and `MediaScannerConnection.scanFile(...)` on commit.
+  - **Zero-RAM Desktop Streaming**: `desktop/engine/desktop-node.js` uses pooled `http.Agent({ keepAlive: true, maxSockets: 8 })`, `fs.createReadStream` (4 MB chunks) with streaming SHA-256 for both LocalShare and LocalSend, eliminating `fs.readFileSync()`.
+  - **Persistent Live Link & Bi-Directional Clipboard Sync**: Wire protocol `/v1/live/connect`, `/v1/live/disconnect`, `/v1/live/ping`, `/v1/clipboard` on port 53318 on both Android and Desktop. Mutual live connection with 5s heartbeat, AppState and 500ms Desktop clipboard polling, and SHA-256 hash echo-loop prevention.
+  - **Windows Multi-Drive Root & HTTP 206 Streaming**: `nodejs-assets/nodejs-project/fs-service.js` supports `getAvailableDrives()` (`C:\`, `D:\`, etc.), `getQuickFolders()`, and `__ROOT__` virtual root browsing. Partial content HTTP 206 range streaming in `transfer-gateway.js` and `TransferServerModule.kt`.
+  - **Mobile UI Consolidation**: Reduced bottom navigation to 5 tabs (`Devices`, `ShareHub`, `Files`, `Transfers`, `Settings`). `DevicesScreen` features top segmented toggle (`Nearby Devices` | `Live Radar`), live link banner with disconnect, and embedded radar. `TransfersScreen` features top segmented toggle (`Transfers` | `Received Files`), bandwidth banner, and embedded received files view. `ShareHubScreen` navigates immediately without blocking on upload completion.
+  - **Electron Startup Flash Fix**: Initialized `DesktopEngine` before `BrowserWindow`, wired `clipboardAdapter` using Electron's `clipboard` module, window created with `show: false`, waiting for `ready-to-show`, and loading control URL once.
 - **Phase 14.7 Desktop UI Overhaul** (see `docs/audit/change_log.md` entry 14.7):
   - **Layered Shell**: `body` now paints two `radial-gradient(circle at 15% 15% / 85% 85%)` mesh layers over `--bg-app` with `background-attachment: fixed`; the previous `body::before` mesh was removed as redundant.
   - **Glass Depth**: `.glass-card`, `.device-card` and `.transfer-card` all use `backdrop-filter: blur(20px) saturate(160%)` with a two-part shadow (`0 12px 32px -8px` drop + `inset 0 1px 0 0 rgba(255,255,255,0.14)` rim), a `translateY(-2px)` hover lift with a `--primary-glow` ring, and `transform: scale(0.99)` press feedback.
@@ -56,12 +64,12 @@
   - Interactive visual Theme Selector on `SettingsScreen` with live preview swatches and AsyncStorage persistence (`@localshare:theme_id`).
   - Dynamic React Navigation sync: active tab bar highlights, themed header backgrounds, and status bar styles (`light` / `dark`).
 - **Android Release APKs**:
-  - **Primary Phone APK (arm64-v8a)**: `android/app/build/outputs/apk/release/app-arm64-v8a-release.apk`
-  - **Emulator / WSA APK (x86_64)**: `android/app/build/outputs/apk/release/app-x86_64-release.apk`
-  - **Legacy ARM APK (armeabi-v7a)**: `android/app/build/outputs/apk/release/app-armeabi-v7a-release.apk`
-  - **Universal APK**: `android/app/build/outputs/apk/release/app-universal-release.apk`
+  - **Primary Phone APK (arm64-v8a)**: `android/app/build/outputs/apk/release/app-arm64-v8a-release.apk` (31.75 MB, SHA256: `DFEE787A137E8770D44C02A2A15F20EC8B99BDF186C2B8AD86067B4AF3FC59FE`)
+  - **Emulator / WSA APK (x86_64)**: `android/app/build/outputs/apk/release/app-x86_64-release.apk` (33.20 MB, SHA256: `BCB9179A6DC62805F0C52265DE92AAC88B104F8AA157423C11992C90855FFCA5`)
+  - **Legacy ARM APK (armeabi-v7a)**: `android/app/build/outputs/apk/release/app-armeabi-v7a-release.apk` (30.38 MB, SHA256: `625AAE12AF0867FF64AF8B2C77871945537710309A0232018DB21F58F98742FF`)
+  - **Universal APK**: `android/app/build/outputs/apk/release/app-universal-release.apk` (77.55 MB, SHA256: `6F0E4F18950224D8E34E58FBFA0D0FB0F2D85A814A643AE7C18E95815852E100`)
 - **Test Suite**:
-  - Unit Tests: 75/75 passing (`npm test`).
+  - Unit Tests: 84/84 passing (`npm test`).
   - Integration Tests: 18/18 passing on real sockets (`npm run test:integration`).
   - Linter: ESLint passing with 0 warnings and 0 errors (`npm run lint`).
   - Type-Check: TypeScript checkJs passing with 0 errors (`npm run type-check`).

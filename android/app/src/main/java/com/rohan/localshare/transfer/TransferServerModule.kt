@@ -57,6 +57,20 @@ class TransferServerModule(
     private var selfDisplayName: String = "Android Phone"
     private var selfPlatform: String = "android"
 
+    data class SessionMetrics(
+        val sessionId: String,
+        val fileName: String,
+        val totalBytes: Long,
+        val startTime: Long,
+        var transferredBytes: Long = 0L,
+        var lastEmittedTime: Long = 0L,
+        var lastEmittedBytes: Long = 0L
+    )
+
+    private val sessionMetricsMap = ConcurrentHashMap<String, SessionMetrics>()
+    private var lastClipboardHash: String = ""
+    private var connectedPeer: JSONObject? = null
+
     init {
         receivedDir = resolveReceivedDir(reactContext)
         chunkEngine = ChunkEngine(receivedDir)
@@ -71,15 +85,12 @@ class TransferServerModule(
      */
     private fun resolveReceivedDir(context: ReactApplicationContext): File {
         val fallback = File(context.filesDir, "received")
+        if (!fallback.exists()) fallback.mkdirs()
         return try {
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-                val downloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-                val dir = File(downloads, "LocalShare")
-                if (!dir.exists()) dir.mkdirs()
-                if (dir.isDirectory && dir.canWrite()) dir else fallback
-            } else {
-                fallback
-            }
+            val downloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            val dir = File(downloads, "LocalShare")
+            if (!dir.exists()) dir.mkdirs()
+            if (dir.isDirectory && dir.canWrite()) dir else fallback
         } catch (e: Exception) {
             fallback
         }
@@ -283,6 +294,9 @@ class TransferServerModule(
                     "Content-Length: $length\r\n" +
                     "Content-Range: bytes $start-$end/$total\r\n" +
                     "Accept-Ranges: bytes\r\n" +
+                    "Access-Control-Allow-Origin: *\r\n" +
+                    "Access-Control-Allow-Methods: GET, POST, PUT, OPTIONS\r\n" +
+                    "Access-Control-Allow-Headers: Content-Type, Range, x-localshare-session-id, x-file-id, x-offset\r\n" +
                     "Connection: close\r\n\r\n"
             output.write(header.toByteArray(Charsets.UTF_8))
             FileInputStream(target).use { fis ->
@@ -304,6 +318,9 @@ class TransferServerModule(
                 "Content-Type: $mime\r\n" +
                 "Content-Length: $total\r\n" +
                 "Accept-Ranges: bytes\r\n" +
+                "Access-Control-Allow-Origin: *\r\n" +
+                "Access-Control-Allow-Methods: GET, POST, PUT, OPTIONS\r\n" +
+                "Access-Control-Allow-Headers: Content-Type, Range, x-localshare-session-id, x-file-id, x-offset\r\n" +
                 "Connection: close\r\n\r\n"
         output.write(header.toByteArray(Charsets.UTF_8))
         BufferedInputStream(FileInputStream(target)).use { input ->
@@ -394,6 +411,9 @@ class TransferServerModule(
 
     private fun handleClient(clientSocket: Socket) {
         try {
+            clientSocket.tcpNoDelay = true
+            clientSocket.receiveBufferSize = 256 * 1024
+            clientSocket.sendBufferSize = 256 * 1024
             clientSocket.use { s ->
                 val input = s.getInputStream()
                 val output = s.getOutputStream()
@@ -417,6 +437,11 @@ class TransferServerModule(
                         val value = line.substring(colonIdx + 1).trim()
                         headers[key] = value
                     }
+                }
+
+                if (method == "OPTIONS") {
+                    sendCorsPreflight(output)
+                    return
                 }
 
                 val contentLength = headers["content-length"]?.toIntOrNull() ?: 0
@@ -508,16 +533,22 @@ class TransferServerModule(
                             ?: "Nearby Device"
                         val filesArray = sessionJson.optJSONArray("files") ?: JSONArray()
                         var totalBytes = 0L
+                        val firstFileName = if (filesArray.length() > 0) {
+                            filesArray.optJSONObject(0)?.optString("fileName") ?: "file"
+                        } else "file"
                         for (i in 0 until filesArray.length()) {
                             totalBytes += filesArray.optJSONObject(i)?.optLong("fileSize") ?: 0L
                         }
 
                         activeSessions[sessionId] = sessionJson
+                        sessionMetricsMap[sessionId] = SessionMetrics(
+                            sessionId = sessionId,
+                            fileName = if (filesArray.length() == 1) firstFileName else "${filesArray.length()} files",
+                            totalBytes = totalBytes,
+                            startTime = System.currentTimeMillis()
+                        )
 
-                        // Register the latch BEFORE emitting to JS. The JS approval
-                        // callback can arrive on another thread the instant the event is
-                        // delivered; creating the latch afterwards dropped that approval
-                        // and left the sender blocked for the full 30s timeout.
+                        // Register the latch BEFORE emitting to JS.
                         val latch = CountDownLatch(1)
                         pendingApprovals[sessionId] = latch
 
@@ -538,6 +569,7 @@ class TransferServerModule(
                         pendingApprovals.remove(sessionId)
 
                         if (!accepted) {
+                            sessionMetricsMap.remove(sessionId)
                             val rejectResp = JSONObject().apply {
                                 put("sessionId", sessionId)
                                 put("accepted", false)
@@ -568,24 +600,62 @@ class TransferServerModule(
                         val fileId = headers["x-file-id"] ?: ""
                         val offset = headers["x-offset"]?.toLongOrNull() ?: 0L
 
-                        val chunkBytes = readBody()
-                        val totalRead = chunkBytes.size
-
-                        chunkEngine.writeChunk(fileId, offset, chunkBytes)
-
-                        val progressParams = Arguments.createMap().apply {
-                            putString("sessionId", sessionId)
-                            putString("fileId", fileId)
-                            putDouble("transferredBytes", (offset + totalRead).toDouble())
-                            putDouble("speed", 0.0)
+                        val writtenLength: Long
+                        if (contentLength > 0 && !isChunked) {
+                            chunkEngine.writeChunkFromStream(fileId, offset, input, contentLength.toLong())
+                            writtenLength = contentLength.toLong()
+                        } else {
+                            val chunkBytes = readBody()
+                            chunkEngine.writeChunk(fileId, offset, chunkBytes)
+                            writtenLength = chunkBytes.size.toLong()
                         }
-                        sendEvent("ReceiveProgress", progressParams)
+
+                        val metrics = sessionMetricsMap[sessionId]
+                        val now = System.currentTimeMillis()
+                        val transferred = offset + writtenLength
+                        if (metrics != null) {
+                            metrics.transferredBytes = transferred
+                            val elapsed = now - metrics.lastEmittedTime
+                            if (elapsed >= 150 || (metrics.totalBytes > 0 && transferred >= metrics.totalBytes)) {
+                                val speed = if (elapsed > 0) {
+                                    ((transferred - metrics.lastEmittedBytes) * 1000.0) / elapsed
+                                } else {
+                                    0.0
+                                }
+                                metrics.lastEmittedTime = now
+                                metrics.lastEmittedBytes = transferred
+
+                                val progressParams = Arguments.createMap().apply {
+                                    putString("sessionId", sessionId)
+                                    putString("fileId", fileId)
+                                    putString("fileName", metrics.fileName)
+                                    putDouble("transferredBytes", transferred.toDouble())
+                                    putDouble("totalBytes", metrics.totalBytes.toDouble())
+                                    putDouble("speed", speed)
+                                    putString("direction", "receive")
+                                    putString("status", "in_progress")
+                                }
+                                sendEvent("ReceiveProgress", progressParams)
+                            }
+                        } else {
+                            val progressParams = Arguments.createMap().apply {
+                                putString("sessionId", sessionId)
+                                putString("fileId", fileId)
+                                putString("fileName", fileId)
+                                putDouble("transferredBytes", transferred.toDouble())
+                                putDouble("totalBytes", transferred.toDouble())
+                                putDouble("speed", 0.0)
+                                putString("direction", "receive")
+                                putString("status", "in_progress")
+                            }
+                            sendEvent("ReceiveProgress", progressParams)
+                        }
 
                         val ack = JSONObject().apply {
                             put("sessionId", sessionId)
                             put("fileId", fileId)
                             put("offset", offset)
-                            put("received", totalRead)
+                            put("received", writtenLength)
                         }
                         sendJsonResponse(output, 200, ack)
                     }
@@ -599,8 +669,6 @@ class TransferServerModule(
                         val partFile = File(receivedDir, "$fileId.localshare.part")
                         val actualSha = if (partFile.exists()) HashingModule.computeSha256(partFile) else ""
 
-                        // Preserve the original file name advertised in the session handshake,
-                        // stripping any path components to prevent traversal outside the store.
                         val sessionJson = activeSessions[sessionId]
                         val advertisedName = sessionJson?.optJSONArray("files")?.let { filesArr ->
                             (0 until filesArr.length())
@@ -624,12 +692,23 @@ class TransferServerModule(
                             val finalFile = chunkEngine.commitFile(fileId, originalName)
                             resp.put("savedPath", finalFile.absolutePath)
 
+                            try {
+                                android.media.MediaScannerConnection.scanFile(
+                                    reactApplicationContext,
+                                    arrayOf(finalFile.absolutePath),
+                                    null,
+                                    null
+                                )
+                            } catch (_: Exception) {}
+
+                            val metrics = sessionMetricsMap.remove(sessionId)
                             val eventParams = Arguments.createMap().apply {
                                 putString("sessionId", sessionId)
                                 putString("fileId", fileId)
                                 putString("fileName", finalFile.name)
                                 putString("savedPath", finalFile.absolutePath)
                                 putDouble("fileSize", finalFile.length().toDouble())
+                                putDouble("totalBytes", (metrics?.totalBytes ?: finalFile.length()).toDouble())
                             }
                             sendEvent("FileReceived", eventParams)
                         }
@@ -640,7 +719,12 @@ class TransferServerModule(
                     path == "/v1/fs/list" && method == "GET" -> {
                         val requested = urlQueryParam(requestTarget, "path")
                         try {
-                            sendJsonResponse(output, 200, buildFsListing(requested))
+                            val listing = buildFsListing(requested)
+                            listing.put(
+                                "hasAllFilesAccess",
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) Environment.isExternalStorageManager() else true
+                            )
+                            sendJsonResponse(output, 200, listing)
                         } catch (e: Exception) {
                             sendJsonResponse(output, 404, JSONObject().put("error", e.message ?: "List failed"))
                         }
@@ -656,6 +740,9 @@ class TransferServerModule(
                                     "Content-Type: application/octet-stream\r\n" +
                                     "Content-Length: ${target.length()}\r\n" +
                                     "Content-Disposition: attachment; filename=\"${target.name}\"\r\n" +
+                                    "Access-Control-Allow-Origin: *\r\n" +
+                                    "Access-Control-Allow-Methods: GET, POST, PUT, OPTIONS\r\n" +
+                                    "Access-Control-Allow-Headers: Content-Type, Range, x-localshare-session-id, x-file-id, x-offset\r\n" +
                                     "Connection: close\r\n\r\n"
                             output.write(header.toByteArray(Charsets.UTF_8))
                             BufferedInputStream(FileInputStream(target)).use { input ->
@@ -699,17 +786,77 @@ class TransferServerModule(
                         }
                     }
 
+                    path == "/v1/live/connect" && method == "POST" -> {
+                        val bodyStr = String(readBody(), Charsets.UTF_8)
+                        val body = JSONObject(bodyStr)
+                        connectedPeer = body
+                        val resp = JSONObject().apply {
+                            put("connected", true)
+                            put("device", JSONObject().apply {
+                                put("deviceId", selfDeviceId)
+                                put("displayName", selfDisplayName)
+                                put("platform", selfPlatform)
+                                put("port", s.localPort)
+                            })
+                            put("currentClipboard", readClipboardText())
+                        }
+                        val eventParams = Arguments.createMap().apply {
+                            putString("deviceId", body.optString("deviceId"))
+                            putString("displayName", body.optString("displayName"))
+                            putString("address", body.optString("address"))
+                            putInt("port", body.optInt("port", 53318))
+                            putString("platform", body.optString("platform"))
+                        }
+                        sendEvent("LivePeerConnected", eventParams)
+                        sendJsonResponse(output, 200, resp)
+                    }
+
+                    path == "/v1/live/disconnect" && method == "POST" -> {
+                        connectedPeer = null
+                        sendEvent("LivePeerDisconnected", null)
+                        sendJsonResponse(output, 200, JSONObject().put("disconnected", true))
+                    }
+
+                    path == "/v1/live/ping" && method == "GET" -> {
+                        sendJsonResponse(output, 200, JSONObject().apply {
+                            put("status", "ok")
+                            put("timestamp", System.currentTimeMillis())
+                        })
+                    }
+
                     path == "/v1/clipboard" && method == "GET" -> {
                         sendJsonResponse(output, 200, JSONObject().apply {
                             put("text", readClipboardText())
+                            put("hash", lastClipboardHash)
                             put("timestamp", System.currentTimeMillis())
                         })
                     }
 
                     path == "/v1/clipboard" && method == "POST" -> {
                         val body = JSONObject(String(readBody(), Charsets.UTF_8))
-                        writeClipboardText(body.optString("text", ""))
-                        sendJsonResponse(output, 200, JSONObject().put("success", true))
+                        val text = body.optString("text", "")
+                        val hash = body.optString("hash", "")
+                        val senderId = body.optString("senderDeviceId", "")
+
+                        if (hash.isNotEmpty() && hash == lastClipboardHash) {
+                            sendJsonResponse(output, 200, JSONObject().apply {
+                                put("success", true)
+                                put("ignored", true)
+                            })
+                        } else {
+                            if (hash.isNotEmpty()) {
+                                lastClipboardHash = hash
+                            }
+                            writeClipboardText(text)
+                            val eventParams = Arguments.createMap().apply {
+                                putString("text", text)
+                                putString("hash", lastClipboardHash)
+                                putString("senderDeviceId", senderId)
+                                putDouble("timestamp", System.currentTimeMillis().toDouble())
+                            }
+                            sendEvent("ClipboardSynced", eventParams)
+                            sendJsonResponse(output, 200, JSONObject().put("success", true))
+                        }
                     }
 
                     else -> {
@@ -765,11 +912,26 @@ class TransferServerModule(
         }
     }
 
+    private fun sendCorsPreflight(output: OutputStream) {
+        val header = "HTTP/1.1 204 No Content\r\n" +
+                "Access-Control-Allow-Origin: *\r\n" +
+                "Access-Control-Allow-Methods: GET, POST, PUT, OPTIONS\r\n" +
+                "Access-Control-Allow-Headers: Content-Type, Range, x-localshare-session-id, x-file-id, x-offset\r\n" +
+                "Access-Control-Max-Age: 86400\r\n" +
+                "Connection: close\r\n\r\n"
+        output.write(header.toByteArray(Charsets.UTF_8))
+        output.flush()
+    }
+
     private fun sendJsonResponse(output: OutputStream, statusCode: Int, json: JSONObject) {
         val bytes = json.toString().toByteArray(Charsets.UTF_8)
-        val header = "HTTP/1.1 $statusCode OK\r\n" +
-                "Content-Type: application/json\r\n" +
+        val statusText = if (statusCode == 200) "OK" else if (statusCode == 404) "Not Found" else "Error"
+        val header = "HTTP/1.1 $statusCode $statusText\r\n" +
+                "Content-Type: application/json; charset=utf-8\r\n" +
                 "Content-Length: ${bytes.size}\r\n" +
+                "Access-Control-Allow-Origin: *\r\n" +
+                "Access-Control-Allow-Methods: GET, POST, PUT, OPTIONS\r\n" +
+                "Access-Control-Allow-Headers: Content-Type, Range, x-localshare-session-id, x-file-id, x-offset\r\n" +
                 "Connection: close\r\n\r\n"
         output.write(header.toByteArray(Charsets.UTF_8))
         output.write(bytes)

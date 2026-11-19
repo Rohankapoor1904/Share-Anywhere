@@ -107,7 +107,14 @@ function getPrimaryLocalIp() {
 }
 
 class DesktopEngine {
-  constructor() {
+  constructor(options = {}) {
+    this.clipboardAdapter = options.clipboardAdapter || null;
+    this.httpAgent = new http.Agent({ keepAlive: true, maxSockets: 8 });
+    this.connectedPeer = null;
+    this.liveClipboardEnabled = true;
+    this.lastClipboardHash = null;
+    this.clipboardPollInterval = null;
+
     this.localIp = getPrimaryLocalIp();
     this.localIps = getAllLocalIps();
     this.hostname = os.hostname() || 'Windows-PC';
@@ -154,6 +161,14 @@ class DesktopEngine {
     this.discoveryInterval = null;
   }
 
+  getClipboardText() {
+    return this.clipboardAdapter ? this.clipboardAdapter.readText() : getSystemClipboard();
+  }
+
+  setClipboardText(text) {
+    return this.clipboardAdapter ? this.clipboardAdapter.writeText(text) : setSystemClipboard(text);
+  }
+
   async start() {
     // 1. Start Native Transfer Gateway (Port 53318 / fallback 53328)
     try {
@@ -161,7 +176,51 @@ class DesktopEngine {
         port: TRANSFER_PORT,
         storageDir: this.storageDir,
         selfDevice: this.selfDevice,
-        onSessionRequest: async (req) => this.requestIncomingApproval(req)
+        clipboardAdapter: this.clipboardAdapter,
+        onSessionRequest: async (req) => this.requestIncomingApproval(req),
+        onProgress: (progress) => {
+          let entry = this.transfers.find((t) => t.id === progress.sessionId);
+          if (!entry) {
+            entry = {
+              id: progress.sessionId,
+              peer: 'Remote Device',
+              files: [progress.fileName],
+              totalBytes: progress.totalBytes,
+              bytesTransferred: progress.transferredBytes,
+              progress: progress.totalBytes ? Math.min(99, Math.round((progress.transferredBytes / progress.totalBytes) * 100)) : 0,
+              speed: progress.speed,
+              status: 'transferring',
+              direction: 'receive',
+              startTime: Date.now()
+            };
+            this.transfers.unshift(entry);
+          } else {
+            entry.bytesTransferred = progress.transferredBytes;
+            entry.totalBytes = progress.totalBytes || entry.totalBytes;
+            entry.progress = entry.totalBytes ? Math.min(99, Math.round((entry.bytesTransferred / entry.totalBytes) * 100)) : entry.progress;
+            entry.speed = progress.speed;
+            entry.status = 'transferring';
+          }
+          this.broadcastEvent('transfer_update', entry);
+        },
+        onFileReceived: (file) => {
+          let entry = this.transfers.find((t) => t.id === file.sessionId);
+          if (entry) {
+            entry.status = 'completed';
+            entry.progress = 100;
+            entry.bytesTransferred = entry.totalBytes;
+            this.broadcastEvent('transfer_update', entry);
+          }
+          this.broadcastEvent('received_updated', {
+            name: file.fileName,
+            path: file.savedPath,
+            size: file.fileSize,
+            lastModified: Date.now()
+          });
+        },
+        onClipboardReceived: (clip) => {
+          this.broadcastEvent('clipboard_sync', { text: clip.text, hash: clip.hash });
+        }
       });
       const bound = await this.transferGateway.start();
       if (bound && bound.port) {
@@ -181,7 +240,22 @@ class DesktopEngine {
         deviceType: 'desktop',
         fingerprint: this.fingerprint,
         onPeerFound: (peer) => this.handlePeerFound(peer),
-        onUploadRequest: async (req) => this.requestIncomingApproval(req)
+        onUploadRequest: async (req) => this.requestIncomingApproval(req),
+        onFileReceived: (file) => {
+          let entry = this.transfers.find((t) => t.id === file.sessionId);
+          if (entry) {
+            entry.status = 'completed';
+            entry.progress = 100;
+            entry.bytesTransferred = entry.totalBytes;
+            this.broadcastEvent('transfer_update', entry);
+          }
+          this.broadcastEvent('received_updated', {
+            name: file.fileName,
+            path: file.savedPath,
+            size: file.fileSize,
+            lastModified: Date.now()
+          });
+        }
       });
       await this.localsendGateway.start();
     } catch (err) {
@@ -191,6 +265,25 @@ class DesktopEngine {
 
     // 3. Start Desktop HTTP & Control Server (Port 53319 / fallback 53320)
     await this.startControlServer();
+
+    // 4. Start background clipboard polling loop (every 500ms)
+    this.clipboardPollInterval = setInterval(() => {
+      if (!this.connectedPeer || !this.liveClipboardEnabled) return;
+      try {
+        const text = this.getClipboardText();
+        if (!text) return;
+        const hash = crypto.createHash('sha256').update(text).digest('hex');
+        if (hash !== this.lastClipboardHash) {
+          this.lastClipboardHash = hash;
+          this.broadcastEvent('clipboard_sync', { text, hash, sender: 'local' });
+          this.remotePostJson(this.connectedPeer.address, this.connectedPeer.port, '/v1/clipboard', {
+            text,
+            hash,
+            sender: this.selfDevice.displayName
+          }).catch(() => {});
+        }
+      } catch (_) {}
+    }, 500);
 
     // Scan immediately
     this.scanSubnet();
@@ -707,6 +800,81 @@ class DesktopEngine {
         return;
       }
 
+      // Live Link & Bi-directional Clipboard Sync
+      if (pathname === '/api/live/connect' && method === 'POST') {
+        const body = await this.readJson(req);
+        if (!body || !body.peer) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Missing peer' }));
+          return;
+        }
+        const peer = body.peer;
+        const connectRes = await this.remotePostJson(peer.address, peer.port, '/v1/live/connect', {
+          deviceId: this.selfDevice.deviceId,
+          displayName: this.selfDevice.displayName,
+          address: this.localIp,
+          port: this.selfDevice.port,
+          platform: 'desktop',
+          clipboardSync: true
+        });
+        if (connectRes.statusCode === 200) {
+          this.connectedPeer = peer;
+          if (this.transferGateway) {
+            this.transferGateway.connectedPeer = peer;
+          }
+          if (connectRes.body && connectRes.body.currentClipboard) {
+            const incoming = connectRes.body.currentClipboard;
+            this.lastClipboardHash = crypto.createHash('sha256').update(incoming).digest('hex');
+            this.setClipboardText(incoming);
+          }
+          this.broadcastEvent('live_connected', { peer: this.connectedPeer });
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ connected: true, peer: this.connectedPeer }));
+        } else {
+          res.writeHead(connectRes.statusCode || 502, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Failed to connect to peer' }));
+        }
+        return;
+      }
+
+      if (pathname === '/api/live/disconnect' && method === 'POST') {
+        if (this.connectedPeer) {
+          this.remotePostJson(this.connectedPeer.address, this.connectedPeer.port, '/v1/live/disconnect', {
+            deviceId: this.selfDevice.deviceId
+          }).catch(() => {});
+        }
+        this.connectedPeer = null;
+        if (this.transferGateway) {
+          this.transferGateway.connectedPeer = null;
+        }
+        this.broadcastEvent('live_disconnected', {});
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ disconnected: true }));
+        return;
+      }
+
+      if (pathname === '/api/live/status' && method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          connected: !!this.connectedPeer,
+          peer: this.connectedPeer,
+          clipboardSync: this.liveClipboardEnabled
+        }));
+        return;
+      }
+
+      if (pathname === '/api/live/toggle-clipboard' && method === 'POST') {
+        const body = await this.readJson(req);
+        if (body && typeof body.enabled === 'boolean') {
+          this.liveClipboardEnabled = body.enabled;
+        } else {
+          this.liveClipboardEnabled = !this.liveClipboardEnabled;
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ enabled: this.liveClipboardEnabled }));
+        return;
+      }
+
       // Clipboard sync proxies
       if (pathname === '/api/remote-clipboard/push' && method === 'POST') {
         const body = await this.readJson(req);
@@ -715,9 +883,12 @@ class DesktopEngine {
           res.end(JSON.stringify({ error: 'Missing ip' }));
           return;
         }
-        const text = body.text !== undefined ? String(body.text) : getSystemClipboard();
+        const text = body.text !== undefined ? String(body.text) : this.getClipboardText();
+        const hash = crypto.createHash('sha256').update(text).digest('hex');
+        this.lastClipboardHash = hash;
         const result = await this.remotePostJson(body.ip, body.port, '/v1/clipboard', {
           text,
+          hash,
           sender: this.selfDevice.displayName
         });
         res.writeHead(result.statusCode, { 'Content-Type': 'application/json' });
@@ -739,7 +910,8 @@ class DesktopEngine {
           return;
         }
         const text = typeof result.body.text === 'string' ? result.body.text : '';
-        setSystemClipboard(text);
+        this.lastClipboardHash = crypto.createHash('sha256').update(text).digest('hex');
+        this.setClipboardText(text);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ text }));
         return;
@@ -747,7 +919,7 @@ class DesktopEngine {
 
       if (pathname === '/api/clipboard' && method === 'GET') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ text: getSystemClipboard(), timestamp: Date.now() }));
+        res.end(JSON.stringify({ text: this.getClipboardText(), timestamp: Date.now() }));
         return;
       }
 
@@ -895,8 +1067,9 @@ class DesktopEngine {
     // Always advertise the body length. Node defaults to chunked transfer-encoding
     // when it is omitted, and the Android server (as well as several third-party
     // LocalShare peers) only reads Content-Length, which truncated every request body.
-    const opts = { ...options };
-    if (body) {
+    const opts = { agent: this.httpAgent, ...options };
+    const isStream = body && typeof body.pipe === 'function';
+    if (body && !isStream) {
       const length = Buffer.isBuffer(body) ? body.length : Buffer.byteLength(String(body));
       opts.headers = { ...(options.headers || {}), 'Content-Length': String(length) };
     }
@@ -918,10 +1091,14 @@ class DesktopEngine {
       if (options.timeout) {
         req.on('timeout', () => req.destroy(new Error('Request timed out')));
       }
-      if (body) {
+      if (isStream) {
+        body.pipe(req);
+      } else if (body) {
         req.write(body);
+        req.end();
+      } else {
+        req.end();
       }
-      req.end();
     });
   }
 
@@ -971,20 +1148,12 @@ class DesktopEngine {
       const f = fileList[i];
       const fileId = `file-${i + 1}`;
       f.fileId = fileId;
-      let sha256 = '';
-      if (f.path && fs.existsSync(f.path)) {
-        const hash = crypto.createHash('sha256');
-        const buf = fs.readFileSync(f.path);
-        hash.update(buf);
-        sha256 = hash.digest('hex');
-      }
-      f.sha256 = sha256;
       fileDescriptors.push(new FileDescriptor({
         fileId,
         fileName: f.name,
         fileSize: f.size,
         mimeType: f.type || 'application/octet-stream',
-        sha256
+        sha256: ''
       }));
     }
 
@@ -1006,16 +1175,17 @@ class DesktopEngine {
       throw new Error(`Session rejected by peer (${sessionRes.statusCode})`);
     }
 
-    const chunkSize = 1024 * 1024;
+    const chunkSize = 4 * 1024 * 1024;
     for (const f of fileList) {
       if (!f.path || !fs.existsSync(f.path)) {
         throw new Error(`Local file not found: ${f.name}`);
       }
-      const fileBuf = fs.readFileSync(f.path);
+      const hash = crypto.createHash('sha256');
       let offset = 0;
-      while (offset < fileBuf.length) {
-        const end = Math.min(offset + chunkSize, fileBuf.length);
-        const chunk = fileBuf.subarray(offset, end);
+      const fileStream = fs.createReadStream(f.path, { highWaterMark: chunkSize });
+
+      for await (const chunk of fileStream) {
+        hash.update(chunk);
 
         const chunkRes = await this.httpRequest({
           hostname: peer.address,
@@ -1024,7 +1194,7 @@ class DesktopEngine {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/octet-stream',
-            'Content-Length': chunk.length,
+            'Content-Length': String(chunk.length),
             [protocol.kHeaderSessionId]: sessionId,
             'x-file-id': f.fileId,
             'x-offset': String(offset)
@@ -1037,14 +1207,17 @@ class DesktopEngine {
 
         offset += chunk.length;
         transferEntry.bytesTransferred += chunk.length;
+        const elapsed = (Date.now() - transferEntry.startTime) / 1000;
+        transferEntry.speed = elapsed > 0 ? transferEntry.bytesTransferred / elapsed : 0;
         transferEntry.progress = Math.min(99, Math.round((transferEntry.bytesTransferred / (transferEntry.totalBytes || 1)) * 100));
         this.broadcastEvent('transfer_update', transferEntry);
       }
 
+      const finalSha256 = hash.digest('hex');
       const commitReq = new CommitRequest({
         sessionId,
         fileId: f.fileId,
-        sha256: f.sha256,
+        sha256: finalSha256,
         lastChunk: true
       });
       const commitRes = await this.httpRequest({
@@ -1108,8 +1281,9 @@ class DesktopEngine {
       if (!f.path || !fs.existsSync(f.path)) {
         throw new Error(`Local file not found: ${f.name}`);
       }
-      const fileBuf = fs.readFileSync(f.path);
+      const stat = fs.statSync(f.path);
       const token = tokens[f.fileId] || '';
+      const readStream = fs.createReadStream(f.path);
 
       const uploadRes = await this.httpRequest({
         hostname: peer.address,
@@ -1118,15 +1292,17 @@ class DesktopEngine {
         method: 'POST',
         headers: {
           'Content-Type': 'application/octet-stream',
-          'Content-Length': fileBuf.length
+          'Content-Length': String(stat.size)
         }
-      }, fileBuf);
+      }, readStream);
 
       if (uploadRes.statusCode !== 200) {
         throw new Error(`Failed to upload ${f.name} to LocalSend peer`);
       }
 
-      transferEntry.bytesTransferred += fileBuf.length;
+      transferEntry.bytesTransferred += stat.size;
+      const elapsed = (Date.now() - transferEntry.startTime) / 1000;
+      transferEntry.speed = elapsed > 0 ? transferEntry.bytesTransferred / elapsed : 0;
       transferEntry.progress = Math.min(99, Math.round((transferEntry.bytesTransferred / (transferEntry.totalBytes || 1)) * 100));
       this.broadcastEvent('transfer_update', transferEntry);
     }
@@ -1265,6 +1441,13 @@ class DesktopEngine {
     if (this.discoveryInterval) {
       clearInterval(this.discoveryInterval);
       this.discoveryInterval = null;
+    }
+    if (this.clipboardPollInterval) {
+      clearInterval(this.clipboardPollInterval);
+      this.clipboardPollInterval = null;
+    }
+    if (this.httpAgent) {
+      this.httpAgent.destroy();
     }
     for (const entry of this.pendingApprovals.values()) {
       clearTimeout(entry.timer);

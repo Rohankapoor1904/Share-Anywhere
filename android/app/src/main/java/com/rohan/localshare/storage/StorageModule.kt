@@ -8,12 +8,15 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.Settings
+import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.UiThreadUtil
+import com.facebook.react.modules.core.DeviceEventManagerModule
 import java.io.File
+import java.security.MessageDigest
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -23,7 +26,23 @@ import java.util.concurrent.TimeUnit
  */
 class StorageModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
 
+    private var lastWrittenHash: String = ""
+    private var clipListener: ClipboardManager.OnPrimaryClipChangedListener? = null
+
     override fun getName(): String = "StorageModule"
+
+    private fun sha256(text: String): String {
+        val md = MessageDigest.getInstance("SHA-256")
+        return md.digest(text.toByteArray(Charsets.UTF_8)).joinToString("") { String.format("%02x", it) }
+    }
+
+    private fun sendEvent(eventName: String, params: Any?) {
+        if (reactApplicationContext.hasActiveReactInstance()) {
+            reactApplicationContext
+                .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+                .emit(eventName, params)
+        }
+    }
 
     @ReactMethod
     fun getDownloadsDirectory(promise: Promise) {
@@ -133,7 +152,9 @@ class StorageModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
     }
 
     @ReactMethod
-    fun setClipboardText(text: String, promise: Promise) {
+    fun setClipboardText(text: String, incomingHash: String? = null, promise: Promise) {
+        val hash = if (!incomingHash.isNullOrEmpty()) incomingHash else sha256(text)
+        lastWrittenHash = hash
         val latch = CountDownLatch(1)
         UiThreadUtil.runOnUiThread {
             try {
@@ -146,5 +167,131 @@ class StorageModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
         }
         latch.await(2, TimeUnit.SECONDS)
         promise.resolve(true)
+    }
+
+    @ReactMethod
+    fun startClipboardMonitoring(promise: Promise? = null) {
+        UiThreadUtil.runOnUiThread {
+            try {
+                if (clipListener == null) {
+                    val manager = reactApplicationContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipListener = ClipboardManager.OnPrimaryClipChangedListener {
+                        val clip = manager.primaryClip
+                        if (clip != null && clip.itemCount > 0) {
+                            val text = clip.getItemAt(0).coerceToText(reactApplicationContext)?.toString() ?: ""
+                            if (text.isNotEmpty()) {
+                                val hash = sha256(text)
+                                if (hash != lastWrittenHash) {
+                                    lastWrittenHash = hash
+                                    val params = Arguments.createMap().apply {
+                                        putString("text", text)
+                                        putString("hash", hash)
+                                        putDouble("timestamp", System.currentTimeMillis().toDouble())
+                                    }
+                                    sendEvent("ClipboardChanged", params)
+                                }
+                            }
+                        }
+                    }
+                    manager.addPrimaryClipChangedListener(clipListener)
+                }
+                promise?.resolve(true)
+            } catch (e: Exception) {
+                promise?.reject("ERR_CLIPBOARD_MONITOR", e.localizedMessage, e)
+            }
+        }
+    }
+
+    @ReactMethod
+    fun stopClipboardMonitoring(promise: Promise? = null) {
+        UiThreadUtil.runOnUiThread {
+            try {
+                if (clipListener != null) {
+                    val manager = reactApplicationContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    manager.removePrimaryClipChangedListener(clipListener)
+                    clipListener = null
+                }
+                promise?.resolve(true)
+            } catch (e: Exception) {
+                promise?.reject("ERR_CLIPBOARD_MONITOR", e.localizedMessage, e)
+            }
+        }
+    }
+
+    @ReactMethod
+    fun checkClipboardOnActive(promise: Promise? = null) {
+        UiThreadUtil.runOnUiThread {
+            try {
+                val manager = reactApplicationContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                val clip = manager.primaryClip
+                if (clip != null && clip.itemCount > 0) {
+                    val text = clip.getItemAt(0).coerceToText(reactApplicationContext)?.toString() ?: ""
+                    if (text.isNotEmpty()) {
+                        val hash = sha256(text)
+                        if (hash != lastWrittenHash) {
+                            lastWrittenHash = hash
+                            val params = Arguments.createMap().apply {
+                                putString("text", text)
+                                putString("hash", hash)
+                                putDouble("timestamp", System.currentTimeMillis().toDouble())
+                            }
+                            sendEvent("ClipboardChanged", params)
+                        }
+                    }
+                }
+                promise?.resolve(true)
+            } catch (e: Exception) {
+                promise?.reject("ERR_CLIPBOARD_CHECK", e.localizedMessage, e)
+            }
+        }
+    }
+
+    @ReactMethod
+    fun listReceivedFiles(promise: Promise) {
+        Thread {
+            try {
+                val results = Arguments.createArray()
+                val seenNames = mutableSetOf<String>()
+
+                val dirs = mutableListOf<File>()
+                try {
+                    val downloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                    val localShare = File(downloads, "LocalShare")
+                    if (localShare.exists() && localShare.isDirectory) dirs.add(localShare)
+                } catch (_: Exception) {}
+
+                val fallback = File(reactApplicationContext.filesDir, "received")
+                if (fallback.exists() && fallback.isDirectory) dirs.add(fallback)
+
+                for (dir in dirs) {
+                    val files = dir.listFiles() ?: continue
+                    for (file in files) {
+                        if (file.isFile && !file.name.endsWith(".localshare.part") && seenNames.add(file.name)) {
+                            val map = Arguments.createMap().apply {
+                                putString("id", "file-${file.name.hashCode()}")
+                                putString("name", file.name)
+                                putString("path", file.absolutePath)
+                                putDouble("size", file.length().toDouble())
+                                putDouble("lastModified", file.lastModified().toDouble())
+                            }
+                            results.pushMap(map)
+                        }
+                    }
+                }
+                promise.resolve(results)
+            } catch (e: Exception) {
+                promise.reject("ERR_LIST_RECEIVED_FILES", e.localizedMessage, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun addListener(eventName: String) {
+        // Required for RN NativeEventEmitter
+    }
+
+    @ReactMethod
+    fun removeListeners(count: Int) {
+        // Required for RN NativeEventEmitter
     }
 }

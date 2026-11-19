@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu, Notification } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, Notification, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { DesktopEngine } = require('./engine/desktop-node');
@@ -28,43 +28,17 @@ if (!gotTheLock) {
   });
 
   async function createWindow() {
-    // 1. Setup Native Window IMMEDIATELY so the app opens instantly
-    const windowOpts = {
-      title: 'LocalShare Desktop — Direct LAN File Sharing',
-      width: 1140,
-      height: 780,
-      minWidth: 920,
-      minHeight: 640,
-      backgroundColor: '#0F172A',
-      autoHideMenuBar: true,
-      show: true,
-      webPreferences: {
-        preload: path.join(__dirname, 'preload.js'),
-        nodeIntegration: false,
-        contextIsolation: true,
-        sandbox: false
-      }
-    };
-
-    mainWindow = new BrowserWindow(windowOpts);
-    Menu.setApplicationMenu(null);
-
-    mainWindow.on('closed', () => {
-      mainWindow = null;
-    });
-
-    // 2. Load static HTML from disk immediately for zero latency display
-    try {
-      await mainWindow.loadFile(path.join(__dirname, 'public', 'index.html'));
-    } catch (fileErr) {
-      // eslint-disable-next-line no-console
-      console.warn('loadFile warning:', fileErr.message);
-    }
-
-    // 3. Initialize & Start Native Desktop Engine
+    // 1. Initialize & Start Native Desktop Engine first
     try {
       if (!engine) {
-        engine = new DesktopEngine();
+        const clipboardAdapter = {
+          readText: () => clipboard.readText(),
+          writeText: (text) => {
+            clipboard.writeText(text);
+            return true;
+          }
+        };
+        engine = new DesktopEngine({ clipboardAdapter });
         // An incoming request blocks the peer for 30s. Surface it outside the app
         // window so the prompt is never silently missed while the app is minimized.
         engine.onIncomingRequest = (payload) => {
@@ -95,13 +69,48 @@ if (!gotTheLock) {
       console.error('Failed starting DesktopEngine:', err);
     }
 
-    // 4. Switch to internal control surface once engine is live
+    // 2. Setup Native Window
+    const windowOpts = {
+      title: 'LocalShare Desktop — Direct LAN File Sharing',
+      width: 1140,
+      height: 780,
+      minWidth: 920,
+      minHeight: 640,
+      backgroundColor: '#0F172A',
+      autoHideMenuBar: true,
+      show: false,
+      webPreferences: {
+        preload: path.join(__dirname, 'preload.js'),
+        nodeIntegration: false,
+        contextIsolation: true,
+        sandbox: false
+      }
+    };
+
+    mainWindow = new BrowserWindow(windowOpts);
+    Menu.setApplicationMenu(null);
+
+    mainWindow.once('ready-to-show', () => {
+      if (mainWindow) {
+        mainWindow.show();
+      }
+    });
+
+    mainWindow.on('closed', () => {
+      mainWindow = null;
+    });
+
+    // 3. Load internal control surface cleanly once without startup flash
     try {
       const port = engine && engine.controlPort ? engine.controlPort : 53319;
       await mainWindow.loadURL(`http://127.0.0.1:${port}`);
     } catch (loadErr) {
       // eslint-disable-next-line no-console
       console.warn('loadURL warning:', loadErr.message);
+      try {
+        await mainWindow.loadFile(path.join(__dirname, 'public', 'index.html'));
+        if (mainWindow) mainWindow.show();
+      } catch (_) {}
     }
   }
 

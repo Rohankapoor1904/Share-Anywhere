@@ -121,6 +121,13 @@ export class SendController {
    * @param {string} sessionId
    */
   cancelTransfer(sessionId) {
+    if (NativeBridge.isAvailable() && typeof NativeBridge.cancelSession === 'function') {
+      try {
+        NativeBridge.cancelSession(sessionId);
+      } catch (err) {
+        logger.warn('Failed to invoke native cancelSession:', err.message);
+      }
+    }
     const active = this.activeTransfers.get(sessionId);
     if (active) {
       active.isCancelled = true;
@@ -242,14 +249,30 @@ export class SendController {
       // 2. Transfer each file
       for (let idx = 0; idx < descriptors.length; idx++) {
         const desc = descriptors[idx];
-        await this._uploadFileChunks(
-          baseUrl,
-          sessionId,
-          desc,
-          files[idx],
-          resumeOffsets[desc.fileId] || 0,
-          abortController
-        );
+        const sourceFile = files[idx];
+        const sourceUri = sourceFile.path || sourceFile.uri || sourceFile.id || '';
+        if (NativeBridge.isAvailable() && sourceUri && typeof NativeBridge.sendFileStream === 'function') {
+          // Native single-stream sender: 4MB buffer, sequential stream read, incremental SHA-256 & auto-commit
+          await NativeBridge.sendFileStream(
+            baseUrl,
+            sessionId,
+            desc.fileId,
+            sourceUri,
+            desc.fileName,
+            desc.fileSize,
+            resumeOffsets[desc.fileId] || 0,
+            4 * 1024 * 1024
+          );
+        } else {
+          await this._uploadFileChunks(
+            baseUrl,
+            sessionId,
+            desc,
+            sourceFile,
+            resumeOffsets[desc.fileId] || 0,
+            abortController
+          );
+        }
       }
 
       this.activeTransfers.delete(sessionId);

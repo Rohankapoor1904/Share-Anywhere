@@ -39,7 +39,7 @@ function platformIcon(platform) {
  * @param {{x: number, y: number}} props.position
  * @param {() => void} props.onPress
  */
-function PeerBlip({ peer, position, onPress }) {
+export function PeerBlip({ peer, position, onPress }) {
   const { theme } = useTheme();
   const aura = useRef(new Animated.Value(0)).current;
 
@@ -91,6 +91,14 @@ function PeerBlip({ peer, position, onPress }) {
     </TouchableOpacity>
   );
 }
+
+export const getPositionForPeer = (index, total) => {
+  const angle = (index / Math.max(1, total)) * 2 * Math.PI - Math.PI / 2;
+  const radius = 92;
+  const x = Math.cos(angle) * radius;
+  const y = Math.sin(angle) * radius;
+  return { x, y };
+};
 
 /**
  * @param {object} props

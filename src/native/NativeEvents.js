@@ -5,7 +5,8 @@ const {
   BleDiscoveryModule,
   TransferServerModule,
   TransferClientModule,
-  TransferForegroundService
+  TransferForegroundService,
+  StorageModule
 } = NativeModules;
 
 class NativeEventsManager {
@@ -23,7 +24,11 @@ class NativeEventsManager {
     onSendProgress,
     onSendFinished,
     onSendFailed,
-    onServiceState
+    onServiceState,
+    onClipboardChanged,
+    onClipboardSynced,
+    onLivePeerConnected,
+    onLivePeerDisconnected
   }) {
     if (Platform.OS !== 'android') {
       return () => {};
@@ -34,6 +39,7 @@ class NativeEventsManager {
     const serverEmitter = TransferServerModule ? new NativeEventEmitter(TransferServerModule) : null;
     const clientEmitter = TransferClientModule ? new NativeEventEmitter(TransferClientModule) : null;
     const serviceEmitter = TransferForegroundService ? new NativeEventEmitter(TransferForegroundService) : null;
+    const storageEmitter = StorageModule ? new NativeEventEmitter(StorageModule) : null;
 
     if (nsdEmitter && onPeerFound) {
       this.subscriptions.push(nsdEmitter.addListener('PeerFound', onPeerFound));
@@ -64,6 +70,18 @@ class NativeEventsManager {
     }
     if (serviceEmitter && onServiceState) {
       this.subscriptions.push(serviceEmitter.addListener('ServiceState', onServiceState));
+    }
+    if (storageEmitter && onClipboardChanged) {
+      this.subscriptions.push(storageEmitter.addListener('ClipboardChanged', onClipboardChanged));
+    }
+    if (serverEmitter && onClipboardSynced) {
+      this.subscriptions.push(serverEmitter.addListener('ClipboardSynced', onClipboardSynced));
+    }
+    if (serverEmitter && onLivePeerConnected) {
+      this.subscriptions.push(serverEmitter.addListener('LivePeerConnected', onLivePeerConnected));
+    }
+    if (serverEmitter && onLivePeerDisconnected) {
+      this.subscriptions.push(serverEmitter.addListener('LivePeerDisconnected', onLivePeerDisconnected));
     }
 
     return () => this.unsubscribeAll();

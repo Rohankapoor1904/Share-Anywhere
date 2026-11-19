@@ -87,10 +87,12 @@ function PresenceDot() {
  * @param {string} props.peer.address - Peer IP address.
  * @param {number} props.peer.port - Peer port number.
  * @param {boolean} [props.isTrusted] - Whether peer is trusted in TOFU store.
+ * @param {boolean} [props.isLiveConnected] - Whether a live bi-directional session is active.
  * @param {() => void} [props.onPress] - Press handler (send files).
  * @param {() => void} [props.onBrowseFiles] - Handler to open the remote file explorer.
+ * @param {() => void} [props.onConnect] - Handler to establish or drop live connection.
  */
-export default function PeerCard({ peer, isTrusted, onPress, onBrowseFiles }) {
+export default function PeerCard({ peer, isTrusted, isLiveConnected, onPress, onBrowseFiles, onConnect }) {
   const { theme } = useTheme();
   const meta = getPlatformMeta(peer.platform);
   const channel = getChannelBadge(peer);
@@ -103,19 +105,22 @@ export default function PeerCard({ peer, isTrusted, onPress, onBrowseFiles }) {
       disabled={!onPress}
     >
       <GlassCard
-        style={[styles.card, isTrusted ? { borderColor: theme.colors.borderHighlight } : null]}
-        variant={isTrusted ? 'highlighted' : 'default'}
+        style={[styles.card, (isTrusted || isLiveConnected) ? { borderColor: isLiveConnected ? theme.colors.success : theme.colors.borderHighlight } : null]}
+        variant={isLiveConnected ? 'highlighted' : (isTrusted ? 'highlighted' : 'default')}
       >
         <View style={styles.cardContent}>
           {/* Dual-layer avatar: glowing ring + inner tinted disc */}
           <View
             style={[
               styles.avatarOuter,
-              { borderColor: theme.colors.primary, backgroundColor: theme.colors.primaryGlow }
+              {
+                borderColor: isLiveConnected ? theme.colors.success : theme.colors.primary,
+                backgroundColor: isLiveConnected ? theme.colors.successGlow : theme.colors.primaryGlow
+              }
             ]}
           >
             <View style={[styles.avatarInner, { backgroundColor: theme.colors.cardSolid }]}>
-              <Icon name={meta.icon} size={21} color={theme.colors.primary} />
+              <Icon name={meta.icon} size={21} color={isLiveConnected ? theme.colors.success : theme.colors.primary} />
             </View>
             <PresenceDot />
           </View>
@@ -126,7 +131,17 @@ export default function PeerCard({ peer, isTrusted, onPress, onBrowseFiles }) {
               <Text style={[styles.name, { color: theme.colors.text }]} numberOfLines={1}>
                 {peer.displayName || 'Unknown Peer'}
               </Text>
-              {isTrusted ? (
+              {isLiveConnected ? (
+                <View
+                  style={[
+                    styles.trustBadge,
+                    { backgroundColor: theme.colors.successGlow, borderColor: theme.colors.success }
+                  ]}
+                >
+                  <Icon name="link" size={11} color={theme.colors.success} strokeWidth={2.4} />
+                  <Text style={[styles.trustBadgeText, { color: theme.colors.success }]}>Live</Text>
+                </View>
+              ) : isTrusted ? (
                 <View
                   style={[
                     styles.trustBadge,
@@ -152,6 +167,24 @@ export default function PeerCard({ peer, isTrusted, onPress, onBrowseFiles }) {
             </View>
 
             <View style={styles.actionRow}>
+              {onConnect ? (
+                <TouchableOpacity
+                  style={[
+                    styles.actionPill,
+                    isLiveConnected
+                      ? { backgroundColor: theme.colors.successGlow, borderColor: theme.colors.success }
+                      : { backgroundColor: theme.colors.cardSolid, borderColor: theme.colors.border }
+                  ]}
+                  onPress={onConnect}
+                  accessibilityRole="button"
+                  accessibilityLabel={isLiveConnected ? 'Disconnect live link' : `Connect live link with ${peer.displayName || 'peer'}`}
+                >
+                  <Icon name="link" size={13} color={isLiveConnected ? theme.colors.success : theme.colors.textSecondary} strokeWidth={2.2} />
+                  <Text style={[styles.actionText, { color: isLiveConnected ? theme.colors.success : theme.colors.textSecondary }]}>
+                    {isLiveConnected ? 'Connected' : 'Connect'}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
               <TouchableOpacity
                 style={[
                   styles.actionPill,

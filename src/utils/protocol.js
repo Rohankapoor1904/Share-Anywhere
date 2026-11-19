@@ -12,7 +12,7 @@ export const kHeaderDeviceName = 'x-localshare-device-name';
 export const kHeaderFingerprint = 'x-localshare-fingerprint';
 export const kHeaderSessionId = 'x-localshare-session-id';
 export const kPartialSuffix = '.localshare.part';
-export const kPeerStaleMs = 15000;
+export const kPeerStaleMs = 45000;
 
 export default {
   kProtocolVersion,
