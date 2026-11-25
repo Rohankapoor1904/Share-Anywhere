@@ -3,8 +3,22 @@ const dgram = require('dgram');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const fsService = require('./fs-service');
 
 const LOCALSEND_PORT = 53317;
+const MAX_JSON_BODY_BYTES = 4 * 1024 * 1024;
+
+/**
+ * Report an expected, non-fatal network error (multicast unsupported, a stray
+ * UDP packet). Printed only with LOCALSHARE_DEBUG so normal operation stays quiet.
+ * @param {string} context
+ * @param {any} err
+ */
+function logIgnored(context, err) {
+  if (process.env.LOCALSHARE_DEBUG) {
+    console.warn(`[LocalSendGateway] ${context}:`, err && err.message ? err.message : err);
+  }
+}
 const MULTICAST_ADDR = '224.0.0.167';
 
 class LocalSendGateway {
@@ -48,8 +62,9 @@ class LocalSendGateway {
     if (this.enableMulticast) {
       try {
         this.startMulticast();
-      } catch {
+      } catch (err) {
         // Multicast may fail on restricted platforms or loopback test environments; HTTP is primary
+        logIgnored('multicast start', err);
       }
     }
   }
@@ -59,20 +74,37 @@ class LocalSendGateway {
    */
   async stop() {
     if (this.httpServer) {
-      await new Promise((resolve) => this.httpServer.close(resolve));
+      const server = this.httpServer;
+      await new Promise((resolve) => {
+        server.close(() => resolve());
+        // Don't let an open upload or keep-alive socket block shutdown.
+        if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
+      });
     }
     if (this.udpSocket) {
       try {
         this.udpSocket.close();
       } catch (err) {
         // UDP socket might already be closed
+        logIgnored('udp close', err);
       }
     }
   }
 
   startHttpServer() {
     return new Promise((resolve, reject) => {
-      this.httpServer = http.createServer((req, res) => this.handleHttp(req, res));
+      // requestTimeout 0: a single large upload may legitimately take longer than 5 minutes.
+      this.httpServer = http.createServer({ requestTimeout: 0 }, (req, res) => {
+        this.handleHttp(req, res).catch((err) => {
+          console.error('[LocalSendGateway] Unhandled request error:', err);
+          if (!res.headersSent) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Internal server error' }));
+          } else {
+            res.destroy();
+          }
+        });
+      });
       this.httpServer.on('error', (err) => {
         if (/** @type {any} */ (err).code === 'EADDRINUSE' && this.port === LOCALSEND_PORT) {
           this.port = 53327;
@@ -95,6 +127,11 @@ class LocalSendGateway {
   startMulticast() {
     this.udpSocket = dgram.createSocket({ type: 'udp4', reuseAddr: true });
 
+    // Without a listener, a socket error (port in use, send failure) crashes the process.
+    this.udpSocket.on('error', (err) => {
+      console.warn('[LocalSendGateway] UDP socket error:', err.message);
+    });
+
     this.udpSocket.on('message', (msg, rinfo) => {
       try {
         const payload = JSON.parse(msg.toString('utf8'));
@@ -110,8 +147,8 @@ class LocalSendGateway {
             protocolVersion: 2
           });
         }
-      } catch (e) {
-        // Non-JSON UDP packet
+      } catch (err) {
+        logIgnored('non-JSON UDP packet', err);
       }
     });
 
@@ -121,8 +158,9 @@ class LocalSendGateway {
         // Do not receive our own multicast announcements back as a peer
         this.udpSocket.setMulticastLoopback(false);
         this.udpSocket.addMembership(MULTICAST_ADDR);
-      } catch (_err) {
+      } catch (err) {
         // Interface may not support multicast membership; broadcast remains active
+        logIgnored('multicast membership', err);
       }
     });
   }
@@ -151,8 +189,8 @@ class LocalSendGateway {
     // Also send to local broadcast address for routers with multicast filtering
     try {
       this.udpSocket.send(message, 0, message.length, this.port, '255.255.255.255');
-    } catch (_err) {
-      // Broadcast send fallback
+    } catch (err) {
+      logIgnored('broadcast send', err);
     }
   }
 
@@ -235,28 +273,43 @@ class LocalSendGateway {
         const token = url.searchParams.get('token');
 
         const session = this.sessions.get(sessionId);
-        if (!session || session.tokens[fileId] !== token) {
+        const expectedToken = session && fileId && Object.prototype.hasOwnProperty.call(session.tokens, fileId)
+          ? session.tokens[fileId]
+          : null;
+        if (!expectedToken || !token || expectedToken !== token) {
+          req.resume();
           res.writeHead(403, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'Invalid sessionId or token' }));
           return;
         }
+        // Upload tokens are single-use.
+        delete session.tokens[fileId];
 
-        const fileMeta = session.files[fileId] || { fileName: `${fileId}.bin` };
-        const destPath = path.join(this.storageDir, fileMeta.fileName || `${fileId}.bin`);
-        const fileStream = fs.createWriteStream(destPath);
+        // The sender controls fileName: keep only a safe base name so it cannot
+        // climb out of the storage folder, and never overwrite an existing file.
+        const fileMeta = session.files[fileId] || {};
+        const fallbackName = fsService.sanitizeFileName(`${fileId}.bin`, 'upload.bin');
+        const safeName = fsService.sanitizeFileName(fileMeta.fileName, fallbackName);
+        const destPath = fsService.uniquePath(path.join(this.storageDir, safeName));
+        const fileStream = fs.createWriteStream(destPath, { highWaterMark: 1024 * 1024 });
 
+        req.on('error', (err) => fileStream.destroy(err));
         req.pipe(fileStream);
 
         fileStream.on('finish', () => {
           if (this.onFileReceived) {
-            let stat;
-            try { stat = fs.statSync(destPath); } catch (_) {}
+            let fileSize = 0;
+            try {
+              fileSize = fs.statSync(destPath).size;
+            } catch (err) {
+              console.warn('[LocalSendGateway] Could not stat received file:', err.message);
+            }
             this.onFileReceived({
               sessionId,
               fileId,
-              fileName: fileMeta.fileName,
+              fileName: path.basename(destPath),
               savedPath: destPath,
-              fileSize: stat ? stat.size : 0
+              fileSize
             });
           }
           res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -264,8 +317,12 @@ class LocalSendGateway {
         });
 
         fileStream.on('error', (err) => {
-          res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: err.message }));
+          req.unpipe(fileStream);
+          req.resume();
+          if (!res.headersSent) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+          }
         });
         return;
       }
@@ -283,25 +340,46 @@ class LocalSendGateway {
       res.writeHead(404, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Endpoint not found' }));
     } catch (err) {
-      res.writeHead(500, { 'Content-Type': 'application/json' });
+      if (res.headersSent) {
+        res.destroy();
+        return;
+      }
+      res.writeHead(err.statusCode || 500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: err.message }));
     }
   }
 
   readJsonBody(req) {
     return new Promise((resolve, reject) => {
-      let data = '';
+      const chunks = [];
+      let size = 0;
+      let settled = false;
       req.on('data', (chunk) => {
-        data += chunk;
+        if (settled) return;
+        size += chunk.length;
+        if (size > MAX_JSON_BODY_BYTES) {
+          settled = true;
+          req.resume();
+          reject(Object.assign(new Error('Request body too large'), { statusCode: 413 }));
+          return;
+        }
+        chunks.push(chunk);
       });
       req.on('end', () => {
+        if (settled) return;
+        settled = true;
+        const data = Buffer.concat(chunks).toString('utf8');
         try {
           resolve(data ? JSON.parse(data) : {});
         } catch (err) {
-          reject(new Error(`Invalid JSON: ${err.message}`));
+          reject(Object.assign(new Error(`Invalid JSON: ${err.message}`), { statusCode: 400 }));
         }
       });
-      req.on('error', reject);
+      req.on('error', (err) => {
+        if (settled) return;
+        settled = true;
+        reject(err);
+      });
     });
   }
 }

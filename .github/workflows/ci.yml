@@ -29,4 +29,8 @@ jobs:
             src/ nodejs-assets/ android/app/src/main/java/ \
             --include=*.js --include=*.jsx --include=*.kt \
             | grep -v "// justified:"
-
+      - name: Guard against swallowed errors
+        run: |
+          ! grep -rnE "catch *(\([A-Za-z_]*\))? *\{ *\}|\.catch\(\(\) *=> *\{ *\}\)" \
+            src/ nodejs-assets/ desktop/ \
+            --include=*.js --include=*.jsx --exclude-dir=node_modules

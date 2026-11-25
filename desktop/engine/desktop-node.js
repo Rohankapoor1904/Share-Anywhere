@@ -3,7 +3,10 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
-const { exec, execFile, execFileSync } = require('child_process');
+const { execFile, execFileSync } = require('child_process');
+const { generateQrSvg } = require('./qr-svg');
+const { WifiJoiner } = require('./wifi-join');
+const { OfflinePcSession } = require('./offline-session');
 
 /**
  * Read the operating system clipboard as text.
@@ -57,6 +60,35 @@ const {
   FileDescriptor,
   CommitRequest
 } = require('../../nodejs-assets/nodejs-project/models');
+const fsService = require('../../nodejs-assets/nodejs-project/fs-service');
+
+const CONTROL_COOKIE = 'localshare_control';
+const CONTROL_TOKEN_HEADER = 'x-localshare-control-token';
+const MAX_JSON_BODY_BYTES = 4 * 1024 * 1024;
+
+/**
+ * Constant-time string comparison.
+ * @param {string} a
+ * @param {string} b
+ * @returns {boolean}
+ */
+function safeEqual(a, b) {
+  const left = Buffer.from(String(a));
+  const right = Buffer.from(String(b));
+  return left.length === right.length && crypto.timingSafeEqual(left, right);
+}
+
+/**
+ * Report an expected, non-fatal error (an unreachable host during a subnet sweep,
+ * a best-effort registration). Printed only with LOCALSHARE_DEBUG.
+ * @param {string} context
+ * @param {any} err
+ */
+function logIgnored(context, err) {
+  if (process.env.LOCALSHARE_DEBUG) {
+    console.warn(`[DesktopEngine] ${context}:`, err && err.message ? err.message : err);
+  }
+}
 
 const DESKTOP_HTTP_PORT = 53319;
 const TRANSFER_PORT = 53318;
@@ -115,14 +147,28 @@ class DesktopEngine {
     this.lastClipboardHash = null;
     this.clipboardPollInterval = null;
     this.clipboardHistory = [];
-    this.autoReconnect = true;
-    this.lastConnectedPeer = this.loadLastConnectedPeer();
-    this.pairingCode = String(Math.floor(100000 + Math.random() * 900000));
+    // Saved state: this PC's identity, last peer, settings and remembered pairings.
+    this.stateFile = options.stateFile || path.join(os.homedir(), '.localshare-state.json');
+    this.state = this.loadState();
+    this.autoReconnect = this.state.autoReconnect !== false;
+    // Files from paired devices are accepted without a prompt unless turned off in Settings.
+    this.autoAcceptPaired = this.state.autoAcceptPaired !== false;
+    this.lastConnectedPeer = this.state.lastConnectedPeer || null;
+    this.pairingCode = String(crypto.randomInt(100000, 1000000));
+    // Per-launch secret for the local control API; only this app's own window holds it.
+    this.controlToken = crypto.randomBytes(32).toString('hex');
 
     this.localIp = getPrimaryLocalIp();
     this.localIps = getAllLocalIps();
     this.hostname = os.hostname() || 'Windows-PC';
-    this.deviceId = `pc-${crypto.randomBytes(4).toString('hex')}`;
+    // Stable across launches, so paired phones recognise this PC after a restart.
+    if (typeof this.state.deviceId === 'string' && /^pc-[0-9a-f]{8,32}$/.test(this.state.deviceId)) {
+      this.deviceId = this.state.deviceId;
+    } else {
+      this.deviceId = `pc-${crypto.randomBytes(8).toString('hex')}`;
+      this.state.deviceId = this.deviceId;
+      this.saveState();
+    }
     this.fingerprint = crypto.createHash('sha256').update(this.deviceId + this.hostname).digest('hex').toUpperCase();
 
     // Default downloads folder
@@ -149,6 +195,8 @@ class DesktopEngine {
     /** @type {Map<string, { resolve: (accepted: boolean) => void, timer: NodeJS.Timeout }>} */
     this.pendingApprovals = new Map();
     this.requestSeq = 0;
+    /** @type {Map<string, string>} Tokens this PC handed to peers it connected to. */
+    this.issuedPeerTokens = new Map();
 
     /**
      * Optional hook invoked whenever a peer asks to send files. The Electron main
@@ -157,12 +205,25 @@ class DesktopEngine {
      * @type {((payload: object) => void) | null}
      */
     this.onIncomingRequest = null;
+    /** Optional hook when a paired device's transfer is accepted without a prompt. */
+    this.onAutoAccepted = null;
 
     this.transferGateway = null;
     this.localsendGateway = null;
     this.controlServer = null;
     this.controlPort = DESKTOP_HTTP_PORT;
     this.discoveryInterval = null;
+
+    // "Connect without Wi-Fi": BLE handshake (renderer) + joining the phone's hotspot.
+    this.offlineSession = new OfflinePcSession({
+      selfDevice: this.selfDevice,
+      joiner: options.wifiJoiner || new WifiJoiner(),
+      connect: async (peer) => {
+        this.peers.set(peer.deviceId, peer);
+        return this.connectToLivePeer(peer);
+      },
+      onState: (state) => this.broadcastEvent('offline_state', state)
+    });
   }
 
   getClipboardText() {
@@ -189,6 +250,33 @@ class DesktopEngine {
     }
   }
 
+  /**
+   * Read the saved state file; a missing or unreadable file starts fresh.
+   * @returns {object}
+   */
+  loadState() {
+    try {
+      if (fs.existsSync(this.stateFile)) {
+        const data = JSON.parse(fs.readFileSync(this.stateFile, 'utf8'));
+        if (data && typeof data === 'object' && !Array.isArray(data)) return data;
+      }
+    } catch (err) {
+      console.warn('Failed to read LocalShare state; starting fresh:', err.message);
+    }
+    return {};
+  }
+
+  /** Write the state file atomically (temp file + rename) so a crash can't corrupt it. */
+  saveState() {
+    try {
+      const tmp = `${this.stateFile}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify(this.state, null, 2));
+      fs.renameSync(tmp, this.stateFile);
+    } catch (err) {
+      console.warn('Failed to save LocalShare state:', err.message);
+    }
+  }
+
   saveLastConnectedPeer(peer) {
     if (!peer) return;
     this.lastConnectedPeer = {
@@ -198,25 +286,9 @@ class DesktopEngine {
       address: peer.address,
       port: peer.port
     };
-    try {
-      const stateFile = path.join(os.homedir(), '.localshare-state.json');
-      fs.writeFileSync(stateFile, JSON.stringify({
-        lastConnectedPeer: this.lastConnectedPeer,
-        autoReconnect: this.autoReconnect
-      }, null, 2));
-    } catch (_) {}
-  }
-
-  loadLastConnectedPeer() {
-    try {
-      const stateFile = path.join(os.homedir(), '.localshare-state.json');
-      if (fs.existsSync(stateFile)) {
-        const data = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
-        if (data.autoReconnect !== undefined) this.autoReconnect = data.autoReconnect;
-        return data.lastConnectedPeer || null;
-      }
-    } catch (_) {}
-    return null;
+    this.state.lastConnectedPeer = this.lastConnectedPeer;
+    this.state.autoReconnect = this.autoReconnect;
+    this.saveState();
   }
 
   async start() {
@@ -227,7 +299,18 @@ class DesktopEngine {
         storageDir: this.storageDir,
         selfDevice: this.selfDevice,
         clipboardAdapter: this.clipboardAdapter,
-        onSessionRequest: async (req) => this.requestIncomingApproval(req),
+        onSessionRequest: async (req, ctx) => this.evaluateIncomingSession(req, ctx),
+        pairedDevices: Array.isArray(this.state.pairedDevices) ? this.state.pairedDevices : [],
+        onPairedDevicesChanged: (devices) => {
+          this.state.pairedDevices = devices;
+          this.saveState();
+          this.broadcastEvent('paired_devices_changed', { count: devices.length });
+        },
+        // Phones pair with the code from the QR/PIN screen, or the user approves them.
+        // Paired phones keep the existing "browse this PC's drives" feature.
+        pairingCode: this.pairingCode,
+        exposeDrives: true,
+        onConnectRequest: async (peer) => this.requestIncomingApproval({ kind: 'connect', sender: peer, files: [] }),
         onProgress: (progress) => {
           let entry = this.transfers.find((t) => t.id === progress.sessionId);
           if (!entry) {
@@ -289,8 +372,12 @@ class DesktopEngine {
           this.broadcastEvent('live_connected', { peer: this.connectedPeer });
         },
         onLiveDisconnected: () => {
+          const wasHotspot = this.offlineSession.isHotspotPeer(this.connectedPeer);
           this.connectedPeer = null;
           this.broadcastEvent('live_disconnected', {});
+          if (wasHotspot) {
+            this.offlineSession.end().catch((err) => logIgnored('restore Wi-Fi after phone disconnect', err));
+          }
         }
       });
       const bound = await this.transferGateway.start();
@@ -357,9 +444,11 @@ class DesktopEngine {
             text,
             hash,
             senderDeviceId: this.selfDevice.deviceId
-          }).catch(() => {});
+          }).catch((err) => logIgnored('clipboard push', err));
         }
-      } catch (_) {}
+      } catch (err) {
+        logIgnored('clipboard poll', err);
+      }
     }, 500);
 
     // Scan immediately
@@ -375,7 +464,7 @@ class DesktopEngine {
     // eslint-disable-next-line no-console
     console.info(` LocalShare PC Desktop Engine is Active`);
     // eslint-disable-next-line no-console
-    console.info(` Web UI:        http://localhost:${DESKTOP_HTTP_PORT}`);
+    console.info(` Web UI:        ${this.getControlUrl()}`);
     // eslint-disable-next-line no-console
     console.info(` LAN IP:        ${this.localIp}`);
     // eslint-disable-next-line no-console
@@ -435,6 +524,7 @@ class DesktopEngine {
 
     const payload = {
       requestId: sessionId,
+      kind: (req && req.kind) || 'transfer',
       sessionId,
       senderName: sender.displayName || sender.alias || (req && req.alias) || 'Nearby Device',
       senderDeviceId: sender.deviceId || sender.fingerprint || (req && req.fingerprint) || '',
@@ -449,8 +539,9 @@ class DesktopEngine {
     if (this.onIncomingRequest) {
       try {
         this.onIncomingRequest(payload);
-      } catch (_err) {
+      } catch (err) {
         // A failing host hook must never block the approval gate.
+        console.warn('Incoming-request hook failed:', err && err.message ? err.message : err);
       }
     }
 
@@ -471,6 +562,36 @@ class DesktopEngine {
         timer
       });
     });
+  }
+
+  /**
+   * Decide on an incoming transfer: paired devices are accepted straight away
+   * (unless turned off in Settings); everyone else gets the approval prompt.
+   * @param {object} req - Session request payload.
+   * @param {{ paired?: boolean, pairedDevice?: object|null }} [ctx]
+   * @returns {Promise<{ accepted: boolean, reason?: string }>}
+   */
+  async evaluateIncomingSession(req, ctx) {
+    if (ctx && ctx.paired && this.autoAcceptPaired) {
+      const files = req && Array.isArray(req.files) ? req.files : [];
+      const sender = (ctx.pairedDevice && ctx.pairedDevice.displayName) ||
+        (req && req.sender && req.sender.displayName) || 'A paired device';
+      this.broadcastEvent('transfer_auto_accepted', {
+        sessionId: req && req.sessionId,
+        senderName: sender,
+        fileCount: files.length,
+        totalBytes: files.reduce((acc, f) => acc + (Number(f && f.fileSize) || 0), 0)
+      });
+      if (this.onAutoAccepted) {
+        try {
+          this.onAutoAccepted({ senderName: sender, fileCount: files.length });
+        } catch (err) {
+          console.warn('Auto-accept hook failed:', err && err.message ? err.message : err);
+        }
+      }
+      return { accepted: true };
+    }
+    return this.requestIncomingApproval(req);
   }
 
   /**
@@ -502,6 +623,27 @@ class DesktopEngine {
     if (name && this.localsendGateway && name === this.localsendGateway.alias) return true;
     this.localIps = getAllLocalIps();
     return this.localIps.has(normalizeIp(ip));
+  }
+
+  /**
+   * Access token handed to a peer this PC connects to, so the peer can call back
+   * (clipboard push, telemetry) on this PC's protected gateway routes.
+   * @param {object} peer
+   * @returns {string|undefined}
+   */
+  peerAccessToken(peer) {
+    if (!this.transferGateway) return undefined;
+    const key = (peer && (peer.deviceId || peer.address)) || '';
+    const existing = this.issuedPeerTokens.get(key);
+    if (existing && this.transferGateway.hasAccessToken(existing)) return existing;
+    // This PC's user chose to connect to this device, so it counts as paired.
+    const token = this.transferGateway.issueAccessToken({
+      deviceId: peer && peer.deviceId,
+      displayName: peer && peer.displayName,
+      platform: peer && peer.platform
+    }, { remember: true });
+    this.issuedPeerTokens.set(key, token);
+    return token;
   }
 
   handlePeerFound(peer) {
@@ -538,7 +680,7 @@ class DesktopEngine {
       const match = (this.lastConnectedPeer.deviceId && this.lastConnectedPeer.deviceId === updated.deviceId) ||
                     (this.lastConnectedPeer.fingerprint && this.lastConnectedPeer.fingerprint === updated.fingerprint);
       if (match) {
-        this.connectToLivePeer(updated).catch(() => {});
+        this.connectToLivePeer(updated).catch((err) => logIgnored('auto-reconnect', err));
       }
     }
   }
@@ -549,9 +691,12 @@ class DesktopEngine {
       const connectRes = await this.remotePostJson(peer.address, peer.port || 53318, '/v1/live/connect', {
         deviceId: this.selfDevice.deviceId,
         displayName: this.selfDevice.displayName,
-        address: this.localIp,
+        // On the phone's hotspot this PC has a new address; an empty one makes the
+        // phone use the address the request came from.
+        address: peer.viaHotspot ? '' : this.localIp,
         port: this.selfDevice.port,
         platform: 'desktop',
+        accessToken: this.peerAccessToken(peer),
         clipboardSync: true
       });
       if (connectRes.statusCode === 200) {
@@ -569,7 +714,9 @@ class DesktopEngine {
         this.broadcastEvent('live_connected', { peer: this.connectedPeer });
         return { connected: true, peer: this.connectedPeer };
       }
-    } catch (_) {}
+    } catch (err) {
+      logIgnored(`live connect ${peer.address}`, err);
+    }
     return null;
   }
 
@@ -625,8 +772,9 @@ class DesktopEngine {
         });
         return;
       }
-    } catch (_e) {
+    } catch (err) {
       // Offline / unreachable host
+      logIgnored(`probe ${ip}`, err);
     }
 
     // 2. Probe LocalSend (Port 53317)
@@ -644,10 +792,11 @@ class DesktopEngine {
         });
 
         // Register our presence with the peer
-        this.registerWithPeer(ip, sendInfo.port || 53317).catch(() => {});
+        this.registerWithPeer(ip, sendInfo.port || 53317).catch((err) => logIgnored(`register with ${ip}`, err));
       }
-    } catch (_e) {
+    } catch (err) {
       // Offline / unreachable host
+      logIgnored(`probe ${ip}`, err);
     }
   }
 
@@ -671,8 +820,9 @@ class DesktopEngine {
         headers: { 'Content-Type': 'application/json' },
         timeout: 1000
       }, body);
-    } catch (_err) {
+    } catch (err) {
       // Best-effort registration
+      logIgnored(`register with ${ip}`, err);
     }
   }
 
@@ -746,22 +896,128 @@ class DesktopEngine {
     }
   }
 
+  /**
+   * URL the app window loads. It carries the control token once; the server
+   * swaps it for an HttpOnly cookie and redirects to "/".
+   * @returns {string}
+   */
+  getControlUrl() {
+    return `http://127.0.0.1:${this.controlPort}/?token=${this.controlToken}`;
+  }
+
+  /**
+   * Only loopback Host headers are accepted, which blocks DNS-rebinding pages.
+   * @param {string|undefined} host
+   * @returns {boolean}
+   */
+  isAllowedControlHost(host) {
+    const value = String(host || '').toLowerCase();
+    return value === `127.0.0.1:${this.controlPort}` || value === `localhost:${this.controlPort}`;
+  }
+
+  /**
+   * @param {import('http').IncomingMessage} req
+   * @returns {boolean}
+   */
+  hasControlAuth(req) {
+    const header = req.headers[CONTROL_TOKEN_HEADER];
+    if (typeof header === 'string' && safeEqual(header, this.controlToken)) return true;
+    for (const part of String(req.headers.cookie || '').split(';')) {
+      const eq = part.indexOf('=');
+      if (eq > 0 && part.slice(0, eq).trim() === CONTROL_COOKIE &&
+          safeEqual(part.slice(eq + 1).trim(), this.controlToken)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * @param {string} target
+   * @returns {(err: any) => void}
+   */
+  openReporter(target) {
+    return (err) => {
+      // explorer.exe exits with code 1 even when it opened the item.
+      if (err && !(process.platform === 'win32' && err.code === 1)) {
+        console.warn('Failed to open path:', target, err.message);
+      }
+    };
+  }
+
+  /**
+   * Open a folder in the OS file manager, without a shell.
+   * @param {string} dir
+   */
+  openFolder(dir) {
+    const report = this.openReporter(dir);
+    if (process.platform === 'win32') {
+      execFile('explorer.exe', [dir], report);
+    } else if (process.platform === 'darwin') {
+      execFile('open', [dir], report);
+    } else {
+      execFile('xdg-open', [dir], report);
+    }
+  }
+
+  /**
+   * Reveal (select) a file in the OS file manager. Received files are never
+   * executed, so a peer cannot get a script run by sending it.
+   * @param {string} target
+   */
+  revealInFolder(target) {
+    const report = this.openReporter(target);
+    if (process.platform === 'win32') {
+      execFile('explorer.exe', [`/select,"${target}"`], { windowsVerbatimArguments: true }, report);
+    } else if (process.platform === 'darwin') {
+      execFile('open', ['-R', target], report);
+    } else {
+      execFile('xdg-open', [path.dirname(target)], report);
+    }
+  }
+
   async startControlServer() {
     const publicDir = path.join(__dirname, '..', 'public');
 
-    this.controlServer = http.createServer(async (req, res) => {
-      const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+    const handleControlRequest = async (req, res) => {
+      const url = new URL(req.url, 'http://127.0.0.1');
       const pathname = url.pathname;
       const method = req.method.toUpperCase();
 
-      // Enable CORS for local desktop UI
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+      // This API can send any local file, read the clipboard and approve transfers,
+      // so it answers only this app's own window: loopback Host (blocks DNS
+      // rebinding), no CORS headers (blocks other websites), and the per-launch token.
+      if (!this.isAllowedControlHost(req.headers.host)) {
+        res.writeHead(403, { 'Content-Type': 'text/plain' });
+        res.end('Forbidden');
+        return;
+      }
 
       if (method === 'OPTIONS') {
         res.writeHead(204);
         res.end();
+        return;
+      }
+
+      const queryToken = url.searchParams.get('token');
+      if (queryToken !== null) {
+        if (!safeEqual(queryToken, this.controlToken)) {
+          res.writeHead(403, { 'Content-Type': 'text/plain' });
+          res.end('Invalid token');
+          return;
+        }
+        res.writeHead(302, {
+          'Set-Cookie': `${CONTROL_COOKIE}=${this.controlToken}; HttpOnly; SameSite=Strict; Path=/`,
+          'Cache-Control': 'no-store',
+          Location: '/'
+        });
+        res.end();
+        return;
+      }
+
+      if ((pathname.startsWith('/api/') || pathname === '/events') && !this.hasControlAuth(req)) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Unauthorized' }));
         return;
       }
 
@@ -777,14 +1033,14 @@ class DesktopEngine {
         });
         let qrSvg = '';
         try {
-          // eslint-disable-next-line global-require
-          const QRCode = require('qrcode');
-          qrSvg = await QRCode.toString(qrPayload, {
-            type: 'svg',
+          qrSvg = generateQrSvg(qrPayload, {
             margin: 1,
-            color: { dark: '#111827', light: '#ffffff' }
+            dark: '#111827',
+            light: '#ffffff'
           });
-        } catch (_) {}
+        } catch (err) {
+          console.warn('QR code generation failed:', err.message);
+        }
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
@@ -869,6 +1125,49 @@ class DesktopEngine {
         const resolved = this.respondToRequest(body.requestId, Boolean(body.accepted));
         res.writeHead(resolved ? 200 : 404, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ status: resolved ? 'resolved' : 'not_found' }));
+        return;
+      }
+
+      if (pathname === '/api/paired-devices' && method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          autoAcceptPaired: this.autoAcceptPaired,
+          devices: this.transferGateway ? this.transferGateway.listPairedDevices() : []
+        }));
+        return;
+      }
+
+      if (pathname === '/api/paired-devices/forget' && method === 'POST') {
+        const body = await this.readJson(req);
+        const forgotten = this.transferGateway && body ? this.transferGateway.forgetPairedDevice(body.id) : null;
+        if (!forgotten) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'No such paired device' }));
+          return;
+        }
+        for (const [key, token] of this.issuedPeerTokens) {
+          if (!this.transferGateway.hasAccessToken(token)) this.issuedPeerTokens.delete(key);
+        }
+        // Drop the live link too, so the forgotten device can't keep using it.
+        if (this.connectedPeer && forgotten.deviceId && this.connectedPeer.deviceId === forgotten.deviceId) {
+          this.connectedPeer = null;
+          if (this.transferGateway) this.transferGateway.connectedPeer = null;
+          this.broadcastEvent('live_disconnected', {});
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ forgotten: true }));
+        return;
+      }
+
+      if (pathname === '/api/settings' && method === 'POST') {
+        const body = await this.readJson(req);
+        if (body && typeof body.autoAcceptPaired === 'boolean') {
+          this.autoAcceptPaired = body.autoAcceptPaired;
+          this.state.autoAcceptPaired = body.autoAcceptPaired;
+          this.saveState();
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ autoAcceptPaired: this.autoAcceptPaired }));
         return;
       }
 
@@ -960,6 +1259,30 @@ class DesktopEngine {
         return;
       }
 
+      if (pathname === '/api/remote-category-counts' && method === 'GET') {
+        const ip = url.searchParams.get('ip') || (this.connectedPeer ? this.connectedPeer.address : null);
+        const port = parseInt(url.searchParams.get('port'), 10) || (this.connectedPeer ? this.connectedPeer.port : 53318);
+        if (!ip) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'No peer connected or ip supplied' }));
+          return;
+        }
+        const fast = await this.httpGetFast(`http://${ip}:${port}/v1/fs/category-counts`, 3000);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(fast || {
+          images: 0,
+          videos: 0,
+          audio: 0,
+          documents: 0,
+          archives: 0,
+          apks: 0,
+          whatsapp: 0,
+          downloads: 0,
+          bluetooth: 0
+        }));
+        return;
+      }
+
       if (pathname === '/api/remote-search' && method === 'GET') {
         const ip = url.searchParams.get('ip') || (this.connectedPeer ? this.connectedPeer.address : null);
         const port = parseInt(url.searchParams.get('port'), 10) || (this.connectedPeer ? this.connectedPeer.port : 53318);
@@ -1018,6 +1341,72 @@ class DesktopEngine {
         return;
       }
 
+      // Connect without Wi-Fi (BLE handshake in the renderer, crypto + Wi-Fi join here)
+      if (pathname.startsWith('/api/offline/')) {
+        const sendJson = (status, payload) => {
+          res.writeHead(status, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(payload));
+        };
+        const sendError = (err) => sendJson(400, {
+          error: err && err.message ? err.message : String(err),
+          code: (err && err.code) || 'ERR_OFFLINE',
+          settingsUri: err && err.details ? err.details.settingsUri : undefined
+        });
+        try {
+          if (pathname === '/api/offline/status' && method === 'GET') {
+            sendJson(200, this.offlineSession.getState());
+            return;
+          }
+          if (pathname === '/api/offline/begin' && method === 'POST') {
+            const body = await this.readJson(req);
+            sendJson(200, this.offlineSession.begin(body && body.info));
+            return;
+          }
+          if (pathname === '/api/offline/creds' && method === 'POST') {
+            const body = await this.readJson(req);
+            // Joining takes several seconds; progress arrives as offline_state events.
+            const joining = this.offlineSession.acceptCredentials(body && body.blob);
+            joining.catch((err) => logIgnored('offline join', err));
+            // Decryption errors surface right away; everything after is reported by events.
+            await Promise.race([joining, new Promise((resolve) => setImmediate(resolve))]);
+            sendJson(202, { accepted: true });
+            return;
+          }
+          if (pathname === '/api/offline/manual' && method === 'POST') {
+            const body = await this.readJson(req);
+            const joining = this.offlineSession.joinManual(body || {});
+            joining.catch((err) => logIgnored('offline manual join', err));
+            await Promise.race([joining, new Promise((resolve) => setImmediate(resolve))]);
+            sendJson(202, { accepted: true });
+            return;
+          }
+          if (pathname === '/api/offline/cancel' && method === 'POST') {
+            const body = await this.readJson(req);
+            this.offlineSession.cancel(body && body.reason);
+            sendJson(200, this.offlineSession.getState());
+            return;
+          }
+          if (pathname === '/api/offline/end' && method === 'POST') {
+            if (this.offlineSession.isHotspotPeer(this.connectedPeer)) {
+              const peer = this.connectedPeer;
+              this.connectedPeer = null;
+              if (this.transferGateway) this.transferGateway.connectedPeer = null;
+              await this.remotePostJson(peer.address, peer.port, '/v1/live/disconnect', {
+                deviceId: this.selfDevice.deviceId
+              }).catch((err) => logIgnored('offline live disconnect notify', err));
+              this.broadcastEvent('live_disconnected', {});
+            }
+            await this.offlineSession.end();
+            sendJson(200, this.offlineSession.getState());
+            return;
+          }
+          sendJson(404, { error: 'Unknown offline endpoint' });
+        } catch (err) {
+          sendError(err);
+        }
+        return;
+      }
+
       // Live Link & Bi-directional Clipboard Sync
       if (pathname === '/api/live/connect' && method === 'POST') {
         const body = await this.readJson(req);
@@ -1033,6 +1422,7 @@ class DesktopEngine {
           address: this.localIp,
           port: this.selfDevice.port,
           platform: 'desktop',
+          accessToken: this.peerAccessToken(peer),
           clipboardSync: true
         });
         if (connectRes.statusCode === 200) {
@@ -1058,16 +1448,21 @@ class DesktopEngine {
       }
 
       if (pathname === '/api/live/disconnect' && method === 'POST') {
+        const wasHotspot = this.offlineSession.isHotspotPeer(this.connectedPeer);
         if (this.connectedPeer) {
           this.remotePostJson(this.connectedPeer.address, this.connectedPeer.port, '/v1/live/disconnect', {
             deviceId: this.selfDevice.deviceId
-          }).catch(() => {});
+          }).catch((err) => logIgnored('live disconnect notify', err));
         }
         this.connectedPeer = null;
         if (this.transferGateway) {
           this.transferGateway.connectedPeer = null;
         }
         this.broadcastEvent('live_disconnected', {});
+        if (wasHotspot) {
+          // Leaving the phone's hotspot: put the PC back on its own Wi-Fi.
+          this.offlineSession.end().catch((err) => logIgnored('restore Wi-Fi after disconnect', err));
+        }
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ disconnected: true }));
         return;
@@ -1144,11 +1539,7 @@ class DesktopEngine {
       }
 
       if (pathname === '/api/open-folder' && method === 'POST') {
-        if (process.platform === 'win32') {
-          execFile('explorer.exe', [this.storageDir], () => {});
-        } else {
-          exec(`open "${this.storageDir}"`, () => {});
-        }
+        this.openFolder(this.storageDir);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ status: 'opened', path: this.storageDir }));
         return;
@@ -1156,12 +1547,10 @@ class DesktopEngine {
 
       if (pathname === '/api/open-file' && method === 'POST') {
         const body = await this.readJson(req);
-        if (body && body.filePath && fs.existsSync(body.filePath)) {
-          if (process.platform === 'win32') {
-            exec(`start "" "${body.filePath.replace(/"/g, '\\"')}"`, () => {});
-          } else {
-            exec(`open "${body.filePath}"`, () => {});
-          }
+        const target = body && typeof body.filePath === 'string' ? path.resolve(body.filePath) : '';
+        // Only received files, and they are revealed rather than executed.
+        if (target && fsService.isPathAllowed(target, [this.storageDir]) && fs.existsSync(target)) {
+          this.revealInFolder(target);
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ status: 'opened' }));
           return;
@@ -1187,9 +1576,9 @@ class DesktopEngine {
         return;
       }
 
-      // Static File Server
+      // Static File Server (never outside desktop/public)
       let filePath = path.join(publicDir, pathname === '/' ? 'index.html' : pathname);
-      if (!fs.existsSync(filePath)) {
+      if (!fsService.isPathAllowed(filePath, [publicDir]) || !fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
         filePath = path.join(publicDir, 'index.html');
       }
 
@@ -1211,15 +1600,33 @@ class DesktopEngine {
         res.writeHead(404, { 'Content-Type': 'text/plain' });
         res.end('Not Found');
       }
+    };
+
+    this.controlServer = http.createServer((req, res) => {
+      handleControlRequest(req, res).catch((err) => {
+        console.error('Control API request failed:', err);
+        if (!res.headersSent) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Internal error' }));
+        } else {
+          res.destroy();
+        }
+      });
     });
+
+    const recordPort = () => {
+      const addr = this.controlServer.address();
+      if (addr && typeof addr === 'object') this.controlPort = addr.port;
+      return this.controlPort;
+    };
 
     return new Promise((resolve, reject) => {
       this.controlServer.on('error', (err) => {
         if (err.code === 'EADDRINUSE' && this.controlPort === DESKTOP_HTTP_PORT) {
           this.controlPort = DESKTOP_HTTP_PORT + 1;
           try {
-            this.controlServer.listen(this.controlPort, '0.0.0.0', () => {
-              resolve(this.controlPort);
+            this.controlServer.listen(this.controlPort, '127.0.0.1', () => {
+              resolve(recordPort());
             });
             return;
           } catch (retryErr) {
@@ -1230,8 +1637,8 @@ class DesktopEngine {
         reject(err);
       });
 
-      this.controlServer.listen(this.controlPort, '0.0.0.0', () => {
-        resolve(this.controlPort);
+      this.controlServer.listen(this.controlPort, '127.0.0.1', () => {
+        resolve(recordPort());
       });
     });
   }
@@ -1262,11 +1669,23 @@ class DesktopEngine {
 
   readJson(req) {
     return new Promise((resolve) => {
-      let data = '';
+      const chunks = [];
+      let size = 0;
+      let tooLarge = false;
       req.on('data', (chunk) => {
-        data += chunk;
+        if (tooLarge) return;
+        size += chunk.length;
+        if (size > MAX_JSON_BODY_BYTES) {
+          tooLarge = true;
+          console.warn('Rejected an oversized JSON payload');
+          resolve(null);
+          return;
+        }
+        chunks.push(chunk);
       });
       req.on('end', () => {
+        if (tooLarge) return;
+        const data = Buffer.concat(chunks).toString('utf8');
         try {
           resolve(JSON.parse(data));
         } catch (err) {
@@ -1395,45 +1814,19 @@ class DesktopEngine {
       throw new Error(`Session rejected by peer (${sessionRes.statusCode})`);
     }
 
-    const chunkSize = 4 * 1024 * 1024;
+    // Receivers that advertise `stream` take each file as one continuous request,
+    // which keeps the link busy instead of waiting for a reply every few MB.
+    const useStream = sessionRes.body.stream === true;
+    const resume = (sessionRes.body && sessionRes.body.resume) || {};
+
     for (const f of fileList) {
       if (!f.path || !fs.existsSync(f.path)) {
         throw new Error(`Local file not found: ${f.name}`);
       }
-      const hash = crypto.createHash('sha256');
-      let offset = 0;
-      const fileStream = fs.createReadStream(f.path, { highWaterMark: chunkSize });
+      const finalSha256 = useStream
+        ? await this.streamFileToPeer(peer, sessionId, f, Number(resume[f.fileId]) || 0, transferEntry)
+        : await this.chunkFileToPeer(peer, sessionId, f, transferEntry);
 
-      for await (const chunk of fileStream) {
-        hash.update(chunk);
-
-        const chunkRes = await this.httpRequest({
-          hostname: peer.address,
-          port: peer.port,
-          path: '/v1/chunk',
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/octet-stream',
-            'Content-Length': String(chunk.length),
-            [protocol.kHeaderSessionId]: sessionId,
-            'x-file-id': f.fileId,
-            'x-offset': String(offset)
-          }
-        }, chunk);
-
-        if (chunkRes.statusCode !== 200) {
-          throw new Error(`Failed to upload chunk at offset ${offset}`);
-        }
-
-        offset += chunk.length;
-        transferEntry.bytesTransferred += chunk.length;
-        const elapsed = (Date.now() - transferEntry.startTime) / 1000;
-        transferEntry.speed = elapsed > 0 ? transferEntry.bytesTransferred / elapsed : 0;
-        transferEntry.progress = Math.min(99, Math.round((transferEntry.bytesTransferred / (transferEntry.totalBytes || 1)) * 100));
-        this.broadcastEvent('transfer_update', transferEntry);
-      }
-
-      const finalSha256 = hash.digest('hex');
       const commitReq = new CommitRequest({
         sessionId,
         fileId: f.fileId,
@@ -1452,6 +1845,133 @@ class DesktopEngine {
         throw new Error(`Failed to commit file ${f.name}`);
       }
     }
+  }
+
+  /**
+   * Record progress on a transfer entry and push it to the UI at most every 150 ms.
+   * @param {object} transferEntry
+   * @param {boolean} [force]
+   */
+  reportSendProgress(transferEntry, force = false) {
+    const now = Date.now();
+    if (!force && now - (transferEntry.lastBroadcast || 0) < 150) return;
+    transferEntry.lastBroadcast = now;
+    const elapsed = (now - transferEntry.startTime) / 1000;
+    transferEntry.speed = elapsed > 0 ? transferEntry.bytesTransferred / elapsed : 0;
+    transferEntry.progress = Math.min(99, Math.round((transferEntry.bytesTransferred / (transferEntry.totalBytes || 1)) * 100));
+    this.broadcastEvent('transfer_update', transferEntry);
+  }
+
+  /**
+   * Upload one file as a single streamed request (PUT /v1/stream), hashing as it reads.
+   * @param {object} peer
+   * @param {string} sessionId
+   * @param {{ path: string, fileId: string }} f
+   * @param {number} startOffset - Bytes the receiver already has.
+   * @param {object} transferEntry
+   * @returns {Promise<string>} SHA-256 of the whole file.
+   */
+  async streamFileToPeer(peer, sessionId, f, startOffset, transferEntry) {
+    const READ_BYTES = 1024 * 1024;
+    const size = fs.statSync(f.path).size;
+    const offset = Math.max(0, Math.min(startOffset, size));
+    const hash = crypto.createHash('sha256');
+
+    // The commit hash covers the whole file, so a resumed upload hashes the prefix locally.
+    if (offset > 0) {
+      for await (const chunk of fs.createReadStream(f.path, { start: 0, end: offset - 1, highWaterMark: READ_BYTES })) {
+        hash.update(chunk);
+      }
+      transferEntry.bytesTransferred += offset;
+    }
+
+    const source = fs.createReadStream(f.path, { start: offset, highWaterMark: READ_BYTES });
+    source.on('data', (chunk) => {
+      hash.update(chunk);
+      transferEntry.bytesTransferred += chunk.length;
+      this.reportSendProgress(transferEntry);
+    });
+
+    const result = await new Promise((resolve, reject) => {
+      const req = http.request({
+        hostname: peer.address,
+        port: peer.port,
+        path: '/v1/stream',
+        method: 'PUT',
+        agent: this.httpAgent,
+        timeout: 60000,
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'Content-Length': String(size - offset),
+          [protocol.kHeaderSessionId]: sessionId,
+          'x-file-id': f.fileId,
+          'x-offset': String(offset)
+        }
+      }, (res) => {
+        if (res.statusCode !== 200) {
+          // Receiver refused early: stop reading the file.
+          source.unpipe(req);
+          source.destroy();
+        }
+        let body = '';
+        res.on('data', (d) => { body += d; });
+        res.on('end', () => {
+          // An early refusal leaves the request body unfinished; don't return that socket to the pool.
+          if (res.statusCode !== 200) req.destroy();
+          resolve({ statusCode: res.statusCode, body });
+        });
+        res.on('error', reject);
+      });
+      req.on('timeout', () => req.destroy(new Error('Upload stalled for 60 seconds')));
+      req.on('error', reject);
+      source.on('error', (err) => req.destroy(err));
+      source.pipe(req);
+    });
+
+    if (result.statusCode !== 200) {
+      throw new Error(`Upload of ${f.name || f.fileId} failed: HTTP ${result.statusCode}`);
+    }
+    this.reportSendProgress(transferEntry, true);
+    return hash.digest('hex');
+  }
+
+  /**
+   * Upload one file as sequential 4 MB chunks (PUT /v1/chunk), for receivers
+   * that don't advertise streamed uploads.
+   * @param {object} peer
+   * @param {string} sessionId
+   * @param {{ path: string, fileId: string }} f
+   * @param {object} transferEntry
+   * @returns {Promise<string>} SHA-256 of the whole file.
+   */
+  async chunkFileToPeer(peer, sessionId, f, transferEntry) {
+    const chunkSize = 4 * 1024 * 1024;
+    const hash = crypto.createHash('sha256');
+    let offset = 0;
+    for await (const chunk of fs.createReadStream(f.path, { highWaterMark: chunkSize })) {
+      hash.update(chunk);
+      const chunkRes = await this.httpRequest({
+        hostname: peer.address,
+        port: peer.port,
+        path: '/v1/chunk',
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'Content-Length': String(chunk.length),
+          [protocol.kHeaderSessionId]: sessionId,
+          'x-file-id': f.fileId,
+          'x-offset': String(offset)
+        }
+      }, chunk);
+
+      if (chunkRes.statusCode !== 200) {
+        throw new Error(`Failed to upload chunk at offset ${offset}`);
+      }
+      offset += chunk.length;
+      transferEntry.bytesTransferred += chunk.length;
+      this.reportSendProgress(transferEntry, true);
+    }
+    return hash.digest('hex');
   }
 
   async sendViaLocalSend(peer, fileList, transferEntry) {
@@ -1593,8 +2113,8 @@ class DesktopEngine {
    * @returns {Promise<string>} Absolute path of the saved file.
    */
   pullRemoteFile(ip, port, remotePath, name, size) {
-    const fileName = path.basename(name || remotePath || 'download.bin');
-    const destPath = path.join(this.storageDir, fileName);
+    const fileName = fsService.sanitizeFileName(name || remotePath, 'download.bin');
+    const destPath = fsService.uniquePath(path.join(this.storageDir, fileName));
     const transferEntry = {
       id: `pull-${Date.now()}`,
       peer: ip,
@@ -1662,6 +2182,18 @@ class DesktopEngine {
       clearInterval(this.discoveryInterval);
       this.discoveryInterval = null;
     }
+    // Never leave the PC stuck on a phone hotspot after the app closes.
+    let restoreTimer = null;
+    try {
+      await Promise.race([
+        this.offlineSession.end(),
+        new Promise((resolve) => { restoreTimer = setTimeout(resolve, 5000); })
+      ]);
+    } catch (err) {
+      logIgnored('restore Wi-Fi on shutdown', err);
+    } finally {
+      if (restoreTimer) clearTimeout(restoreTimer);
+    }
     if (this.clipboardPollInterval) {
       clearInterval(this.clipboardPollInterval);
       this.clipboardPollInterval = null;
@@ -1669,15 +2201,37 @@ class DesktopEngine {
     if (this.httpAgent) {
       this.httpAgent.destroy();
     }
-    for (const entry of this.pendingApprovals.values()) {
+    // Decline every prompt still waiting for an answer. Clearing only the timers left
+    // those requests hanging forever, so the servers never closed and the process
+    // stayed alive in the background with no window.
+    for (const entry of Array.from(this.pendingApprovals.values())) {
       clearTimeout(entry.timer);
+      try {
+        entry.resolve(false);
+      } catch (err) {
+        logIgnored('decline pending prompt on stop', err);
+      }
     }
     this.pendingApprovals.clear();
-    if (this.transferGateway) await this.transferGateway.stop();
-    if (this.localsendGateway) await this.localsendGateway.stop();
-    if (this.controlServer) {
-      await new Promise((resolve) => this.controlServer.close(resolve));
+    for (const client of this.sseClients) {
+      try {
+        client.end();
+      } catch (err) {
+        logIgnored('close event stream', err);
+      }
     }
+    this.sseClients.clear();
+
+    const closeControlServer = () => new Promise((resolve) => {
+      const server = this.controlServer;
+      server.close(() => resolve());
+      if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
+    });
+    await Promise.all([
+      this.transferGateway ? this.transferGateway.stop() : null,
+      this.localsendGateway ? this.localsendGateway.stop() : null,
+      this.controlServer ? closeControlServer() : null
+    ]);
   }
 }
 

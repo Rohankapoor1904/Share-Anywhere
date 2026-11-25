@@ -13,6 +13,16 @@ export const kHeaderFingerprint = 'x-localshare-fingerprint';
 export const kHeaderSessionId = 'x-localshare-session-id';
 export const kPartialSuffix = '.localshare.part';
 export const kPeerStaleMs = 45000;
+// Google Nearby Connections (offline phone-to-phone transport)
+export const kNearbyServiceId = 'com.rohan.localshare';
+export const kNearbyProtocolVersion = 1;
+// ConnectionsClient.MAX_BYTES_DATA_SIZE; control messages must fit in one BYTES payload.
+export const kNearbyMaxControlBytes = 32768;
+// Endpoint info rides in the BLE advertisement, so it is kept well under the radio limit.
+export const kNearbyEndpointInfoMaxBytes = 120;
+export const kNearbyOfferTimeoutMs = 120000;
+export const kNearbyConnectTimeoutMs = 60000;
+export const kNearbyAckTimeoutMs = 300000;
 
 export default {
   kProtocolVersion,
@@ -29,6 +39,13 @@ export default {
   kHeaderFingerprint,
   kHeaderSessionId,
   kPartialSuffix,
-  kPeerStaleMs
+  kPeerStaleMs,
+  kNearbyServiceId,
+  kNearbyProtocolVersion,
+  kNearbyMaxControlBytes,
+  kNearbyEndpointInfoMaxBytes,
+  kNearbyOfferTimeoutMs,
+  kNearbyConnectTimeoutMs,
+  kNearbyAckTimeoutMs
 };
 

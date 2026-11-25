@@ -105,6 +105,12 @@ class TransferClientModule(reactContext: ReactApplicationContext) :
         activeCancelFlags[sessionId]?.set(true)
     }
 
+    /**
+     * Send one file. With [useStream] the whole remainder goes in a single PUT to
+     * /v1/stream (no per-chunk round trips); otherwise sequential PUTs to /v1/chunk.
+     * The SHA-256 is computed while reading and sent with the commit, so the file is
+     * read exactly once.
+     */
     @ReactMethod
     fun sendFileStream(
         baseUrl: String,
@@ -115,6 +121,7 @@ class TransferClientModule(reactContext: ReactApplicationContext) :
         totalBytes: Double,
         startOffset: Double,
         chunkSize: Int,
+        useStream: Boolean,
         promise: Promise
     ) {
         Thread {
@@ -128,78 +135,120 @@ class TransferClientModule(reactContext: ReactApplicationContext) :
                 val digest = MessageDigest.getInstance("SHA-256")
 
                 openSliceStream(fileUri).use { stream ->
-                    var offset = startOffset.toLong()
-                    if (offset > 0) {
-                        var skipped = 0L
-                        while (skipped < offset) {
-                            val s = stream.skip(offset - skipped)
-                            if (s <= 0) break
-                            skipped += s
+                    var offset = 0L
+                    val resumeFrom = minOf(startOffset.toLong(), total)
+                    // The commit hash covers the whole file, so hash the part the receiver
+                    // already has instead of skipping it (skipping broke resumed uploads).
+                    if (resumeFrom > 0) {
+                        val prefix = ByteArray(1024 * 1024)
+                        while (offset < resumeFrom) {
+                            val r = stream.read(prefix, 0, minOf(prefix.size.toLong(), resumeFrom - offset).toInt())
+                            if (r == -1) break
+                            digest.update(prefix, 0, r)
+                            offset += r
                         }
                     }
 
                     var transferred = offset
                     var lastEmittedTime = System.currentTimeMillis()
                     var lastEmittedBytes = transferred
-                    val buffer = ByteArray(actualChunkSize)
 
-                    while (transferred < total) {
-                        if (cancelFlag.get()) {
-                            throw java.util.concurrent.CancellationException("Transfer cancelled by user")
+                    fun emitProgress(force: Boolean) {
+                        val now = System.currentTimeMillis()
+                        val elapsed = now - lastEmittedTime
+                        if (!force && elapsed < 150) return
+                        val bytesPerSec = if (elapsed > 0) (transferred - lastEmittedBytes) * 1000.0 / elapsed else 0.0
+                        lastEmittedTime = now
+                        lastEmittedBytes = transferred
+                        val progressMap = Arguments.createMap().apply {
+                            putString("sessionId", sessionId)
+                            putString("fileId", fileId)
+                            putString("fileName", fileName)
+                            putDouble("transferredBytes", transferred.toDouble())
+                            putDouble("totalBytes", totalBytes)
+                            putDouble("speed", bytesPerSec)
+                            putString("direction", "send")
+                            putString("status", "in_progress")
                         }
+                        sendEvent("SendProgress", progressMap)
+                    }
 
-                        val toRead = minOf(buffer.size.toLong(), total - transferred).toInt()
-                        var chunkRead = 0
-                        while (chunkRead < toRead) {
-                            val r = stream.read(buffer, chunkRead, toRead - chunkRead)
-                            if (r == -1) break
-                            chunkRead += r
+                    if (useStream) {
+                        val streamStart = offset
+                        val remaining = total - streamStart
+                        val body = object : RequestBody() {
+                            override fun contentType(): MediaType = "application/octet-stream".toMediaType()
+                            override fun contentLength(): Long = remaining
+                            // The file stream can only be read once, so OkHttp must never replay this body.
+                            override fun isOneShot(): Boolean = true
+                            override fun writeTo(sink: BufferedSink) {
+                                val buf = ByteArray(1024 * 1024)
+                                var sent = 0L
+                                while (sent < remaining) {
+                                    if (cancelFlag.get()) {
+                                        throw java.io.IOException("Transfer cancelled by user")
+                                    }
+                                    val r = stream.read(buf, 0, minOf(buf.size.toLong(), remaining - sent).toInt())
+                                    if (r == -1) {
+                                        throw java.io.IOException("File ended early at ${streamStart + sent} of $total bytes")
+                                    }
+                                    digest.update(buf, 0, r)
+                                    sink.write(buf, 0, r)
+                                    sent += r
+                                    transferred = streamStart + sent
+                                    emitProgress(false)
+                                }
+                            }
                         }
-                        if (chunkRead <= 0) break
-
-                        // Incremental SHA-256 calculation on the fly
-                        digest.update(buffer, 0, chunkRead)
-
-                        // Upload chunk
-                        val body = buffer.toRequestBody("application/octet-stream".toMediaType(), 0, chunkRead)
                         val req = Request.Builder()
-                            .url("$baseUrl/v1/chunk")
+                            .url("$baseUrl/v1/stream")
                             .put(body)
                             .addHeader("x-localshare-session-id", sessionId)
                             .addHeader("x-file-id", fileId)
-                            .addHeader("x-offset", offset.toString())
+                            .addHeader("x-offset", streamStart.toString())
                             .build()
-
                         client.newCall(req).execute().use { resp ->
                             if (!resp.isSuccessful) {
-                                throw java.io.IOException("Chunk upload failed with HTTP ${resp.code}")
+                                throw java.io.IOException("Upload failed with HTTP ${resp.code}")
                             }
                         }
-
-                        offset += chunkRead
-                        transferred += chunkRead
-
-                        val now = System.currentTimeMillis()
-                        val elapsed = now - lastEmittedTime
-                        if (elapsed >= 150 || transferred >= total) {
-                            val bytesPerSec = if (elapsed > 0) {
-                                (transferred - lastEmittedBytes) * 1000.0 / elapsed
-                            } else 0.0
-
-                            lastEmittedTime = now
-                            lastEmittedBytes = transferred
-
-                            val progressMap = Arguments.createMap().apply {
-                                putString("sessionId", sessionId)
-                                putString("fileId", fileId)
-                                putString("fileName", fileName)
-                                putDouble("transferredBytes", transferred.toDouble())
-                                putDouble("totalBytes", totalBytes)
-                                putDouble("speed", bytesPerSec)
-                                putString("direction", "send")
-                                putString("status", "in_progress")
+                        emitProgress(true)
+                    } else {
+                        val buffer = ByteArray(actualChunkSize)
+                        while (transferred < total) {
+                            if (cancelFlag.get()) {
+                                throw java.util.concurrent.CancellationException("Transfer cancelled by user")
                             }
-                            sendEvent("SendProgress", progressMap)
+
+                            val toRead = minOf(buffer.size.toLong(), total - transferred).toInt()
+                            var chunkRead = 0
+                            while (chunkRead < toRead) {
+                                val r = stream.read(buffer, chunkRead, toRead - chunkRead)
+                                if (r == -1) break
+                                chunkRead += r
+                            }
+                            if (chunkRead <= 0) break
+
+                            digest.update(buffer, 0, chunkRead)
+
+                            val body = buffer.toRequestBody("application/octet-stream".toMediaType(), 0, chunkRead)
+                            val req = Request.Builder()
+                                .url("$baseUrl/v1/chunk")
+                                .put(body)
+                                .addHeader("x-localshare-session-id", sessionId)
+                                .addHeader("x-file-id", fileId)
+                                .addHeader("x-offset", offset.toString())
+                                .build()
+
+                            client.newCall(req).execute().use { resp ->
+                                if (!resp.isSuccessful) {
+                                    throw java.io.IOException("Chunk upload failed with HTTP ${resp.code}")
+                                }
+                            }
+
+                            offset += chunkRead
+                            transferred += chunkRead
+                            emitProgress(transferred >= total)
                         }
                     }
 

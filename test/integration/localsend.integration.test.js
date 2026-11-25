@@ -125,4 +125,38 @@ describe('LocalSend v2.2 Interop Real-HTTP Integration Tests (§9, §12.2)', () 
     const diskContent = fs.readFileSync(savedPath);
     expect(diskContent.equals(fileBytes)).toBe(true);
   });
+
+  test('an upload cannot leave the storage folder, and its token is single-use', async () => {
+    const bytes = Buffer.from('escape attempt');
+    const fileId = 'ls-evil';
+    const prep = await makeRequest({
+      hostname: '127.0.0.1',
+      port: testPort,
+      path: '/api/localsend/v2/prepare-upload',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    }, {
+      info: { alias: 'Hostile Sender' },
+      files: {
+        [fileId]: { id: fileId, fileName: '../../escaped_localsend.txt', size: bytes.length, fileType: 'text/plain' }
+      }
+    });
+    expect(prep.statusCode).toBe(200);
+    const { sessionId, files } = prep.body;
+    const upload = () => makeRequest({
+      hostname: '127.0.0.1',
+      port: testPort,
+      path: `/api/localsend/v2/upload?sessionId=${sessionId}&fileId=${fileId}&token=${files[fileId]}`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream', 'Content-Length': bytes.length }
+    }, bytes);
+
+    const first = await upload();
+    expect(first.statusCode).toBe(200);
+    expect(fs.existsSync(path.join(testDir, 'escaped_localsend.txt'))).toBe(true);
+    expect(fs.existsSync(path.resolve(testDir, '..', '..', 'escaped_localsend.txt'))).toBe(false);
+
+    const replay = await upload();
+    expect(replay.statusCode).toBe(403);
+  });
 });

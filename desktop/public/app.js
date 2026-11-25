@@ -1,4 +1,4 @@
-// O+ Connect — LocalShare PC Desktop Application
+// Share Anywhere — LocalShare desktop UI
 (function () {
   let peers = [];
   let stagedFiles = [];
@@ -86,17 +86,124 @@
   }
 
   function formatDateKey(timestamp) {
-    if (!timestamp) return '2026/11/19';
+    if (!timestamp) return '0000/00/00';
     const d = new Date(timestamp);
-    if (isNaN(d.getTime())) return '2026/11/19';
+    if (isNaN(d.getTime())) return '0000/00/00';
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
     return `${y}/${m}/${day}`;
   }
 
+  /** "Today", "Yesterday", "Monday", or "23 Nov 2025" for a YYYY/MM/DD key. */
+  function formatDateLabel(dateKey) {
+    if (!dateKey || dateKey === '0000/00/00') return 'Unknown date';
+    const [y, m, d] = dateKey.split('/').map(Number);
+    const date = new Date(y, m - 1, d);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const days = Math.round((today.getTime() - date.getTime()) / 86400000);
+    if (days === 0) return 'Today';
+    if (days === 1) return 'Yesterday';
+    if (days > 1 && days < 7) return date.toLocaleDateString(undefined, { weekday: 'long' });
+    const sameYear = date.getFullYear() === today.getFullYear();
+    return date.toLocaleDateString(undefined, sameYear
+      ? { weekday: 'short', day: 'numeric', month: 'short' }
+      : { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  /** "just now", "5 min ago", "3 h ago", or a date. */
+  function formatRelativeTime(timestamp) {
+    if (!timestamp) return '';
+    const diff = Date.now() - Number(timestamp);
+    if (!Number.isFinite(diff)) return '';
+    if (diff < 45000) return 'just now';
+    if (diff < 3600000) return `${Math.max(1, Math.round(diff / 60000))} min ago`;
+    if (diff < 86400000) return `${Math.round(diff / 3600000)} h ago`;
+    return new Date(Number(timestamp)).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  }
+
+  function fileKindIcon(name) {
+    const n = String(name || '').toLowerCase();
+    if (/\.(jpe?g|png|gif|webp|bmp|heic|heif|svg)$/.test(n)) return 'image';
+    if (/\.(mp4|mkv|webm|mov|avi|3gp|m4v)$/.test(n)) return 'video';
+    if (/\.(mp3|wav|ogg|m4a|flac|aac)$/.test(n)) return 'audio';
+    if (/\.(zip|rar|7z|tar|gz|bz2|iso|apk|xapk)$/.test(n)) return 'archive';
+    if (/\.(pdf|txt|md|docx?|xlsx?|pptx?|csv|json|xml|html)$/.test(n)) return 'document';
+    return 'file';
+  }
+
   function isApk(name) {
     return /\.apk$/i.test(name) || /\.xapk$/i.test(name);
+  }
+
+  // ========================================================
+  // DESKTOP TOAST SYSTEM & GLASS CONFIRM MODAL
+  // ========================================================
+
+  function showToast(message, type = 'info') {
+    const container = document.getElementById('desktop-toast-container');
+    if (!container) return;
+    const toast = document.createElement('div');
+    toast.className = `desktop-toast toast-${type}`;
+    let iconSvg = '';
+    if (type === 'success') {
+      iconSvg = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>';
+    } else if (type === 'error') {
+      iconSvg = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>';
+    } else if (type === 'warning') {
+      iconSvg = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
+    } else {
+      iconSvg = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>';
+    }
+    toast.innerHTML = `${iconSvg}<span>${escapeHtml(message)}</span>`;
+    container.appendChild(toast);
+    setTimeout(() => {
+      toast.classList.add('toast-hide');
+      setTimeout(() => toast.remove(), 250);
+    }, 3500);
+  }
+
+  function showConfirmModal({ title = 'Confirm Action', message, confirmLabel = 'Confirm', danger = false }) {
+    return new Promise((resolve) => {
+      const modal = document.getElementById('desktop-confirm-modal');
+      const titleEl = document.getElementById('confirm-modal-title');
+      const msgEl = document.getElementById('confirm-modal-message');
+      const btnConfirm = document.getElementById('confirm-modal-confirm');
+      const btnCancel = document.getElementById('confirm-modal-cancel');
+      const backdrop = document.getElementById('confirm-modal-backdrop');
+
+      if (!modal || !btnConfirm || !btnCancel) {
+        resolve(true);
+        return;
+      }
+
+      if (titleEl) titleEl.textContent = title;
+      if (msgEl) msgEl.textContent = message;
+      btnConfirm.textContent = confirmLabel;
+      if (danger) {
+        btnConfirm.className = 'op-btn-danger op-btn-sm';
+      } else {
+        btnConfirm.className = 'op-btn-primary op-btn-sm';
+      }
+
+      modal.style.display = 'flex';
+
+      function cleanup(result) {
+        modal.style.display = 'none';
+        btnConfirm.removeEventListener('click', onConfirm);
+        btnCancel.removeEventListener('click', onCancel);
+        if (backdrop) backdrop.removeEventListener('click', onCancel);
+        resolve(result);
+      }
+
+      function onConfirm() { cleanup(true); }
+      function onCancel() { cleanup(false); }
+
+      btnConfirm.addEventListener('click', onConfirm);
+      btnCancel.addEventListener('click', onCancel);
+      if (backdrop) backdrop.addEventListener('click', onCancel);
+    });
   }
 
   function isVideo(name, mime) {
@@ -142,6 +249,8 @@
       renderRadar();
     } else if (viewName === 'clipboard') {
       loadClipboardHistory();
+    } else if (viewName === 'settings') {
+      loadPairedDevices();
     }
   }
 
@@ -218,7 +327,7 @@
 
     if (pathBar) pathBar.style.display = 'none';
     if (gallery) {
-      gallery.innerHTML = '<div class="op-empty-card"><p>Loading files from phone...</p></div>';
+      gallery.innerHTML = '<div class="op-empty-card"><div class="op-spinner"></div><p>Loading files from your phone…</p></div>';
     }
 
     const peer = connectedLivePeer || (peers.length > 0 ? peers[0] : null);
@@ -227,8 +336,8 @@
         gallery.innerHTML = `
           <div class="op-empty-card">
             ${icon('radar', 36, 1.7)}
-            <h3>No Phone Connected</h3>
-            <p>Scan the QR code or pair your phone to browse photos, APKs, and documents.</p>
+            <h3>No phone connected</h3>
+            <p>Pair your phone to browse its photos, videos and documents here.</p>
             <button class="op-btn-primary" style="margin-top: 12px;" onclick="window.__switchView('pair')">Pair Phone</button>
           </div>
         `;
@@ -261,8 +370,8 @@
       gallery.innerHTML = `
         <div class="op-empty-card">
           ${icon('folder', 40, 1.8)}
-          <h3>No Files Found</h3>
-          <p>No files match this category on your device.</p>
+          <h3>Nothing here</h3>
+          <p>Your phone has no files of this type.</p>
         </div>
       `;
       return;
@@ -285,8 +394,9 @@
       html += `
         <div class="op-date-section" data-date="${dateKey}">
           <div class="op-date-header">
-            <input type="checkbox" class="op-date-checkbox" data-date="${dateKey}" title="Select all from ${dateKey}" />
-            <span class="op-date-title">${dateKey}</span>
+            <input type="checkbox" class="op-date-checkbox" data-date="${dateKey}" title="Select all from ${escapeHtml(formatDateLabel(dateKey))}" />
+            <span class="op-date-title">${escapeHtml(formatDateLabel(dateKey))}</span>
+            <span class="op-date-count">${dateItems.length}</span>
           </div>
           <div class="op-date-grid">
       `;
@@ -313,7 +423,7 @@
         } else if (isVideo(itemName, item.mimeType)) {
           const thumbUrl = `/api/remote-fs/thumbnail?ip=${encodeURIComponent(peer.address)}&port=${peer.port || 53318}&path=${encodeURIComponent(itemPath)}`;
           previewHtml = `
-            <img src="${thumbUrl}" alt="${escapeHtml(itemName)}" loading="lazy" />
+            <img src="${escapeHtml(thumbUrl)}" alt="${escapeHtml(itemName)}" loading="lazy" />
             <div class="op-play-overlay">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
                 <polygon points="6 4 20 12 6 20 6 4"/>
@@ -322,7 +432,7 @@
           `;
         } else if (isImage(itemName, item.mimeType)) {
           const thumbUrl = `/api/remote-fs/thumbnail?ip=${encodeURIComponent(peer.address)}&port=${peer.port || 53318}&path=${encodeURIComponent(itemPath)}`;
-          previewHtml = `<img src="${thumbUrl}" alt="${escapeHtml(itemName)}" loading="lazy" />`;
+          previewHtml = `<img src="${escapeHtml(thumbUrl)}" alt="${escapeHtml(itemName)}" loading="lazy" />`;
         } else {
           previewHtml = `
             <div class="op-doc-sheet">
@@ -332,12 +442,12 @@
         }
 
         html += `
-          <div class="op-file-card ${isSelected ? 'selected' : ''}" data-path="${escapeHtml(itemPath)}" data-name="${escapeHtml(itemName)}" data-size="${itemSize}">
+          <div class="op-file-card ${isSelected ? 'selected' : ''}" data-path="${escapeHtml(itemPath)}" data-name="${escapeHtml(itemName)}" data-size="${escapeHtml(String(itemSize))}">
             <div class="op-card-select">
               <input type="checkbox" class="op-card-checkbox" data-path="${escapeHtml(itemPath)}" ${isSelected ? 'checked' : ''} />
             </div>
             <div class="op-card-actions">
-              <button class="op-quick-btn op-quick-dl" title="Download to PC" data-path="${escapeHtml(itemPath)}" data-name="${escapeHtml(itemName)}" data-size="${itemSize}">
+              <button class="op-quick-btn op-quick-dl" title="Download to PC" data-path="${escapeHtml(itemPath)}" data-name="${escapeHtml(itemName)}" data-size="${escapeHtml(String(itemSize))}">
                 ${icon('download', 13, 2)}
               </button>
               <button class="op-quick-btn op-quick-del" title="Delete from Phone" data-path="${escapeHtml(itemPath)}" data-name="${escapeHtml(itemName)}">
@@ -418,10 +528,17 @@
 
     // 5. Delete Quick-button
     gallery.querySelectorAll('.op-quick-del').forEach((btn) => {
-      btn.addEventListener('click', (e) => {
+      btn.addEventListener('click', async (e) => {
         e.stopPropagation();
-        if (window.confirm(`Delete "${btn.dataset.name}" from phone?`)) {
+        const confirmed = await showConfirmModal({
+          title: 'Delete Remote File',
+          message: `Delete "${btn.dataset.name}" from phone?`,
+          confirmLabel: 'Delete',
+          danger: true
+        });
+        if (confirmed) {
           remoteFsAction('/api/remote-fs/delete', { path: btn.dataset.path }).then(() => {
+            showToast(`Deleted "${btn.dataset.name}"`, 'info');
             loadCategory(activeCategory);
           });
         }
@@ -491,10 +608,17 @@
   if (btnBatchDelete) {
     btnBatchDelete.addEventListener('click', async () => {
       if (selectedFilePaths.size === 0) return;
-      if (window.confirm(`Delete ${selectedFilePaths.size} selected file(s) from phone?`)) {
+      const confirmed = await showConfirmModal({
+        title: 'Delete Selected Files',
+        message: `Delete ${selectedFilePaths.size} selected file(s) from phone?`,
+        confirmLabel: 'Delete All',
+        danger: true
+      });
+      if (confirmed) {
         for (const p of selectedFilePaths) {
           await remoteFsAction('/api/remote-fs/delete', { path: p });
         }
+        showToast(`Deleted ${selectedFilePaths.size} file(s)`, 'info');
         selectedFilePaths.clear();
         updateBatchActionBar();
         loadCategory(activeCategory);
@@ -502,20 +626,22 @@
     });
   }
 
-  // Category counts updating
+  // Category counts updating (Single fast HTTP request including bluetooth)
   async function updateCategoryCounts(peer) {
     if (!peer) return;
-    const cats = ['images', 'videos', 'audio', 'documents', 'archives', 'apks', 'whatsapp', 'downloads'];
-    cats.forEach(async (c) => {
-      try {
-        const res = await fetch(`/api/remote-categories?ip=${encodeURIComponent(peer.address)}&port=${peer.port || 53318}&type=${c}&limit=1`);
-        const data = await res.json();
+    try {
+      const res = await fetch(`/api/remote-category-counts?ip=${encodeURIComponent(peer.address)}&port=${peer.port || 53318}`);
+      const data = await res.json();
+      const cats = ['images', 'videos', 'audio', 'documents', 'archives', 'apks', 'whatsapp', 'downloads', 'bluetooth'];
+      cats.forEach((c) => {
         const countEl = document.getElementById(`count-${c}`);
-        if (countEl && typeof data.total === 'number') {
-          countEl.textContent = String(data.total);
+        if (countEl && typeof data[c] === 'number') {
+          countEl.textContent = String(data[c]);
         }
-      } catch (_) {}
-    });
+      });
+    } catch (err) {
+      console.warn('Failed to load category counts:', err);
+    }
   }
 
   // Bind Category Sub-sidebar Buttons
@@ -577,7 +703,7 @@
     btnImport.addEventListener('click', async () => {
       const targetPeer = connectedLivePeer || (peers.length > 0 ? peers[0] : null);
       if (!targetPeer) {
-        alert('Please pair or connect your phone first before importing files.');
+        showToast('Please pair or connect your phone first before importing files.', 'warning');
         switchView('pair');
         return;
       }
@@ -611,7 +737,7 @@
 
     const gallery = document.getElementById('op-gallery-container');
     const pathText = document.getElementById('hero-path-text');
-    if (gallery) gallery.innerHTML = '<div class="op-empty-card"><p>Loading directory...</p></div>';
+    if (gallery) gallery.innerHTML = '<div class="op-empty-card"><div class="op-spinner"></div><p>Loading folder…</p></div>';
 
     try {
       const res = await fetch(`/api/remote-fs/list?ip=${encodeURIComponent(peer.address)}&port=${peer.port || 53318}&path=${encodeURIComponent(path || '')}`);
@@ -659,9 +785,9 @@
     const streamUrl = `http://${peer.address}:${peer.port || 53318}/v1/fs/stream?path=${encodeURIComponent(item.path)}`;
 
     if (isVideo(item.name)) {
-      if (bodyEl) bodyEl.innerHTML = `<video src="${streamUrl}" controls autoplay style="max-width: 100%; max-height: 75vh; border-radius: 8px;"></video>`;
+      if (bodyEl) bodyEl.innerHTML = `<video src="${escapeHtml(streamUrl)}" controls autoplay style="max-width: 100%; max-height: 75vh; border-radius: 8px;"></video>`;
     } else if (isImage(item.name)) {
-      if (bodyEl) bodyEl.innerHTML = `<img src="${streamUrl}" alt="${escapeHtml(item.name)}" style="max-width: 100%; max-height: 75vh; border-radius: 8px;">`;
+      if (bodyEl) bodyEl.innerHTML = `<img src="${escapeHtml(streamUrl)}" alt="${escapeHtml(item.name)}" style="max-width: 100%; max-height: 75vh; border-radius: 8px;">`;
     } else {
       if (bodyEl) bodyEl.innerHTML = `<div style="padding: 40px; color: #ffffff; text-align: center;">${icon(remoteEntryIcon(item), 64, 1.8)}<p style="margin-top: 14px;">${escapeHtml(item.name)}</p></div>`;
     }
@@ -692,10 +818,17 @@
 
   const btnDelLightbox = document.getElementById('btn-lightbox-delete');
   if (btnDelLightbox) {
-    btnDelLightbox.addEventListener('click', () => {
+    btnDelLightbox.addEventListener('click', async () => {
       if (currentLightboxItem) {
-        if (window.confirm(`Delete "${currentLightboxItem.name}" from phone?`)) {
+        const confirmed = await showConfirmModal({
+          title: 'Delete Photo',
+          message: `Delete "${currentLightboxItem.name}" from phone?`,
+          confirmLabel: 'Delete',
+          danger: true
+        });
+        if (confirmed) {
           remoteFsAction('/api/remote-fs/delete', { path: currentLightboxItem.path }).then(() => {
+            showToast(`Deleted "${currentLightboxItem.name}"`, 'info');
             closeLightbox();
             loadCategory(activeCategory);
           });
@@ -722,7 +855,7 @@
 
         // Update UI elements
         const nameEl = document.getElementById('op-connected-device-name');
-        if (nameEl) nameEl.textContent = data.peer.displayName || 'realme GT 6T';
+        if (nameEl) nameEl.textContent = data.peer.displayName || 'Connected Device';
 
         const treeConnected = document.getElementById('op-device-tree-connected');
         if (treeConnected) treeConnected.style.display = 'flex';
@@ -731,8 +864,15 @@
 
         const clipTag = document.getElementById('op-clip-tag');
         if (clipTag) {
-          clipTag.textContent = data.clipboardSync ? 'ON' : 'OFF';
-          clipTag.style.background = data.clipboardSync ? 'var(--success)' : 'var(--text-muted)';
+          clipTag.textContent = data.clipboardSync ? 'On' : 'Off';
+          clipTag.classList.toggle('is-off', !data.clipboardSync);
+        }
+        const clipBtnText = document.getElementById('btn-hero-clip-text');
+        if (clipBtnText) clipBtnText.textContent = data.clipboardSync ? 'Pause sync' : 'Resume sync';
+        const liveBadge = document.querySelector('.op-badge-live');
+        if (liveBadge) {
+          liveBadge.textContent = data.clipboardSync ? 'Syncing' : 'Paused';
+          liveBadge.classList.toggle('is-off', !data.clipboardSync);
         }
 
         if (currentView === 'pair') {
@@ -740,13 +880,17 @@
         }
       } else {
         connectedLivePeer = null;
+        const treeConnected = document.getElementById('op-device-tree-connected');
+        if (treeConnected) treeConnected.style.display = 'none';
         const unconnPrompt = document.getElementById('op-unconnected-prompt');
-        if (unconnPrompt) unconnPrompt.style.display = 'block';
+        if (unconnPrompt) unconnPrompt.style.display = 'flex';
         if (currentView === 'files') {
           switchView('pair');
         }
       }
-    } catch (_) {}
+    } catch (err) {
+      console.warn('Failed to refresh live status:', err);
+    }
   }
 
   async function connectToPeerLive(peer) {
@@ -806,7 +950,7 @@
       const selfNameEl = document.getElementById('self-name');
       if (selfNameEl) selfNameEl.textContent = data.displayName || 'PC Device';
       const opProfileUser = document.getElementById('op-profile-username');
-      if (opProfileUser) opProfileUser.textContent = (data.displayName || 'Rohan (PC)').replace(/\s*\(PC\)$/i, '');
+      if (opProfileUser) opProfileUser.textContent = (data.displayName || 'This PC').replace(/\s*\(PC\)$/i, '');
 
       const infoHost = document.getElementById('info-hostname');
       if (infoHost) infoHost.textContent = data.displayName;
@@ -836,7 +980,7 @@
     btnCopyCode.addEventListener('click', () => {
       const pin = document.getElementById('pairing-code-display').textContent;
       navigator.clipboard.writeText(pin).then(() => {
-        btnCopyCode.textContent = 'Copied!';
+        btnCopyCode.textContent = 'Copied';
         setTimeout(() => { btnCopyCode.textContent = 'Copy'; }, 2000);
       });
     });
@@ -866,23 +1010,23 @@
       list.innerHTML = `
         <div class="op-empty-card" style="padding: 24px;">
           ${icon('radar', 28, 1.8)}
-          <p style="font-size: 13px;">Looking for nearby phones or computers...</p>
-          <span style="font-size: 11.5px; color: var(--text-muted);">Ensure LocalShare is open on your phone connected to the same Wi-Fi.</span>
+          <h3>Looking for devices…</h3>
+          <p>Open LocalShare on your phone and make sure it's on the same Wi-Fi as this PC.</p>
         </div>
       `;
       return;
     }
 
     list.innerHTML = peers.map((p) => `
-      <div class="op-device-card" data-device-id="${p.deviceId}">
+      <div class="op-device-card" data-device-id="${escapeHtml(p.deviceId)}">
         <div class="op-device-avatar-circle">${getPlatformIcon(p.platform)}</div>
         <div class="op-device-meta-info">
           <h4 class="op-device-main-title">${escapeHtml(p.displayName)}</h4>
-          <p class="op-device-ip-sub">${escapeHtml(p.address)}:${p.port || 53318} • ${p.platform}</p>
+          <p class="op-device-ip-sub">${escapeHtml(p.address)}:${escapeHtml(String(p.port || 53318))} • ${escapeHtml(p.platform)}</p>
         </div>
         <div style="display: flex; gap: 8px;">
-          <button class="op-btn-primary op-btn-sm btn-connect-peer" data-device-id="${p.deviceId}">Connect</button>
-          <button class="op-btn-secondary op-btn-sm btn-send-peer" data-device-id="${p.deviceId}">Send</button>
+          <button class="op-btn-primary op-btn-sm btn-connect-peer" data-device-id="${escapeHtml(p.deviceId)}">Connect</button>
+          <button class="op-btn-secondary op-btn-sm btn-send-peer" data-device-id="${escapeHtml(p.deviceId)}">Send</button>
         </div>
       </div>
     `).join('');
@@ -910,11 +1054,11 @@
   if (btnScan) {
     btnScan.addEventListener('click', async () => {
       btnScan.disabled = true;
-      btnScan.innerHTML = '<span>Scanning...</span>';
+      btnScan.innerHTML = '<span>Scanning…</span>';
       await fetch('/api/scan', { method: 'POST' });
       setTimeout(() => {
         btnScan.disabled = false;
-        btnScan.innerHTML = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="2"/><path d="M12 12l6.4-6.4"/></svg><span>Scan Network</span>`;
+        btnScan.innerHTML = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="2"/><path d="M12 12l6.4-6.4"/></svg><span>Scan</span>`;
         loadPeers();
       }, 2000);
     });
@@ -959,20 +1103,20 @@
       if (!res.ok) return;
       const history = await res.json();
       const countEl = document.getElementById('clipboard-history-count');
-      if (countEl) countEl.textContent = `${history.length} items`;
+      if (countEl) countEl.textContent = history.length === 1 ? '1 item' : `${history.length} items`;
 
       const listEl = document.getElementById('drawer-clip-list');
       if (!listEl) return;
 
       if (!history || history.length === 0) {
-        listEl.innerHTML = '<p class="op-empty-text">No clipboard entries captured yet. Copy text on either device to start syncing.</p>';
+        listEl.innerHTML = '<p class="op-empty-text">Nothing yet. Copy text on either device and it shows up here.</p>';
         return;
       }
 
       listEl.innerHTML = history.map((item) => `
         <div class="op-clip-item">
           <span class="op-clip-text">${escapeHtml(item.text)}</span>
-          <button class="op-clip-copy-btn" data-clip="${escapeHtml(item.text)}">Copy to PC</button>
+          <button class="op-clip-copy-btn" data-clip="${escapeHtml(item.text)}">Copy</button>
         </div>
       `).join('');
 
@@ -980,12 +1124,14 @@
         btn.addEventListener('click', () => {
           navigator.clipboard.writeText(btn.dataset.clip).then(() => {
             const orig = btn.textContent;
-            btn.textContent = 'Copied!';
+            btn.textContent = 'Copied';
             setTimeout(() => { btn.textContent = orig; }, 1500);
           });
         });
       });
-    } catch (_) {}
+    } catch (err) {
+      console.warn('Failed to load clipboard history:', err);
+    }
   }
 
   const btnSendClipboard = document.getElementById('btn-send-clipboard');
@@ -1003,10 +1149,10 @@
           body: JSON.stringify({ text, senderId: 'pc-localshare' })
         });
         clipSendInput.value = '';
-        btnSendClipboard.textContent = 'Sent!';
-        setTimeout(() => { btnSendClipboard.textContent = 'Push to Phone'; }, 1500);
+        btnSendClipboard.textContent = 'Sent';
+        setTimeout(() => { btnSendClipboard.textContent = 'Send to phone'; }, 1500);
       } catch (err) {
-        alert(`Failed to push clipboard: ${err.message}`);
+        showToast(`Failed to push clipboard: ${err.message}`, 'error');
       }
     });
   }
@@ -1017,23 +1163,38 @@
 
   async function sendFilesDirectlyToPeer(peer, files) {
     if (!peer || !files || files.length === 0) return;
+    const getPath = (f) => {
+      if (f.path) return f.path;
+      if (window.electronAPI && typeof window.electronAPI.getPathForFile === 'function') {
+        return window.electronAPI.getPathForFile(f) || '';
+      }
+      return '';
+    };
     const filePayloads = Array.from(files).map((f) => ({
-      path: f.path || f.name,
+      path: getPath(f),
       name: f.name,
       size: f.size
     }));
+    if (filePayloads.some((f) => !f.path)) {
+      showToast('Some files could not be read from disk. Try adding them again.', 'error');
+      return;
+    }
 
     try {
-      const res = await fetch('/api/transfer/send', {
+      const res = await fetch('/api/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ peer, files: filePayloads })
       });
       if (res.ok) {
         switchView('transfers');
+      } else {
+        const data = await res.json().catch(() => ({}));
+        showToast(`Couldn't start the transfer: ${data.error || `HTTP ${res.status}`}`, 'error');
       }
     } catch (err) {
       console.error('Send files failed:', err);
+      showToast(`Couldn't start the transfer: ${err.message}`, 'error');
     }
   }
 
@@ -1048,10 +1209,10 @@
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Pull failed');
-      alert(`Saved "${name}" to Downloads/LocalShare`);
+      showToast(`Saved "${name}" to Downloads/LocalShare`, 'success');
       loadTransfers();
     } catch (err) {
-      alert(`Download failed: ${err.message}`);
+      showToast(`Download failed: ${err.message}`, 'error');
     }
   }
 
@@ -1070,7 +1231,7 @@
       }
     } catch (err) {
       console.error('Remote action failed:', err);
-      alert(`Operation failed: ${err.message}`);
+      showToast(`Operation failed: ${err.message}`, 'error');
     }
   }
 
@@ -1087,32 +1248,56 @@
         list.innerHTML = `
           <div class="op-empty-card">
             ${icon('transfers', 36, 1.7)}
-            <h3>No Active Transfers</h3>
-            <p>When you send or receive files, real-time speed and progress bars will stream here.</p>
+            <h3>No transfers yet</h3>
+            <p>Files you send or receive show up here with live progress.</p>
           </div>
         `;
         return;
       }
 
-      list.innerHTML = transfers.map((t) => `
-        <div class="op-card-box" style="margin-bottom: 12px;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-            <div>
-              <strong style="font-size: 14px;">${escapeHtml(t.files ? t.files.join(', ') : 'File')}</strong>
-              <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 2px;">Peer: ${escapeHtml(t.peer)} • Status: <strong style="color: ${t.status === 'completed' ? 'var(--success)' : t.status === 'failed' ? 'var(--danger)' : 'var(--primary)'}">${escapeHtml(t.status)}</strong></div>
+      const rows = transfers.map((t) => {
+        const status = String(t.status || '');
+        const isDone = status === 'completed';
+        const isFailed = status === 'failed' || status === 'rejected' || status === 'cancelled';
+        const isActive = !isDone && !isFailed;
+        const isReceive = t.direction === 'receive' || String(t.id || '').startsWith('pull-');
+        const pct = Math.max(0, Math.min(100, Math.round(Number(t.progress) || 0)));
+        const names = Array.isArray(t.files) && t.files.length > 0 ? t.files : ['File'];
+        const title = names.length > 1 ? `${names[0]} and ${names.length - 1} more` : names[0];
+        let label;
+        if (isDone) label = isReceive ? 'Received' : 'Sent';
+        else if (isFailed) label = status === 'failed' ? 'Failed' : status.charAt(0).toUpperCase() + status.slice(1);
+        else if (status === 'connecting' || status === 'queued' || status === 'pending') label = 'Waiting';
+        else label = `${pct}%`;
+        const stateClass = isDone ? 'is-done' : isFailed ? 'is-failed' : 'is-active';
+        const speed = isActive && Number(t.speed) > 0 ? `<span class="op-meta-sep">·</span><span>${formatBytes(Number(t.speed))}/s</span>` : '';
+        const sizes = isDone
+          ? formatBytes(Number(t.totalBytes) || 0)
+          : `${formatBytes(Number(t.bytesTransferred) || 0)} of ${formatBytes(Number(t.totalBytes) || 0)}`;
+        return `
+          <div class="op-transfer-row ${stateClass}">
+            <div class="op-transfer-icon">${icon(isReceive ? 'download' : 'upload', 16, 2)}</div>
+            <div class="op-transfer-main">
+              <div class="op-transfer-top">
+                <span class="op-transfer-name" title="${escapeHtml(names.join(', '))}">${escapeHtml(title)}</span>
+                <span class="op-status-chip ${stateClass}">${escapeHtml(label)}</span>
+              </div>
+              ${isDone ? '' : `<div class="op-progress"><div class="op-progress-fill" style="width: ${pct}%;"></div></div>`}
+              <div class="op-transfer-meta">
+                <span>${isReceive ? 'From' : 'To'} ${escapeHtml(t.peer || 'device')}</span>
+                <span class="op-meta-sep">·</span>
+                <span>${sizes}</span>
+                ${speed}
+                <span class="op-meta-end">${escapeHtml(formatRelativeTime(t.startTime))}</span>
+              </div>
             </div>
-            <span class="op-pill-tag">${t.progress}%</span>
           </div>
-          <div style="height: 6px; background: var(--border-subtle); border-radius: 3px; overflow: hidden; margin-bottom: 8px;">
-            <div style="height: 100%; width: ${t.progress}%; background: ${t.status === 'completed' ? 'var(--success)' : t.status === 'failed' ? 'var(--danger)' : 'var(--primary)'}; border-radius: 3px;"></div>
-          </div>
-          <div style="display: flex; justify-content: space-between; font-size: 11.5px; color: var(--text-muted);">
-            <span>${formatBytes(t.bytesTransferred)} of ${formatBytes(t.totalBytes)}</span>
-            <span>${new Date(t.startTime).toLocaleTimeString()}</span>
-          </div>
-        </div>
-      `).join('');
-    } catch (_) {}
+        `;
+      }).join('');
+      list.innerHTML = `<div class="op-transfer-list">${rows}</div>`;
+    } catch (err) {
+      console.warn('Failed to load transfers:', err);
+    }
   }
 
   async function loadReceivedFiles() {
@@ -1126,27 +1311,23 @@
         grid.innerHTML = `
           <div class="op-empty-card">
             ${icon('folder', 36, 1.7)}
-            <h3>No Received Files Yet</h3>
-            <p>Files received from your phone will automatically appear here.</p>
+            <h3>Nothing received yet</h3>
+            <p>Files your devices send to this PC are saved here.</p>
           </div>
         `;
         return;
       }
 
-      grid.innerHTML = files.map((f) => `
-        <div class="op-card-box" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
-          <div style="display: flex; align-items: center; gap: 12px;">
-            ${icon('file', 22, 1.8)}
-            <div>
-              <h4 style="font-size: 13.5px; font-weight: 600;">${escapeHtml(f.name)}</h4>
-              <p style="font-size: 11.5px; color: var(--text-muted); margin-top: 2px;">
-                ${formatBytes(f.size)} • ${new Date(f.receivedAt).toLocaleTimeString()}
-              </p>
-            </div>
+      grid.innerHTML = `<div class="op-received-list">${files.map((f) => `
+        <div class="op-received-row">
+          <div class="op-file-tile">${icon(fileKindIcon(f.name), 16, 1.9)}</div>
+          <div class="op-received-info">
+            <div class="op-received-name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</div>
+            <div class="op-received-meta">${formatBytes(f.size)} · ${escapeHtml(formatRelativeTime(f.receivedAt))}</div>
           </div>
-          <button class="op-btn-secondary op-btn-sm btn-open-rcvd-file" data-path="${escapeHtml(f.path)}">Open File</button>
+          <button class="op-btn-secondary op-btn-sm btn-open-rcvd-file" data-path="${escapeHtml(f.path)}">Show in folder</button>
         </div>
-      `).join('');
+      `).join('')}</div>`;
 
       grid.querySelectorAll('.btn-open-rcvd-file').forEach((btn) => {
         btn.addEventListener('click', async () => {
@@ -1162,7 +1343,9 @@
           }
         });
       });
-    } catch (_) {}
+    } catch (err) {
+      console.warn('Failed to load received files:', err);
+    }
   }
 
   const btnOpenReceivedFolder = document.getElementById('btn-open-received-folder');
@@ -1202,7 +1385,7 @@
       const x = Math.cos(angle) * radius;
       const y = Math.sin(angle) * radius;
       return `
-        <div class="radar-blip" data-device-id="${p.deviceId}" style="position: absolute; transform: translate(${x}px, ${y}px); display: flex; flex-direction: column; align-items: center; cursor: pointer;" title="${escapeHtml(p.displayName)}">
+        <div class="radar-blip" data-device-id="${escapeHtml(p.deviceId)}" style="position: absolute; transform: translate(${x}px, ${y}px); display: flex; flex-direction: column; align-items: center; cursor: pointer;" title="${escapeHtml(p.displayName)}">
           <div class="radar-blip-node">${getPlatformIcon(p.platform)}</div>
           <span style="font-size: 11px; font-weight: 600; color: var(--text-main); background: var(--bg-card); padding: 1px 6px; border-radius: 4px; margin-top: 4px;">
             ${escapeHtml(p.displayName)}
@@ -1234,7 +1417,7 @@
         <div style="display: flex; justify-content: space-between; align-items: center;">
           <div>
             <strong style="font-size: 14px;">${getPlatformIcon(peer.platform)} ${escapeHtml(peer.displayName)}</strong>
-            <p style="font-size: 11.5px; color: var(--text-muted);">${escapeHtml(peer.address)}:${peer.port || 53318}</p>
+            <p style="font-size: 11.5px; color: var(--text-muted);">${escapeHtml(peer.address)}:${escapeHtml(String(peer.port || 53318))}</p>
           </div>
           <button class="op-btn-secondary op-btn-sm" id="btn-change-peer">Change</button>
         </div>
@@ -1249,11 +1432,11 @@
     const list = document.getElementById('recipient-chips');
     if (!list) return;
     if (peers.length === 0) {
-      list.innerHTML = '<p style="font-size: 12px; color: var(--text-muted);">No devices found.</p>';
+      list.innerHTML = '<p style="font-size: 12.5px; color: var(--text-muted);">No devices found yet. Open LocalShare on your phone.</p>';
       return;
     }
     list.innerHTML = peers.map((p) => `
-      <button class="op-btn-secondary op-btn-sm recipient-chip" data-device-id="${p.deviceId}">
+      <button class="op-btn-secondary op-btn-sm recipient-chip" data-device-id="${escapeHtml(p.deviceId)}">
         ${getPlatformIcon(p.platform)} <span>${escapeHtml(p.displayName)}</span>
       </button>
     `).join('');
@@ -1316,18 +1499,17 @@
 
     if (!listEl) return;
     if (stagedFiles.length === 0) {
-      listEl.innerHTML = '<li class="empty-list-notice">No files staged yet.</li>';
+      listEl.innerHTML = '<li class="empty-list-notice">No files added yet.</li>';
       updateSendButtonState();
       return;
     }
 
     listEl.innerHTML = stagedFiles.map((f, idx) => `
-      <li style="display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border-subtle); font-size: 12.5px;">
-        <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70%;">${escapeHtml(f.name)}</span>
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <span style="color: var(--text-muted); font-size: 11px;">${formatBytes(f.size)}</span>
-          <button class="btn-remove-staged" data-idx="${idx}" style="color: var(--danger); font-size: 14px;">&times;</button>
-        </div>
+      <li class="staged-item">
+        <span class="op-file-tile">${icon(fileKindIcon(f.name), 15, 1.9)}</span>
+        <span class="staged-name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</span>
+        <span class="staged-size">${formatBytes(f.size)}</span>
+        <button class="btn-remove-staged" data-idx="${idx}" title="Remove" aria-label="Remove ${escapeHtml(f.name)}">&times;</button>
       </li>
     `).join('');
 
@@ -1346,11 +1528,95 @@
     btnSendFiles.addEventListener('click', async () => {
       if (!selectedPeer || stagedFiles.length === 0) return;
       btnSendFiles.disabled = true;
-      btnSendFiles.textContent = 'Sending...';
+      btnSendFiles.textContent = 'Sending…';
       await sendFilesDirectlyToPeer(selectedPeer, stagedFiles);
       stagedFiles = [];
       renderStagedFiles();
-      btnSendFiles.textContent = 'Send Files';
+      btnSendFiles.textContent = 'Send';
+    });
+  }
+
+  // ========================================================
+  // PAIRED DEVICES
+  // ========================================================
+
+  function platformLabel(platform) {
+    switch (platform) {
+      case 'android': return 'Android';
+      case 'ios': return 'iPhone';
+      case 'desktop': return 'Computer';
+      default: return 'Device';
+    }
+  }
+
+  async function loadPairedDevices() {
+    const list = document.getElementById('paired-devices-list');
+    const toggle = document.getElementById('chk-auto-accept-paired');
+    try {
+      const res = await fetch('/api/paired-devices');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (toggle) toggle.checked = data.autoAcceptPaired !== false;
+      if (!list) return;
+      const devices = Array.isArray(data.devices) ? data.devices : [];
+      if (devices.length === 0) {
+        list.innerHTML = '<p class="op-empty-text">No paired devices yet. Phones you connect show up here.</p>';
+        return;
+      }
+      list.innerHTML = devices.map((d) => `
+        <div class="op-paired-row">
+          <div class="op-file-tile">${getPlatformIcon(d.platform)}</div>
+          <div class="op-received-info">
+            <div class="op-received-name">${escapeHtml(d.displayName || 'Unnamed device')}</div>
+            <div class="op-received-meta">${escapeHtml(platformLabel(d.platform))} · last seen ${escapeHtml(formatRelativeTime(d.lastSeen))}</div>
+          </div>
+          <button class="op-btn-secondary op-btn-sm btn-forget-device" data-id="${escapeHtml(d.id)}" data-name="${escapeHtml(d.displayName || 'this device')}">Forget</button>
+        </div>
+      `).join('');
+      list.querySelectorAll('.btn-forget-device').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const ok = await showConfirmModal({
+            title: `Forget ${btn.dataset.name}?`,
+            message: 'It will need your approval, or the pairing code, to connect again.',
+            confirmLabel: 'Forget',
+            danger: true
+          });
+          if (!ok) return;
+          try {
+            const r = await fetch('/api/paired-devices/forget', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id: btn.dataset.id })
+            });
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            showToast(`Forgot ${btn.dataset.name}`, 'info');
+          } catch (err) {
+            showToast(`Couldn't forget the device: ${err.message}`, 'error');
+          }
+          loadPairedDevices();
+        });
+      });
+    } catch (err) {
+      console.warn('Failed to load paired devices:', err);
+      if (list) list.innerHTML = '<p class="op-empty-text">Couldn\'t load paired devices.</p>';
+    }
+  }
+
+  const autoAcceptToggle = document.getElementById('chk-auto-accept-paired');
+  if (autoAcceptToggle) {
+    autoAcceptToggle.addEventListener('change', async () => {
+      const wanted = autoAcceptToggle.checked;
+      try {
+        const r = await fetch('/api/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ autoAcceptPaired: wanted })
+        });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      } catch (err) {
+        autoAcceptToggle.checked = !wanted;
+        showToast(`Couldn't save the setting: ${err.message}`, 'error');
+      }
     });
   }
 
@@ -1402,11 +1668,374 @@
   }
 
   // ========================================================
+  // CONNECT WITHOUT WI-FI (BLE handshake + phone hotspot)
+  // ========================================================
+  // The renderer only moves Bluetooth bytes; the engine does the crypto and the Wi-Fi join
+  // (desktop/engine/offline-bootstrap.js, offline-session.js, wifi-join.js).
+  const OFFLINE_BLE = {
+    service: '6c4c6f63-616c-7368-6172-650000000010',
+    info: '6c4c6f63-616c-7368-6172-650000000011',
+    hello: '6c4c6f63-616c-7368-6172-650000000012',
+    status: '6c4c6f63-616c-7368-6172-650000000013',
+    creds: '6c4c6f63-616c-7368-6172-650000000014'
+  };
+  const OFFLINE_STATUS = { WAITING: 1, READY: 2, DECLINED: 3, ERROR: 4 };
+  const OFFLINE_STEPS = ['bluetooth', 'code', 'joining', 'connecting'];
+  const OFFLINE_PANES = ['intro', 'picker', 'code', 'progress', 'manual'];
+  const modalOffline = document.getElementById('modal-offline');
+  const offlineTitle = document.getElementById('offline-title');
+  const offlineError = document.getElementById('offline-error');
+  const btnOfflinePrimary = document.getElementById('btn-offline-primary');
+  const btnOfflineCancel = document.getElementById('btn-offline-cancel');
+  const btnOfflineManual = document.getElementById('btn-offline-manual');
+  const btnOfflineSettings = document.getElementById('btn-offline-settings');
+  let offlinePrimaryAction = null;
+  let offlineSettingsUri = '';
+  let offlineConnected = false;
+  /** @type {null | { cancelled: boolean, device: any }} */
+  let offlineBle = null;
+  let stopBluetoothDeviceListener = null;
+
+  function dataViewToBase64(view) {
+    const bytes = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary);
+  }
+
+  function base64ToBytes(b64) {
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  }
+
+  async function offlineApi(path, body) {
+    const res = await fetch(path, body === undefined
+      ? {}
+      : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    let data = {};
+    try {
+      data = await res.json();
+    } catch (err) {
+      console.warn(`Offline API ${path} returned no JSON:`, err);
+    }
+    if (!res.ok) {
+      const error = new Error(data.error || `HTTP ${res.status}`);
+      error.code = data.code;
+      error.settingsUri = data.settingsUri;
+      throw error;
+    }
+    return data;
+  }
+
+  function setOfflineButtons({ primary, onPrimary, cancel = 'Cancel', manual = false }) {
+    btnOfflinePrimary.style.display = primary ? '' : 'none';
+    if (primary) btnOfflinePrimary.textContent = primary;
+    offlinePrimaryAction = onPrimary || null;
+    btnOfflineCancel.textContent = cancel;
+    btnOfflineManual.style.display = manual ? '' : 'none';
+  }
+
+  function showOfflinePane(name) {
+    OFFLINE_PANES.forEach((pane) => {
+      const el = document.getElementById(`offline-${pane}`);
+      if (el) el.style.display = pane === name ? '' : 'none';
+    });
+  }
+
+  function setOfflineError(message, settingsUri) {
+    offlineError.textContent = message || '';
+    offlineError.style.display = message ? '' : 'none';
+    offlineSettingsUri = settingsUri || '';
+    btnOfflineSettings.style.display = offlineSettingsUri && window.electronAPI && window.electronAPI.openWindowsSettings ? '' : 'none';
+  }
+
+  function markOfflineStep(active) {
+    const activeIndex = OFFLINE_STEPS.indexOf(active);
+    document.querySelectorAll('.offline-steps li').forEach((li) => {
+      const index = OFFLINE_STEPS.indexOf(li.dataset.step);
+      li.classList.toggle('done', active === 'done' || index < activeIndex);
+      li.classList.toggle('active', index === activeIndex);
+    });
+  }
+
+  function stopDeviceListener() {
+    if (stopBluetoothDeviceListener) {
+      stopBluetoothDeviceListener();
+      stopBluetoothDeviceListener = null;
+    }
+  }
+
+  function renderBluetoothDevices(devices) {
+    const list = document.getElementById('offline-device-list');
+    if (!list) return;
+    list.innerHTML = '';
+    if (!devices.length) {
+      const p = document.createElement('p');
+      p.className = 'op-empty-text';
+      p.textContent = 'Searching over Bluetooth… Keep the phone on the "Connect a PC" screen.';
+      list.appendChild(p);
+      return;
+    }
+    devices.forEach((d) => {
+      const btn = document.createElement('button');
+      btn.className = 'offline-device';
+      btn.type = 'button';
+      const label = document.createElement('span');
+      label.textContent = d.name || 'LocalShare phone';
+      const hint = document.createElement('span');
+      hint.className = 'op-empty-text';
+      hint.textContent = 'Connect';
+      btn.appendChild(label);
+      btn.appendChild(hint);
+      btn.addEventListener('click', () => {
+        if (window.electronAPI && window.electronAPI.selectBluetoothDevice) {
+          window.electronAPI.selectBluetoothDevice(d.id);
+        }
+      });
+      list.appendChild(btn);
+    });
+  }
+
+  function resetOfflineModal() {
+    offlineConnected = false;
+    offlineTitle.textContent = 'Connect without Wi-Fi';
+    setOfflineError('');
+    showOfflinePane('intro');
+    markOfflineStep('none');
+    setOfflineButtons({ primary: 'Search via Bluetooth', onPrimary: startOfflineBluetooth, manual: true });
+  }
+
+  function openOfflineModal() {
+    if (!offlineConnected) resetOfflineModal();
+    modalOffline.classList.add('active');
+  }
+
+  /**
+   * Subscribe to STATUS, write HELLO, and wait for the phone user's answer.
+   * Notifications are used when available; STATUS is also polled because some
+   * adapters drop notifications.
+   */
+  async function waitForPhoneAnswer(statusChar, helloChar, helloBytes, session) {
+    let notificationsOn = false;
+    let resolveAnswer;
+    const answer = new Promise((resolve) => { resolveAnswer = resolve; });
+    const onChange = (event) => {
+      const value = event.target.value.getUint8(0);
+      if (value >= OFFLINE_STATUS.READY) resolveAnswer(value);
+    };
+    try {
+      await statusChar.startNotifications();
+      statusChar.addEventListener('characteristicvaluechanged', onChange);
+      notificationsOn = true;
+    } catch (err) {
+      console.warn('Bluetooth notifications unavailable; polling the phone instead:', err);
+    }
+    if (typeof helloChar.writeValueWithResponse === 'function') {
+      await helloChar.writeValueWithResponse(helloBytes);
+    } else {
+      await helloChar.writeValue(helloBytes);
+    }
+    const deadline = Date.now() + 130000;
+    try {
+      while (Date.now() < deadline) {
+        if (session.cancelled) throw new Error('Cancelled');
+        const winner = await Promise.race([answer, new Promise((resolve) => setTimeout(() => resolve(0), 2000))]);
+        if (winner) return winner;
+        try {
+          const value = (await statusChar.readValue()).getUint8(0);
+          if (value >= OFFLINE_STATUS.READY) return value;
+        } catch (err) {
+          console.warn('Reading the phone status failed:', err);
+        }
+      }
+      throw new Error('No answer from the phone. Tap Allow on the phone within 2 minutes.');
+    } finally {
+      if (notificationsOn) {
+        statusChar.removeEventListener('characteristicvaluechanged', onChange);
+        statusChar.stopNotifications().catch((err) => console.warn('stopNotifications failed:', err));
+      }
+    }
+  }
+
+  async function startOfflineBluetooth() {
+    setOfflineError('');
+    if (!navigator.bluetooth || typeof navigator.bluetooth.requestDevice !== 'function') {
+      setOfflineError('Bluetooth is not available on this PC. Use "Enter details" instead.');
+      return;
+    }
+    const session = { cancelled: false, device: null };
+    offlineBle = session;
+    showOfflinePane('picker');
+    renderBluetoothDevices([]);
+    setOfflineButtons({ primary: '', manual: false });
+    if (window.electronAPI && window.electronAPI.onBluetoothDevices) {
+      stopDeviceListener();
+      stopBluetoothDeviceListener = window.electronAPI.onBluetoothDevices(renderBluetoothDevices);
+    }
+    try {
+      const device = await navigator.bluetooth.requestDevice({ filters: [{ services: [OFFLINE_BLE.service] }] });
+      session.device = device;
+      stopDeviceListener();
+      showOfflinePane('progress');
+      markOfflineStep('bluetooth');
+      const server = await device.gatt.connect();
+      const service = await server.getPrimaryService(OFFLINE_BLE.service);
+      const infoChar = await service.getCharacteristic(OFFLINE_BLE.info);
+      const helloChar = await service.getCharacteristic(OFFLINE_BLE.hello);
+      const statusChar = await service.getCharacteristic(OFFLINE_BLE.status);
+      const credsChar = await service.getCharacteristic(OFFLINE_BLE.creds);
+
+      const begin = await offlineApi('/api/offline/begin', { info: dataViewToBase64(await infoChar.readValue()) });
+      offlineTitle.textContent = `Connecting to ${begin.phone && begin.phone.displayName ? begin.phone.displayName : 'your phone'}`;
+      document.getElementById('offline-code-digits').textContent = begin.code;
+      showOfflinePane('code');
+
+      const status = await waitForPhoneAnswer(statusChar, helloChar, base64ToBytes(begin.hello), session);
+      if (status === OFFLINE_STATUS.DECLINED) throw new Error('The phone declined this PC.');
+      if (status !== OFFLINE_STATUS.READY) throw new Error('The phone could not start its hotspot. Check the phone for details.');
+
+      const blob = dataViewToBase64(await credsChar.readValue());
+      showOfflinePane('progress');
+      markOfflineStep('joining');
+      await offlineApi('/api/offline/creds', { blob });
+      // The PC is moving to the phone's Wi-Fi; Bluetooth is no longer needed.
+      if (device.gatt.connected) device.gatt.disconnect();
+    } catch (err) {
+      stopDeviceListener();
+      if (session.device && session.device.gatt && session.device.gatt.connected) session.device.gatt.disconnect();
+      if (session.cancelled) return;
+      if (err && err.name === 'NotFoundError') {
+        // The chooser was closed without picking a phone.
+        resetOfflineModal();
+        return;
+      }
+      const message = err && err.message ? err.message : String(err);
+      offlineApi('/api/offline/cancel', { reason: message }).catch((cancelErr) => console.warn('Offline cancel failed:', cancelErr));
+      showOfflinePane('intro');
+      setOfflineError(message, err && err.settingsUri);
+      setOfflineButtons({ primary: 'Try again', onPrimary: startOfflineBluetooth, manual: true, cancel: 'Close' });
+    } finally {
+      if (offlineBle === session) offlineBle = null;
+    }
+  }
+
+  function showOfflineManual() {
+    setOfflineError('');
+    showOfflinePane('manual');
+    setOfflineButtons({ primary: 'Connect', onPrimary: submitOfflineManual, manual: false });
+  }
+
+  async function submitOfflineManual() {
+    const ssid = document.getElementById('offline-ssid').value.trim();
+    const password = document.getElementById('offline-password').value;
+    const address = document.getElementById('offline-address').value.trim();
+    const match = address.match(/^(\d{1,3}(?:\.\d{1,3}){3})(?::(\d{1,5}))?$/);
+    if (!ssid || !match) {
+      setOfflineError('Enter the Wi-Fi name and the phone address exactly as the phone shows them.');
+      return;
+    }
+    setOfflineError('');
+    showOfflinePane('progress');
+    markOfflineStep('joining');
+    setOfflineButtons({ primary: '', manual: false });
+    try {
+      await offlineApi('/api/offline/manual', { ssid, password, ip: match[1], port: Number(match[2] || 53318) });
+    } catch (err) {
+      showOfflinePane('manual');
+      setOfflineError(err.message, err.settingsUri);
+      setOfflineButtons({ primary: 'Connect', onPrimary: submitOfflineManual, manual: false });
+    }
+  }
+
+  async function cancelOffline() {
+    if (offlineBle) {
+      offlineBle.cancelled = true;
+      if (window.electronAPI && window.electronAPI.selectBluetoothDevice) window.electronAPI.selectBluetoothDevice('');
+      const device = offlineBle.device;
+      if (device && device.gatt && device.gatt.connected) device.gatt.disconnect();
+      offlineBle = null;
+    }
+    stopDeviceListener();
+    try {
+      if (offlineConnected) {
+        await offlineApi('/api/offline/end', {});
+        showToast('Disconnected. Your Wi-Fi is being restored.', 'info');
+      } else {
+        await offlineApi('/api/offline/cancel', {});
+      }
+    } catch (err) {
+      showToast(`Couldn't restore your Wi-Fi: ${err.message}`, 'error');
+    }
+    offlineConnected = false;
+    modalOffline.classList.remove('active');
+  }
+
+  /** Engine progress for the join (offline_state events). */
+  function handleOfflineState(state) {
+    if (!state || !state.step) return;
+    const open = modalOffline.classList.contains('active');
+    if (state.step === 'joining' || state.step === 'waiting') {
+      if (open) {
+        showOfflinePane('progress');
+        markOfflineStep('joining');
+      }
+    } else if (state.step === 'connecting') {
+      if (open) markOfflineStep('connecting');
+    } else if (state.step === 'connected') {
+      offlineConnected = true;
+      const name = state.phone && state.phone.displayName ? state.phone.displayName : 'your phone';
+      offlineTitle.textContent = `Connected to ${name}`;
+      showOfflinePane('progress');
+      markOfflineStep('done');
+      setOfflineError('');
+      setOfflineButtons({ primary: 'Done', onPrimary: () => modalOffline.classList.remove('active'), cancel: 'Disconnect' });
+      showToast(`Connected to ${name} without Wi-Fi`, 'success');
+      updateLiveStatus();
+      loadPeers();
+    } else if (state.step === 'failed') {
+      offlineConnected = false;
+      if (open && state.code !== 'ERR_OFFLINE_CANCELLED') {
+        showOfflinePane('intro');
+        setOfflineError(state.error || 'Connecting without Wi-Fi failed.', state.settingsUri);
+        setOfflineButtons({ primary: 'Try again', onPrimary: startOfflineBluetooth, manual: true, cancel: 'Close' });
+      } else if (!open && state.error) {
+        showToast(state.error, 'error');
+      }
+    } else if (state.step === 'idle') {
+      offlineConnected = false;
+    }
+  }
+
+  const btnOfflineConnect = document.getElementById('btn-offline-connect');
+  if (btnOfflineConnect && modalOffline) {
+    btnOfflineConnect.addEventListener('click', openOfflineModal);
+    btnOfflinePrimary.addEventListener('click', () => {
+      if (offlinePrimaryAction) offlinePrimaryAction();
+    });
+    btnOfflineCancel.addEventListener('click', cancelOffline);
+    btnOfflineManual.addEventListener('click', showOfflineManual);
+    btnOfflineSettings.addEventListener('click', () => {
+      if (offlineSettingsUri && window.electronAPI && window.electronAPI.openWindowsSettings) {
+        window.electronAPI.openWindowsSettings(offlineSettingsUri);
+      }
+    });
+  }
+
+  // ========================================================
   // SSE REAL-TIME SYSTEM EVENTS
   // ========================================================
 
   function initSSE() {
     const sse = new EventSource('/events');
+    sse.addEventListener('offline_state', (e) => {
+      try {
+        handleOfflineState(JSON.parse(e.data));
+      } catch (err) {
+        console.warn('Ignoring malformed offline_state event:', err);
+      }
+    });
     sse.addEventListener('peer_found', () => loadPeers());
     sse.addEventListener('scan_state', () => loadPeers());
     sse.addEventListener('transfer_update', () => loadTransfers());
@@ -1420,9 +2049,24 @@
     sse.addEventListener('incoming_request', (e) => {
       try {
         showIncomingRequest(JSON.parse(e.data));
-      } catch (_) {}
+      } catch (err) {
+        console.warn('Ignoring malformed incoming_request event:', err);
+      }
     });
     sse.addEventListener('incoming_request_closed', () => hideIncomingRequest());
+    sse.addEventListener('paired_devices_changed', () => {
+      if (currentView === 'settings') loadPairedDevices();
+    });
+    sse.addEventListener('transfer_auto_accepted', (e) => {
+      try {
+        const d = JSON.parse(e.data);
+        const count = Number(d.fileCount) || 0;
+        showToast(`Receiving ${count === 1 ? '1 file' : `${count} files`} from ${d.senderName || 'a paired device'}`, 'info');
+      } catch (err) {
+        console.warn('Ignoring malformed transfer_auto_accepted event:', err);
+      }
+      loadTransfers();
+    });
   }
 
   // Incoming Modal
@@ -1431,8 +2075,10 @@
 
   function showIncomingRequest(req) {
     activeRequestId = req.requestId;
-    document.getElementById('incoming-summary').textContent =
-      `${req.senderName || 'Nearby Device'} wants to send you ${req.fileCount || 0} file(s) (${formatBytes(req.totalBytes || 0)}).`;
+    const sender = req.senderName || 'Nearby Device';
+    document.getElementById('incoming-summary').textContent = req.kind === 'connect'
+      ? `${sender} wants to connect to this PC. Approving lets it browse and download your files and sync the clipboard.`
+      : `${sender} wants to send you ${req.fileCount || 0} file(s) (${formatBytes(req.totalBytes || 0)}).`;
 
     const list = document.getElementById('incoming-file-list');
     list.innerHTML = (req.files || [])
@@ -1462,6 +2108,100 @@
   const btnRejectInc = document.getElementById('btn-reject-incoming');
   if (btnAcceptInc) btnAcceptInc.addEventListener('click', () => respondToIncoming(true));
   if (btnRejectInc) btnRejectInc.addEventListener('click', () => respondToIncoming(false));
+
+  // ========================================================
+  // GLOBAL SEARCH & DEVICE SUBNAV TOGGLE
+  // ========================================================
+
+  const globalSearchInput = document.getElementById('op-global-search');
+  let searchDebounceTimer = null;
+
+  if (globalSearchInput) {
+    globalSearchInput.addEventListener('input', (e) => {
+      const q = e.target.value.trim();
+      clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = setTimeout(async () => {
+        if (!q) {
+          if (currentView === 'files') {
+            loadCategory(activeCategory);
+          } else if (currentView === 'transfers') {
+            loadTransfers();
+          } else if (currentView === 'received') {
+            loadReceivedFiles();
+          }
+          return;
+        }
+
+        const peer = connectedLivePeer || (peers.length > 0 ? peers[0] : null);
+        if (currentView === 'files' && peer) {
+          try {
+            const gallery = document.getElementById('op-date-gallery');
+            if (gallery) gallery.innerHTML = '<div class="op-empty-card"><div class="op-spinner"></div><p>Searching your phone…</p></div>';
+            const res = await fetch(`/api/remote-search?ip=${encodeURIComponent(peer.address)}&port=${peer.port || 53318}&q=${encodeURIComponent(q)}`);
+            const data = await res.json();
+            const entries = data.entries || [];
+            if (gallery) {
+              if (entries.length === 0) {
+                gallery.innerHTML = `<div class="op-empty-card"><p>No files match "${escapeHtml(q)}"</p><button class="op-btn-secondary op-btn-sm" style="margin-top:10px;" id="btn-clear-search">Clear Search</button></div>`;
+                const btnClear = document.getElementById('btn-clear-search');
+                if (btnClear) {
+                  btnClear.addEventListener('click', () => {
+                    globalSearchInput.value = '';
+                    loadCategory(activeCategory);
+                  });
+                }
+              } else {
+                renderDateGroupedGallery(entries, peer);
+              }
+            }
+          } catch (err) {
+            console.error('Remote search error:', err);
+          }
+        } else if (currentView === 'transfers') {
+          const list = document.getElementById('transfers-list');
+          if (list) {
+            const items = list.querySelectorAll('.op-transfer-card');
+            items.forEach((item) => {
+              const text = item.textContent.toLowerCase();
+              item.style.display = text.includes(q.toLowerCase()) ? 'flex' : 'none';
+            });
+          }
+        } else if (currentView === 'received') {
+          const grid = document.getElementById('received-files-grid');
+          if (grid) {
+            const items = grid.querySelectorAll('.op-received-card');
+            items.forEach((item) => {
+              const text = item.textContent.toLowerCase();
+              item.style.display = text.includes(q.toLowerCase()) ? 'flex' : 'none';
+            });
+          }
+        } else if (currentView === 'radar' || currentView === 'share') {
+          const chips = document.querySelectorAll('.recipient-chip, .radar-peer-card');
+          chips.forEach((c) => {
+            const text = c.textContent.toLowerCase();
+            c.style.display = text.includes(q.toLowerCase()) ? '' : 'none';
+          });
+        }
+      }, 300);
+    });
+  }
+
+  // Device Subnav Collapsible Toggle
+  const deviceToggle = document.getElementById('op-device-toggle');
+  const deviceSubnav = document.getElementById('op-device-subnav');
+  const deviceChevron = document.getElementById('op-device-chevron');
+
+  if (deviceToggle && deviceSubnav) {
+    deviceToggle.addEventListener('click', () => {
+      const isCollapsed = deviceSubnav.style.display === 'none';
+      deviceSubnav.style.display = isCollapsed ? 'flex' : 'none';
+      if (deviceChevron) {
+        deviceChevron.style.display = 'inline-block';
+        deviceChevron.style.transform = isCollapsed ? 'rotate(0deg)' : 'rotate(-90deg)';
+        deviceChevron.style.transition = 'transform 0.2s ease';
+      }
+    });
+  }
 
   // Initialize
   loadSelfInfo();

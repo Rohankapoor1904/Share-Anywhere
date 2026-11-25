@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>O+ Connect — LocalShare Ecosystem</title>
+  <title>Share Anywhere</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- App Container (O+ Connect 3-Pane Layout) -->
+  <!-- App Container (Share Anywhere 3-Pane Layout) -->
   <div class="op-app">
     <!-- Top Window Titlebar -->
     <header class="op-titlebar">
@@ -17,12 +17,12 @@
             <path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/>
           </svg>
         </span>
-        <span class="op-titlebar-text">O+ Connect</span>
+        <span class="op-titlebar-text">Share Anywhere</span>
       </div>
       <div class="op-titlebar-right">
-        <button class="op-titlebar-btn op-btn-min" id="op-btn-minimize" title="Minimize">&#9472;</button>
-        <button class="op-titlebar-btn op-btn-max" id="op-btn-maximize" title="Maximize">&#9633;</button>
-        <button class="op-titlebar-btn op-btn-close" id="op-btn-close" title="Close">&#10005;</button>
+        <button class="op-titlebar-btn op-btn-min" id="op-btn-minimize" title="Minimize" aria-label="Minimize"><svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5.5h10"/></svg></button>
+        <button class="op-titlebar-btn op-btn-max" id="op-btn-maximize" title="Maximize" aria-label="Maximize"><svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9" rx="0.5"/></svg></button>
+        <button class="op-titlebar-btn op-btn-close" id="op-btn-close" title="Close" aria-label="Close"><svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0.5 0.5l9 9M9.5 0.5l-9 9"/></svg></button>
       </div>
     </header>
 
@@ -48,8 +48,8 @@
             </svg>
           </div>
           <div class="op-profile-details">
-            <span class="op-profile-name" id="op-profile-username">kapoor192003</span>
-            <span class="op-profile-sub" id="self-name">Rohan (PC)</span>
+            <span class="op-profile-name" id="op-profile-username">This PC</span>
+            <span class="op-profile-sub" id="self-name">Local Device</span>
           </div>
         </div>
 
@@ -64,11 +64,11 @@
               <span>Devices</span>
             </div>
 
-            <!-- Connected Device Item -->
-            <div class="op-device-tree" id="op-device-tree-connected">
+            <!-- Connected Device Item (Hidden until live connection confirmed) -->
+            <div class="op-device-tree" id="op-device-tree-connected" style="display: none;">
               <div class="op-device-header" id="op-device-toggle">
                 <span class="op-dot-green"></span>
-                <span class="op-device-title-text" id="op-connected-device-name">realme GT 6T</span>
+                <span class="op-device-title-text" id="op-connected-device-name">Connected Device</span>
                 <span class="op-chevron" id="op-device-chevron">&#8964;</span>
               </div>
               <div class="op-device-subnav" id="op-device-subnav">
@@ -80,31 +80,23 @@
                   </span>
                   <span class="op-subnav-label">Files</span>
                 </button>
-                <button class="op-subnav-item" data-view="screencast" id="nav-item-screencast">
-                  <span class="op-subnav-icon">
-                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/>
-                    </svg>
-                  </span>
-                  <span class="op-subnav-label">Screencast</span>
-                </button>
                 <button class="op-subnav-item" data-view="clipboard" id="nav-item-clipboard">
                   <span class="op-subnav-icon">
                     <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
                     </svg>
                   </span>
-                  <span class="op-subnav-label">Live Clipboard</span>
-                  <span class="op-tag-active" id="op-clip-tag">ON</span>
+                  <span class="op-subnav-label">Clipboard</span>
+                  <span class="op-tag-active" id="op-clip-tag">On</span>
                 </button>
               </div>
             </div>
 
-            <!-- Unconnected Prompt Item (Hidden when connected) -->
-            <div class="op-unconnected-item" id="op-unconnected-prompt" style="display: none;">
+            <!-- Unconnected Prompt Item (Displayed until connected) -->
+            <div class="op-unconnected-item" id="op-unconnected-prompt" style="display: flex;">
               <button class="op-subnav-item" data-view="pair" id="nav-item-pair">
                 <span class="op-dot-idle"></span>
-                <span class="op-subnav-label">Connect Phone</span>
+                <span class="op-subnav-label">Connect a phone</span>
                 <span class="op-tag-pill">Pair</span>
               </button>
             </div>
@@ -116,7 +108,7 @@
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
               </svg>
-              <span>Toolbox</span>
+              <span>Tools</span>
             </div>
             <button class="op-subnav-item" data-view="transfers" id="nav-item-transfers">
               <span class="op-subnav-icon">
@@ -133,7 +125,7 @@
                   <circle cx="12" cy="12" r="2"/><path d="M12 12l6.4-6.4"/><path d="M12 6.5a5.5 5.5 0 0 1 5.5 5.5"/><path d="M12 2.8a9.2 9.2 0 0 1 9.2 9.2"/>
                 </svg>
               </span>
-              <span class="op-subnav-label">Radar</span>
+              <span class="op-subnav-label">Nearby</span>
             </button>
             <button class="op-subnav-item" data-view="received" id="nav-item-received">
               <span class="op-subnav-icon">
@@ -149,7 +141,7 @@
                   <path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/>
                 </svg>
               </span>
-              <span class="op-subnav-label">Share Hub</span>
+              <span class="op-subnav-label">Send files</span>
             </button>
           </div>
         </div>
@@ -284,7 +276,7 @@
 
         <!-- Bottom Status -->
         <div class="op-category-footer">
-          <span class="op-cat-footer-text">Recently ...</span>
+          <span class="op-cat-footer-text">On this phone</span>
           <span class="op-cat-footer-count" id="count-total-storage">--</span>
         </div>
       </aside>
@@ -292,7 +284,7 @@
       <!-- ================= PANE 3: MAIN CONTENT WORKSPACE ================= -->
       <main class="op-main-canvas" id="op-main-canvas">
 
-        <!-- ================= VIEW A: FILES (O+ CONNECT GALLERY) ================= -->
+        <!-- ================= VIEW A: FILES (CONNECT GALLERY) ================= -->
         <section class="op-view-pane active" id="view-files">
           <!-- Top Header Row -->
           <div class="op-canvas-header">
@@ -311,7 +303,7 @@
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                   <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
                 </svg>
-                <span>Import files</span>
+                <span>Upload</span>
               </button>
               <input type="file" id="op-import-file-input" multiple style="display: none;" />
             </div>
@@ -376,12 +368,11 @@
         <!-- ================= VIEW B: CONNECT / PAIR (WHEN UNCONNECTED) ================= -->
         <section class="op-view-pane" id="view-pair">
           <div class="op-pair-canvas-center">
-            <!-- O+ Connect Ultra-Clean Pairing Card -->
+            <!-- Connect Ultra-Clean Pairing Card -->
             <div class="op-pair-card">
               <div class="op-pair-header">
-                <span class="op-pill-tag">FAST PAIR</span>
-                <h3 class="op-pair-title">Quick Link with Phone</h3>
-                <p class="op-pair-subtitle">Scan with LocalShare camera on your phone to instantly link without typing.</p>
+                <h3 class="op-pair-title">Connect your phone</h3>
+                <p class="op-pair-subtitle">Open LocalShare on your phone and scan this code. Both devices need to be on the same Wi-Fi.</p>
               </div>
 
               <!-- High-Contrast Clean SVG QR Box -->
@@ -393,26 +384,30 @@
 
               <!-- 6-Digit PIN Code Box -->
               <div class="op-pin-section">
-                <span class="op-pin-label">OR ENTER 6-DIGIT CODE</span>
+                <span class="op-pin-label">Or type this code on your phone</span>
                 <div class="op-pin-row">
                   <span id="pairing-code-display" class="op-pin-digits">------</span>
                   <button id="btn-copy-code" class="op-btn-copy" type="button">Copy</button>
                 </div>
-                <p class="op-pin-hint">Open LocalShare on Phone &gt; Tap &quot;Scan PC QR&quot;</p>
+                <p class="op-pin-hint">On your phone: LocalShare &rarr; Scan PC QR</p>
               </div>
             </div>
 
             <!-- Nearby Discovered Devices on LAN -->
             <div class="op-discovered-section">
               <div class="op-discovered-header">
-                <h4 class="op-discovered-title">Discovered Devices on LAN</h4>
+                <h4 class="op-discovered-title">Nearby devices</h4>
                 <div class="op-discovered-actions">
                   <button id="btn-scan" class="op-btn-secondary op-btn-sm">
                     <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="2"/><path d="M12 12l6.4-6.4"/></svg>
-                    <span>Scan Network</span>
+                    <span>Scan</span>
                   </button>
                   <button id="btn-manual" class="op-btn-secondary op-btn-sm">
-                    <span>Manual IP</span>
+                    <span>Add by IP</span>
+                  </button>
+                  <button id="btn-offline-connect" class="op-btn-secondary op-btn-sm" title="Connect to a phone that is not on your Wi-Fi">
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 7l10 10-5 5V2l5 5L7 17"/></svg>
+                    <span>Connect without Wi-Fi</span>
                   </button>
                 </div>
               </div>
@@ -430,52 +425,31 @@
           <div class="op-clipboard-canvas">
             <div class="op-canvas-header">
               <div class="op-canvas-title-group">
-                <h2 class="op-canvas-title">Live Synced Clipboard</h2>
-                <span class="op-badge-live">Real-Time Sync Active</span>
+                <h2 class="op-canvas-title">Clipboard</h2>
+                <span class="op-badge-live">Syncing</span>
               </div>
               <button id="btn-hero-clip" class="op-btn-secondary">
-                <span id="btn-hero-clip-text">Sync: Enabled ✓</span>
+                <span id="btn-hero-clip-text">Pause sync</span>
               </button>
             </div>
 
             <!-- Quick Send Text to Phone Box -->
             <div class="op-clip-input-card">
-              <textarea id="clip-send-input" class="op-clip-textarea" placeholder="Type or paste text here to send instantly to phone clipboard..."></textarea>
+              <textarea id="clip-send-input" class="op-clip-textarea" placeholder="Type or paste text to send to your phone…"></textarea>
               <div class="op-clip-input-footer">
-                <span class="op-clip-hint">Text typed here copies automatically to phone clipboard</span>
-                <button id="btn-send-clipboard" class="op-btn-primary op-btn-sm">Push to Phone</button>
+                <span class="op-clip-hint">Lands on your phone's clipboard</span>
+                <button id="btn-send-clipboard" class="op-btn-primary op-btn-sm">Send to phone</button>
               </div>
             </div>
 
             <!-- Clipboard History Cards -->
             <div class="op-clip-history-header">
-              <h4>Recent Clipboard History</h4>
+              <h4>History</h4>
               <span class="op-clip-count" id="clipboard-history-count">0 items</span>
             </div>
             <div id="drawer-clip-list" class="op-clip-list">
               <!-- Dynamically populated clipboard entries -->
-              <p class="op-empty-text">No clipboard entries captured yet. Copy text on either device to start syncing.</p>
-            </div>
-          </div>
-        </section>
-
-        <!-- ================= VIEW D: SCREENCAST ================= -->
-        <section class="op-view-pane" id="view-screencast">
-          <div class="op-screencast-canvas">
-            <div class="op-canvas-header">
-              <h2 class="op-canvas-title">Screencast & Remote Control</h2>
-            </div>
-            <div class="op-screencast-placeholder">
-              <div class="op-cast-phone-frame">
-                <div class="op-cast-notch"></div>
-                <div class="op-cast-screen-inner">
-                  <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5">
-                    <rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/>
-                  </svg>
-                  <p class="op-cast-text">Device Mirroring Ready</p>
-                  <span class="op-cast-sub">Launch screencast on your phone to mirror phone display here</span>
-                </div>
-              </div>
+              <p class="op-empty-text">Nothing yet. Copy text on either device and it shows up here.</p>
             </div>
           </div>
         </section>
@@ -484,8 +458,8 @@
         <section class="op-view-pane" id="view-transfers">
           <div class="op-canvas-header">
             <div>
-              <h2 class="op-canvas-title">Active & Recent Transfers</h2>
-              <p class="op-canvas-sub">High-speed streaming TLS chunk transfers with hardware-accelerated SHA-256 verification.</p>
+              <h2 class="op-canvas-title">Transfers</h2>
+              <p class="op-canvas-sub">Files moving between this PC and your devices.</p>
             </div>
           </div>
           <div id="transfers-list" class="op-transfers-container">
@@ -493,8 +467,8 @@
               <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.8">
                 <path d="M3 8.5l4-4 4 4"/><path d="M7 4.5v9"/><path d="M21 15.5l-4 4-4-4"/><path d="M17 19.5v-9"/>
               </svg>
-              <h3>No Active Transfers</h3>
-              <p>When you send or receive files, real-time speed and progress bars will stream here.</p>
+              <h3>No transfers yet</h3>
+              <p>Files you send or receive show up here with live progress.</p>
             </div>
           </div>
         </section>
@@ -503,8 +477,8 @@
         <section class="op-view-pane" id="view-radar">
           <div class="op-canvas-header">
             <div>
-              <h2 class="op-canvas-title">Radar Discovery</h2>
-              <p class="op-canvas-sub">Live 360-degree radar sweep visualizing peers on your local Wi-Fi subnet.</p>
+              <h2 class="op-canvas-title">Nearby</h2>
+              <p class="op-canvas-sub">Devices on this network running LocalShare or LocalSend. Click one to connect.</p>
             </div>
           </div>
           <div class="radar-container">
@@ -520,26 +494,26 @@
               <div class="radar-sweep-arm"></div>
               <div class="radar-beacon"></div>
               <div id="radar-blips-container"></div>
-              <span class="radar-range-label radar-range-near">NEAR</span>
-              <span class="radar-range-label radar-range-lan">LAN</span>
-              <span class="radar-range-label radar-range-subnet">SUBNET</span>
+              <span class="radar-range-label radar-range-near">Near</span>
+              <span class="radar-range-label radar-range-lan">Wi-Fi</span>
+              <span class="radar-range-label radar-range-subnet">Network</span>
             </div>
           </div>
           <div class="telemetry-bar">
             <div class="telemetry-item">
-              <span class="telemetry-label">Sweep</span>
-              <strong class="telemetry-value" id="telem-sweep">ACTIVE</strong>
+              <span class="telemetry-label">Discovery</span>
+              <strong class="telemetry-value" id="telem-sweep">On</strong>
             </div>
             <div class="telemetry-item">
-              <span class="telemetry-label">Peers</span>
+              <span class="telemetry-label">Devices</span>
               <strong class="telemetry-value" id="telem-peers">0</strong>
             </div>
             <div class="telemetry-item">
-              <span class="telemetry-label">Subnet</span>
+              <span class="telemetry-label">Network</span>
               <strong class="telemetry-value" id="telem-subnet">--</strong>
             </div>
             <div class="telemetry-item">
-              <span class="telemetry-label">TLS Port</span>
+              <span class="telemetry-label">Port</span>
               <strong class="telemetry-value">53318</strong>
             </div>
           </div>
@@ -549,12 +523,12 @@
         <section class="op-view-pane" id="view-received">
           <div class="op-canvas-header">
             <div>
-              <h2 class="op-canvas-title">Received Files</h2>
-              <p class="op-canvas-sub">Files received and verified on your local PC storage.</p>
+              <h2 class="op-canvas-title">Received</h2>
+              <p class="op-canvas-sub">Files your devices sent to this PC, checked and saved.</p>
             </div>
             <button id="btn-open-received-folder" class="op-btn-secondary">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-              <span>Open in File Explorer</span>
+              <span>Open folder</span>
             </button>
           </div>
           <div id="received-list" class="op-received-grid">
@@ -566,16 +540,16 @@
         <section class="op-view-pane" id="view-share">
           <div class="op-canvas-header">
             <div>
-              <h2 class="op-canvas-title">Share Hub</h2>
-              <p class="op-canvas-sub">Drag and drop files to stage them, choose a recipient device, and transfer directly.</p>
+              <h2 class="op-canvas-title">Send files</h2>
+              <p class="op-canvas-sub">Pick a device, add files, and send them straight over your network.</p>
             </div>
           </div>
           <div class="share-hub-grid">
             <div class="share-column">
               <div class="op-card-box">
-                <h3 style="font-size: 14px; margin-bottom: 8px;">1. Recipient Device</h3>
+                <h3 style="font-size: 14px; margin-bottom: 10px;">Send to</h3>
                 <div id="selected-peer-box" class="selected-peer-empty">
-                  <p>No recipient selected. Click on a device below:</p>
+                  <p>Choose a device:</p>
                   <div id="recipient-chips" class="recipient-chips-list"></div>
                 </div>
               </div>
@@ -584,25 +558,25 @@
                   <span class="dropzone-icon">
                     <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
                   </span>
-                  <h4>Drag &amp; Drop Files Here</h4>
-                  <p>or click to browse your computer</p>
+                  <h4>Drop files here</h4>
+                  <p>or browse this PC</p>
                   <input type="file" id="file-input" multiple style="display: none;">
-                  <button id="btn-browse-files" class="op-btn-primary op-btn-sm">Browse Files</button>
+                  <button id="btn-browse-files" class="op-btn-secondary op-btn-sm">Browse</button>
                 </div>
               </div>
             </div>
             <div class="share-column">
               <div class="op-card-box staged-card">
                 <div class="staged-header">
-                  <h3 style="font-size: 14px;">Staged Files (<span id="staged-count">0</span>)</h3>
+                  <h3 style="font-size: 14px;">Files <span id="staged-count" style="color: var(--text-muted); font-weight: 500;">0</span></h3>
                   <span id="staged-size" class="op-pill-tag">0 B</span>
                 </div>
                 <ul id="staged-list" class="staged-file-list">
-                  <li class="empty-list-notice">No files staged yet.</li>
+                  <li class="empty-list-notice">No files added yet.</li>
                 </ul>
                 <button id="btn-send-files" class="op-btn-primary op-btn-block" disabled>
                   <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
-                  <span>Send Files</span>
+                  <span>Send</span>
                 </button>
               </div>
             </div>
@@ -613,82 +587,94 @@
         <section class="op-view-pane" id="view-settings">
           <div class="op-canvas-header">
             <div>
-              <h2 class="op-canvas-title">Settings &amp; Customization</h2>
-              <p class="op-canvas-sub">Choose theme palettes and view desktop network configuration.</p>
+              <h2 class="op-canvas-title">Settings</h2>
+              <p class="op-canvas-sub">Appearance and network details for this PC.</p>
             </div>
           </div>
 
           <div class="op-card-box" style="margin-bottom: 20px;">
-            <h3 style="font-size: 15px; margin-bottom: 4px;">Appearance &amp; Theme</h3>
-            <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 16px;">Select your tailored desktop palette. Changes apply immediately.</p>
+            <h3 style="font-size: 14px; margin-bottom: 2px;">Appearance</h3>
+            <p style="font-size: 12.5px; color: var(--text-muted); margin-bottom: 14px;">Changes apply right away.</p>
             <div class="theme-grid">
               <div class="theme-card active" data-theme-id="daylight">
                 <div class="theme-card-header">
-                  <strong>O+ Light (Daylight)</strong>
-                  <span class="op-pill-tag">Recommended</span>
+                  <strong>Light</strong>
+                  <span class="op-pill-tag">Default</span>
                 </div>
-                <p>Crisp, elegant O+ Connect aesthetics with electric blue accents</p>
+                <p>Neutral and bright.</p>
                 <div class="swatches">
-                  <span style="background: #ffffff; border: 1px solid #e5e7eb;"></span>
-                  <span style="background: #f3f4f6;"></span>
-                  <span style="background: #1677ff;"></span>
-                  <span style="background: #10b981;"></span>
+                  <span style="background: #ffffff;"></span>
+                  <span style="background: #f7f7f8;"></span>
+                  <span style="background: #18181b;"></span>
+                  <span style="background: #3e63dd;"></span>
                 </div>
               </div>
 
               <div class="theme-card" data-theme-id="midnight">
                 <div class="theme-card-header">
-                  <strong>Midnight Slate</strong>
-                  <span class="op-pill-tag">Dark</span>
+                  <strong>Dark</strong>
                 </div>
-                <p>Deep navy-slate with electric cyan accents</p>
+                <p>Neutral dark gray.</p>
                 <div class="swatches">
-                  <span style="background: #0a0f1d;"></span>
-                  <span style="background: #1e293b;"></span>
-                  <span style="background: #38bdf8;"></span>
-                  <span style="background: #818cf8;"></span>
+                  <span style="background: #0e0e10;"></span>
+                  <span style="background: #18181c;"></span>
+                  <span style="background: #ececef;"></span>
+                  <span style="background: #7b93f5;"></span>
                 </div>
               </div>
 
               <div class="theme-card" data-theme-id="obsidian">
                 <div class="theme-card-header">
-                  <strong>OLED Obsidian</strong>
-                  <span class="op-pill-tag">Pure Black</span>
+                  <strong>Black</strong>
                 </div>
-                <p>100% true black for AMOLED battery conservation</p>
+                <p>True black for OLED screens.</p>
                 <div class="swatches">
                   <span style="background: #000000;"></span>
-                  <span style="background: #141414;"></span>
-                  <span style="background: #00f2fe;"></span>
-                  <span style="background: #00e676;"></span>
+                  <span style="background: #0e0e10;"></span>
+                  <span style="background: #f2f2f4;"></span>
+                  <span style="background: #7b93f5;"></span>
                 </div>
               </div>
 
               <div class="theme-card" data-theme-id="cyberpunk">
                 <div class="theme-card-header">
-                  <strong>Cyber Neon</strong>
-                  <span class="op-pill-tag">High Voltage</span>
+                  <strong>Dim</strong>
                 </div>
-                <p>Ultraviolet, hot magenta and neon purple</p>
+                <p>Soft slate for low light.</p>
                 <div class="swatches">
-                  <span style="background: #0c0717;"></span>
-                  <span style="background: #23133c;"></span>
-                  <span style="background: #f43f5e;"></span>
-                  <span style="background: #c084fc;"></span>
+                  <span style="background: #1b1f26;"></span>
+                  <span style="background: #272d36;"></span>
+                  <span style="background: #cdd9e5;"></span>
+                  <span style="background: #6cb6ff;"></span>
                 </div>
               </div>
             </div>
           </div>
 
           <div class="op-card-box">
-            <h3 style="font-size: 15px; margin-bottom: 12px;">System Identity &amp; Ports</h3>
+            <h3 style="font-size: 14px; margin-bottom: 2px;">Paired devices</h3>
+            <p style="font-size: 12.5px; color: var(--text-muted); margin-bottom: 14px;">These devices reconnect without asking again. Forget one to require approval next time.</p>
+            <label class="op-setting-row" for="chk-auto-accept-paired">
+              <span class="op-setting-text">
+                <span class="op-setting-label">Accept files from paired devices without asking</span>
+                <span class="op-setting-desc">Unknown devices always need your approval.</span>
+              </span>
+              <input type="checkbox" id="chk-auto-accept-paired" class="op-switch" checked />
+            </label>
+            <div id="paired-devices-list" class="op-paired-list">
+              <p class="op-empty-text">No paired devices yet.</p>
+            </div>
+          </div>
+
+          <div class="op-card-box">
+            <h3 style="font-size: 14px; margin-bottom: 4px;">This PC</h3>
             <div class="info-table">
-              <div class="info-row"><span>Host Name</span><strong id="info-hostname">...</strong></div>
-              <div class="info-row"><span>Local IP Address</span><strong id="info-ip">...</strong></div>
-              <div class="info-row"><span>Direct TLS Port</span><strong>53318</strong></div>
-              <div class="info-row"><span>LocalSend Port</span><strong>53317</strong></div>
-              <div class="info-row"><span>Downloads Folder</span><strong id="info-folder">...</strong></div>
-              <div class="info-row"><span>Version</span><strong style="color: var(--primary);">v1.2.84</strong></div>
+              <div class="info-row"><span>Name</span><strong id="info-hostname">...</strong></div>
+              <div class="info-row"><span>IP address</span><strong id="info-ip">...</strong></div>
+              <div class="info-row"><span>Transfer port</span><strong>53318</strong></div>
+              <div class="info-row"><span>LocalSend port</span><strong>53317</strong></div>
+              <div class="info-row"><span>Saves to</span><strong id="info-folder">...</strong></div>
+              <div class="info-row"><span>Version</span><strong>1.2.84</strong></div>
             </div>
           </div>
         </section>
@@ -761,14 +747,66 @@
   <!-- Manual IP Modal -->
   <div id="modal-manual" class="modal-overlay">
     <div class="modal-card">
-      <h3>Add Peer Manually</h3>
-      <p>Connect across subnets or when mDNS multicast is restricted.</p>
-      <input type="text" id="manual-ip-input" class="form-input" placeholder="IP Address (e.g. 192.168.1.45)">
-      <input type="text" id="manual-port-input" class="form-input" placeholder="Port (default: 53318)" value="53318">
-      <input type="text" id="manual-name-input" class="form-input" placeholder="Device Name (optional)">
+      <h3>Add a device by IP</h3>
+      <p>Use this when a device doesn't show up on its own, for example on another subnet.</p>
+      <input type="text" id="manual-ip-input" class="form-input" placeholder="IP address, e.g. 192.168.1.45">
+      <input type="text" id="manual-port-input" class="form-input" placeholder="Port" value="53318">
+      <input type="text" id="manual-name-input" class="form-input" placeholder="Name (optional)">
       <div class="modal-actions">
         <button id="btn-cancel-manual" class="op-btn-secondary">Cancel</button>
         <button id="btn-confirm-manual" class="op-btn-primary">Connect</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Connect without Wi-Fi Modal (BLE handshake + phone hotspot) -->
+  <div id="modal-offline" class="modal-overlay">
+    <div class="modal-card offline-card">
+      <h3 id="offline-title">Connect without Wi-Fi</h3>
+
+      <div id="offline-intro" class="offline-pane">
+        <p>Your phone creates a private hotspot for this PC, and Bluetooth hands over its password securely.
+          On the phone, open LocalShare → Devices → <strong>Connect a PC without Wi-Fi</strong> → Start.</p>
+        <p class="offline-warning">While connected, this PC uses the phone's hotspot and has no internet. Your Wi-Fi comes back when you disconnect.</p>
+        <p class="op-empty-text">First time only: run <code>npm run pc:firewall</code> (or scripts\allow_firewall.ps1) so the phone can also send files to this PC over its hotspot.</p>
+      </div>
+
+      <div id="offline-picker" class="offline-pane" style="display: none;">
+        <p>Choose your phone:</p>
+        <div id="offline-device-list" class="offline-device-list">
+          <p class="op-empty-text">Searching over Bluetooth…</p>
+        </div>
+      </div>
+
+      <div id="offline-code" class="offline-pane" style="display: none;">
+        <p>Check that your phone shows this code, then tap <strong>Allow</strong> on the phone.</p>
+        <div id="offline-code-digits" class="offline-code">------</div>
+        <p class="op-empty-text">Cancel here if the codes are different.</p>
+      </div>
+
+      <div id="offline-progress" class="offline-pane" style="display: none;">
+        <ol class="offline-steps">
+          <li data-step="bluetooth">Found the phone over Bluetooth</li>
+          <li data-step="code">Code confirmed on the phone</li>
+          <li data-step="joining">Joining the phone's hotspot</li>
+          <li data-step="connecting">Connecting to LocalShare</li>
+        </ol>
+      </div>
+
+      <div id="offline-manual" class="offline-pane" style="display: none;">
+        <p>On the phone: Connect a PC without Wi-Fi → <strong>PC has no Bluetooth</strong>. Type what it shows:</p>
+        <input type="text" id="offline-ssid" class="form-input" placeholder="Wi-Fi name" autocomplete="off">
+        <input type="text" id="offline-password" class="form-input" placeholder="Password" autocomplete="off">
+        <input type="text" id="offline-address" class="form-input" placeholder="Phone address, e.g. 192.168.49.1:53318" autocomplete="off">
+      </div>
+
+      <p id="offline-error" class="offline-error" style="display: none;"></p>
+
+      <div class="modal-actions">
+        <button id="btn-offline-cancel" class="op-btn-secondary">Cancel</button>
+        <button id="btn-offline-manual" class="op-btn-secondary">Enter details</button>
+        <button id="btn-offline-settings" class="op-btn-secondary" style="display: none;">Open Location settings</button>
+        <button id="btn-offline-primary" class="op-btn-primary">Search via Bluetooth</button>
       </div>
     </div>
   </div>
@@ -787,7 +825,7 @@
   <!-- Incoming Transfer Request Modal -->
   <div id="modal-incoming" class="modal-overlay">
     <div class="modal-card">
-      <h3>Incoming File Transfer</h3>
+      <h3>Incoming request</h3>
       <p id="incoming-summary">A nearby device wants to send you files.</p>
       <ul id="incoming-file-list" class="staged-file-list"></ul>
       <div class="modal-actions">
@@ -803,8 +841,8 @@
       <div class="drop-modal-icon">
         <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
       </div>
-      <h2>Drop anywhere to send to <span id="overlay-target-name">Phone</span></h2>
-      <p>High-speed TLS streaming with real-time SHA-256 verification</p>
+      <h2>Drop to send to <span id="overlay-target-name">Phone</span></h2>
+      <p>Files go straight to your device over your local network.</p>
     </div>
   </div>
 
@@ -824,15 +862,33 @@
       <div class="lightbox-footer">
         <button id="btn-lightbox-download" class="op-btn-primary">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
-          <span>Download to PC</span>
+          <span>Save to PC</span>
         </button>
         <button id="btn-lightbox-delete" class="op-btn-danger">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6l-.9 13.1A2 2 0 0 1 16.1 21H7.9a2 2 0 0 1-2-1.9L5 6"/></svg>
-          <span>Delete from Phone</span>
+          <span>Delete from phone</span>
         </button>
       </div>
     </div>
   </div>
+
+  <!-- Confirm dialog -->
+  <div id="desktop-confirm-modal" class="desktop-confirm-modal" style="display: none;">
+    <div class="confirm-modal-backdrop" id="confirm-modal-backdrop"></div>
+    <div class="confirm-modal-card">
+      <div class="confirm-modal-header">
+        <h3 id="confirm-modal-title">Are you sure?</h3>
+      </div>
+      <p id="confirm-modal-message" class="confirm-modal-message"></p>
+      <div class="confirm-modal-actions">
+        <button id="confirm-modal-cancel" class="op-btn-secondary op-btn-sm">Cancel</button>
+        <button id="confirm-modal-confirm" class="op-btn-primary op-btn-sm">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Desktop Toast Container -->
+  <div id="desktop-toast-container" class="desktop-toast-container"></div>
 
   <script src="app.js"></script>
 </body>

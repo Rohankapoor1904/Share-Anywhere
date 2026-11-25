@@ -1,7 +1,13 @@
 <resources>
     <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="android:editTextBackground">@drawable/rn_edit_text_material</item>
-        <item name="android:windowBackground">#0f172a</item>
+        <item name="android:windowBackground">#0e0e10</item>
+        <!-- Normal (non full-screen) window: solid status bar, content laid out below it. -->
+        <item name="android:windowFullscreen">false</item>
+        <item name="android:windowTranslucentStatus">false</item>
+        <item name="android:windowTranslucentNavigation">false</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:statusBarColor">#0e0e10</item>
     </style>
 </resources>
 

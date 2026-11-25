@@ -27,7 +27,7 @@ export default function QueueList({ files, onRemove }) {
         <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
           Staged Files ({files.length})
         </Text>
-        <View style={[styles.totalPill, { backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.primary }]}>
+        <View style={[styles.totalPill, { backgroundColor: theme.colors.primaryGlow, borderColor: 'transparent' }]}>
           <Text style={[styles.totalSize, { color: theme.colors.primary }]}>
             {formatBytes(totalSize)}
           </Text>
@@ -77,7 +77,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 15,
-    fontWeight: '800'
+    fontWeight: '700'
   },
   totalPill: {
     paddingHorizontal: 10,
@@ -87,7 +87,7 @@ const styles = StyleSheet.create({
   },
   totalSize: {
     fontSize: 12,
-    fontWeight: '800'
+    fontWeight: '700'
   },
   fileRow: {
     flexDirection: 'row',

@@ -21,7 +21,7 @@ function formatBytes(bytes) {
  * Confirmation dialog for pairing PIN challenges and incoming transfer approvals.
  * @param {object} props
  * @param {boolean} props.visible
- * @param {object} props.challenge - Challenge info { deviceId, displayName, expectedPin, files, mode: 'enter' | 'display' | 'approve' }
+ * @param {object} props.challenge - Challenge info { deviceId, displayName, expectedPin, files, mode: 'enter' | 'display' | 'approve', authDigits? }
  * @param {(pin: string) => void} props.onConfirm
  * @param {() => void} props.onReject
  * @param {string} [props.error]
@@ -34,8 +34,10 @@ export default function PinDialog({ visible, challenge, onConfirm, onReject, err
     return null;
   }
 
-  const { displayName = 'Unknown Peer', expectedPin, files, totalBytes, mode = 'enter' } = challenge;
+  const { displayName = 'Unknown Peer', expectedPin, files, totalBytes, mode = 'enter', authDigits } = challenge;
   const isApprove = mode === 'approve';
+  // Nearby (offline) transfers carry the UKEY2 code both phones show; a mismatch means interception.
+  const verificationCode = isApprove && typeof authDigits === 'string' ? authDigits : '';
   const fileList = Array.isArray(files) ? files : [];
   const totalSize = totalBytes !== undefined
     ? totalBytes
@@ -80,6 +82,21 @@ export default function PinDialog({ visible, challenge, onConfirm, onReject, err
             Device <Text style={[styles.peerHighlight, { color: theme.colors.primary }]}>{displayName}</Text>
             {isApprove ? ' wants to send you files.' : ' is requesting connection.'}
           </Text>
+
+          {verificationCode ? (
+            <View
+              testID="nearby-auth-code"
+              style={[styles.pinDisplayBox, { backgroundColor: theme.colors.inputBg, borderColor: theme.colors.border }]}
+            >
+              <Text style={[styles.pinLabel, { color: theme.colors.textSecondary }]}>
+                Does this code match the sender's screen?
+              </Text>
+              <Text style={[styles.pinValue, styles.tabular, { color: theme.colors.primary }]}>{verificationCode}</Text>
+              <Text style={[styles.codeHint, { color: theme.colors.textMuted }]}>
+                Sent without Wi-Fi. Decline if the codes differ.
+              </Text>
+            </View>
+          ) : null}
 
           {isApprove ? (
             <View style={[styles.pinDisplayBox, { backgroundColor: theme.colors.inputBg, borderColor: theme.colors.border }]}>
@@ -139,7 +156,7 @@ export default function PinDialog({ visible, challenge, onConfirm, onReject, err
 
           <View style={styles.btnRow}>
             <TouchableOpacity
-              style={[styles.btn, { backgroundColor: theme.colors.dangerGlow, borderColor: theme.colors.danger }]}
+              style={[styles.btn, { backgroundColor: theme.colors.dangerGlow, borderColor: 'transparent' }]}
               onPress={handleCancel}
             >
               <Text style={[styles.cancelBtnText, { color: theme.colors.danger }]}>Decline</Text>
@@ -190,7 +207,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 20,
-    fontWeight: '800',
+    fontWeight: '700',
     marginBottom: 6,
     textAlign: 'center'
   },
@@ -223,8 +240,16 @@ const styles = StyleSheet.create({
   },
   pinValue: {
     fontSize: 34,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 8
+  },
+  tabular: {
+    fontVariant: ['tabular-nums']
+  },
+  codeHint: {
+    fontSize: 12,
+    marginTop: 8,
+    textAlign: 'center'
   },
   fileName: {
     fontSize: 13,
@@ -237,7 +262,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 14,
     fontSize: 26,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 8,
     textAlign: 'center'
   },
@@ -269,7 +294,7 @@ const styles = StyleSheet.create({
     opacity: 0.4
   },
   confirmBtnText: {
-    fontWeight: '800',
+    fontWeight: '700',
     fontSize: 14
   }
 });

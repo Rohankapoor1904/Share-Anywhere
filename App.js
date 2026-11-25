@@ -31,7 +31,8 @@ function MainNavigationShell() {
 
   return (
     <NavigationContainer theme={navTheme}>
-      <StatusBar style={theme.colors.statusBarStyle} />
+      {/* Not translucent: the system keeps its own status bar strip and the app starts below it. */}
+      <StatusBar style={theme.colors.statusBarStyle} translucent={false} backgroundColor={theme.colors.background} />
       <AppNavigator />
       <GlobalPinChallengeModal />
       <ToastBanner message={toastMessage} onDismiss={() => showToast(null)} />

@@ -59,6 +59,13 @@ const upsertTransfer = (prev, incoming, forcedStatus) => {
  * @property {(peer: object) => Promise<any>} connectToPeer
  * @property {() => Promise<void>} disconnectLive
  * @property {() => boolean} toggleLiveClipboard
+ * @property {{ supported: boolean, enabled: boolean, reason: string }} nearbyState
+ * @property {(enabled: boolean) => Promise<void>} setNearbyEnabled
+ * @property {object} offlinePcState - { phase, code?, pc?, creds?, error?, support }
+ * @property {() => Promise<void>} startOfflinePc
+ * @property {() => Promise<void>} startOfflinePcManual
+ * @property {(accepted: boolean) => Promise<void>} respondOfflinePc
+ * @property {() => Promise<void>} stopOfflinePc
  */
 
 const LocalShareContext = createContext(null);
@@ -89,11 +96,11 @@ export function LocalShareProvider({ children, nodeInstance }) {
   const [autoReconnect, setAutoReconnect] = useState(true);
   const [toastMessage, setToastMessage] = useState(null);
   const [liveClipboardEnabled, setLiveClipboardEnabled] = useState(true);
+  const [nearbyState, setNearbyState] = useState({ supported: false, enabled: true, reason: '' });
+  const [offlinePcState, setOfflinePcState] = useState({ phase: 'idle' });
   const [settings, setSettings] = useState({
     autoAcceptTrusted: true,
     autoAcceptAll: false,
-    chunkSize: 1024 * 1024,
-    lowPowerMode: false,
     theme: 'dark'
   });
 
@@ -106,6 +113,12 @@ export function LocalShareProvider({ children, nodeInstance }) {
     setIsDiscovering(nodeInstance.isDiscovering());
     setConnectedPeer(nodeInstance.connectedPeer || null);
     setLiveClipboardEnabled(nodeInstance.liveClipboardEnabled !== false);
+    if (typeof nodeInstance.getNearbyState === 'function') {
+      setNearbyState(nodeInstance.getNearbyState());
+    }
+    if (typeof nodeInstance.getOfflinePcState === 'function') {
+      setOfflinePcState(nodeInstance.getOfflinePcState());
+    }
 
     // Hydrate persisted transfer history from AsyncStorage
     AsyncStorage.getItem('@localshare:transfer_history').then((raw) => {
@@ -119,9 +132,11 @@ export function LocalShareProvider({ children, nodeInstance }) {
               return [...prev, ...additions];
             });
           }
-        } catch (_err) {}
+        } catch (err) {
+          logger.warn('Ignoring unreadable transfer history:', err);
+        }
       }
-    }).catch(() => {});
+    }).catch((err) => logger.warn('Failed to load transfer history:', err));
 
     // Hydrate received files from storage
     if (NativeBridge.isAvailable()) {
@@ -133,8 +148,12 @@ export function LocalShareProvider({ children, nodeInstance }) {
             return [...prev, ...additions];
           });
         }
-      }).catch(() => {});
+      }).catch((err) => logger.warn('Failed to list received files:', err));
     }
+
+    const unsubSelf = nodeInstance.events.on('SELF_DEVICE_UPDATED', (device) => {
+      setSelfDevice(device && typeof device.toJSON === 'function' ? device.toJSON() : { ...device });
+    });
 
     const unsubFound = nodeInstance.events.on(EngineEventType.PEER_FOUND, () => {
       setPeers([...nodeInstance.getPeers()]);
@@ -164,7 +183,8 @@ export function LocalShareProvider({ children, nodeInstance }) {
       setTransfers((prev) => {
         const updated = upsertTransfer(prev, transfer, 'completed');
         const completedOnly = updated.filter((t) => t.status === 'completed').slice(0, 50);
-        AsyncStorage.setItem('@localshare:transfer_history', JSON.stringify(completedOnly)).catch(() => {});
+        AsyncStorage.setItem('@localshare:transfer_history', JSON.stringify(completedOnly))
+          .catch((err) => logger.warn('Failed to save transfer history:', err));
         return updated;
       });
       if (transfer.direction === 'receive' && transfer.file) {
@@ -205,7 +225,24 @@ export function LocalShareProvider({ children, nodeInstance }) {
       setToastMessage(`Clipboard synced: "${(text || '').slice(0, 24)}…"`);
     });
 
+    const unsubNearbyState = nodeInstance.events.on('NEARBY_STATE_CHANGED', (state) => {
+      setNearbyState({ ...state });
+    });
+
+    // The receiver sees the Nearby code in its approval dialog; the sender gets it here
+    // so both people can compare the same 4 digits.
+    const unsubNearbyAuth = nodeInstance.events.on('NEARBY_AUTH', (auth) => {
+      if (auth && !auth.isIncoming && auth.authDigits) {
+        setToastMessage(`Code ${auth.authDigits} — check that ${auth.displayName || 'the other phone'} shows the same code`);
+      }
+    });
+
+    const unsubOfflinePc = nodeInstance.events.on('OFFLINE_PC_STATE', (state) => {
+      setOfflinePcState({ ...state });
+    });
+
     return () => {
+      unsubSelf();
       unsubFound();
       unsubLost();
       unsubUpdated();
@@ -219,6 +256,9 @@ export function LocalShareProvider({ children, nodeInstance }) {
       unsubTelemetry();
       unsubClipHistory();
       unsubClipSynced();
+      unsubNearbyState();
+      unsubNearbyAuth();
+      unsubOfflinePc();
     };
   }, [nodeInstance]);
 
@@ -322,12 +362,44 @@ export function LocalShareProvider({ children, nodeInstance }) {
   const toggleAutoReconnect = useCallback(() => {
     setAutoReconnect((prev) => {
       const next = !prev;
-      AsyncStorage.setItem('@localshare:auto_reconnect', String(next)).catch(() => {});
+      AsyncStorage.setItem('@localshare:auto_reconnect', String(next))
+        .catch((err) => logger.warn('Failed to save auto-reconnect setting:', err));
       if (nodeInstance) {
         nodeInstance.autoReconnectEnabled = next;
       }
       return next;
     });
+  }, [nodeInstance]);
+
+  const setNearbyEnabled = useCallback(async (enabled) => {
+    if (nodeInstance && typeof nodeInstance.setNearbyEnabled === 'function') {
+      const next = await nodeInstance.setNearbyEnabled(enabled);
+      setNearbyState({ ...next });
+    }
+  }, [nodeInstance]);
+
+  const startOfflinePc = useCallback(async () => {
+    if (nodeInstance && typeof nodeInstance.startOfflinePc === 'function') {
+      await nodeInstance.startOfflinePc();
+    }
+  }, [nodeInstance]);
+
+  const startOfflinePcManual = useCallback(async () => {
+    if (nodeInstance && typeof nodeInstance.startOfflinePcManual === 'function') {
+      await nodeInstance.startOfflinePcManual();
+    }
+  }, [nodeInstance]);
+
+  const respondOfflinePc = useCallback(async (accepted) => {
+    if (nodeInstance && typeof nodeInstance.respondOfflinePc === 'function') {
+      await nodeInstance.respondOfflinePc(accepted);
+    }
+  }, [nodeInstance]);
+
+  const stopOfflinePc = useCallback(async () => {
+    if (nodeInstance && typeof nodeInstance.stopOfflinePc === 'function') {
+      await nodeInstance.stopOfflinePc();
+    }
   }, [nodeInstance]);
 
   const showToast = useCallback((msg) => {
@@ -349,6 +421,8 @@ export function LocalShareProvider({ children, nodeInstance }) {
     toastMessage,
     isLiveConnected: Boolean(connectedPeer),
     liveClipboardEnabled,
+    nearbyState,
+    offlinePcState,
     startDiscovery,
     stopDiscovery,
     scanSubnet,
@@ -363,6 +437,11 @@ export function LocalShareProvider({ children, nodeInstance }) {
     disconnectLive,
     toggleLiveClipboard,
     toggleAutoReconnect,
+    setNearbyEnabled,
+    startOfflinePc,
+    startOfflinePcManual,
+    respondOfflinePc,
+    stopOfflinePc,
     showToast
   };
 
@@ -392,6 +471,8 @@ export function useLocalShare() {
       toastMessage: null,
       isLiveConnected: false,
       liveClipboardEnabled: true,
+      nearbyState: { supported: false, enabled: true, reason: '' },
+      offlinePcState: { phase: 'idle' },
       startDiscovery: async () => {},
       stopDiscovery: async () => {},
       scanSubnet: async () => {},
@@ -406,6 +487,11 @@ export function useLocalShare() {
       disconnectLive: async () => {},
       toggleLiveClipboard: () => true,
       toggleAutoReconnect: () => {},
+      setNearbyEnabled: async () => {},
+      startOfflinePc: async () => {},
+      startOfflinePcManual: async () => {},
+      respondOfflinePc: async () => {},
+      stopOfflinePc: async () => {},
       showToast: () => {}
     };
   }

@@ -122,7 +122,7 @@ export default function ShareHubScreen({ route, navigation }) {
                       key={p.deviceId}
                       style={[
                         styles.peerChip,
-                        { backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.primary }
+                        { backgroundColor: theme.colors.primaryGlow, borderColor: 'transparent' }
                       ]}
                       onPress={() => setSelectedPeer(p)}
                     >
@@ -137,7 +137,7 @@ export default function ShareHubScreen({ route, navigation }) {
                 <TouchableOpacity
                   style={[
                     styles.findDevicesBtn,
-                    { backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.primary }
+                    { backgroundColor: theme.colors.primaryGlow, borderColor: 'transparent' }
                   ]}
                   onPress={() => navigation.navigate('Devices')}
                 >
@@ -163,7 +163,7 @@ export default function ShareHubScreen({ route, navigation }) {
           onPress={handlePickFiles}
           activeOpacity={0.7}
         >
-          <View style={[styles.uploadIconBadge, { backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.primary }]}>
+          <View style={[styles.uploadIconBadge, { backgroundColor: theme.colors.primaryGlow, borderColor: 'transparent' }]}>
             <Icon name="upload" size={21} color={theme.colors.primary} strokeWidth={2} />
           </View>
           <Text style={[styles.pickButtonText, { color: theme.colors.text }]}>Add Files to Send</Text>
@@ -211,6 +211,7 @@ const styles = StyleSheet.create({
   },
   container: {
     padding: 16,
+    paddingBottom: 40,
     flexGrow: 1
   },
   card: {
@@ -218,9 +219,9 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
     textTransform: 'uppercase',
-    letterSpacing: 0.6,
+    letterSpacing: 0.4,
     marginBottom: 10
   },
   peerSelectedRow: {
@@ -244,7 +245,7 @@ const styles = StyleSheet.create({
   },
   peerAvatarText: {
     fontSize: 15,
-    fontWeight: '800'
+    fontWeight: '700'
   },
   peerDetails: {
     flex: 1
@@ -260,7 +261,8 @@ const styles = StyleSheet.create({
   changePeerBtn: {
     paddingHorizontal: 12,
     paddingVertical: 7,
-    borderRadius: 8,
+    borderRadius: 10,
+    borderCurve: 'continuous',
     borderWidth: 1
   },
   changePeerBtnText: {
@@ -285,6 +287,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 16,
+    borderCurve: 'continuous',
     marginRight: 8,
     marginBottom: 8,
     maxWidth: 200
@@ -297,7 +300,8 @@ const styles = StyleSheet.create({
   findDevicesBtn: {
     flexDirection: 'row',
     paddingVertical: 12,
-    borderRadius: 10,
+    borderRadius: 12,
+    borderCurve: 'continuous',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1
@@ -310,7 +314,8 @@ const styles = StyleSheet.create({
   pickButton: {
     borderWidth: 1.5,
     borderStyle: 'dashed',
-    borderRadius: 14,
+    borderRadius: 16,
+    borderCurve: 'continuous',
     paddingVertical: 20,
     alignItems: 'center',
     marginBottom: 16
@@ -334,7 +339,8 @@ const styles = StyleSheet.create({
   },
   sendButton: {
     flexDirection: 'row',
-    borderRadius: 12,
+    borderRadius: 16,
+    borderCurve: 'continuous',
     paddingVertical: 15,
     alignItems: 'center',
     justifyContent: 'center',
@@ -345,7 +351,7 @@ const styles = StyleSheet.create({
   },
   sendButtonText: {
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
     marginLeft: 8
   }
 });

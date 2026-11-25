@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,13 +11,32 @@ import GlassCard from '../components/GlassCard';
 import Icon from '../components/Icon';
 import AmbientBackground from '../components/AmbientBackground';
 import { useTheme } from '../theme';
-import { requestDiscoveryPermissions } from '../utils/permissions';
+import {
+  requestDiscoveryPermissions,
+  needsLocationServiceForNearby,
+  openLocationSettings
+} from '../utils/permissions';
+import { defaultLogger } from '../utils/logger';
 
 export default function PermissionsScreen({ navigation }) {
   const { theme } = useTheme();
   const [nearbyGranted, setNearbyGranted] = useState(Platform.OS !== 'android');
   const [bluetoothGranted, setBluetoothGranted] = useState(false);
   const [storageGranted, setStorageGranted] = useState(false);
+  // Android 12 and older: offline (Nearby) sharing only finds phones while Location is on.
+  const [locationNeeded, setLocationNeeded] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    needsLocationServiceForNearby()
+      .then((needed) => {
+        if (active) setLocationNeeded(needed);
+      })
+      .catch((err) => defaultLogger.warn('Location service check failed:', err.message));
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const handleGrantNearby = async () => {
     await requestDiscoveryPermissions();
@@ -32,6 +51,13 @@ export default function PermissionsScreen({ navigation }) {
   const handleGrantStorage = async () => {
     await requestDiscoveryPermissions();
     setStorageGranted(true);
+  };
+
+  const handleOpenLocation = async () => {
+    await openLocationSettings();
+    // The user returns from system settings; re-read the real state instead of assuming.
+    const needed = await needsLocationServiceForNearby();
+    setLocationNeeded(needed);
   };
 
   const handleContinue = async () => {
@@ -53,7 +79,7 @@ export default function PermissionsScreen({ navigation }) {
 
         <GlassCard style={styles.card} variant="interactive">
           <View style={styles.permRow}>
-            <View style={[styles.permGlyph, { backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.primary }]}>
+            <View style={[styles.permGlyph, { backgroundColor: theme.colors.primaryGlow, borderColor: 'transparent' }]}>
               <Icon name="wifi" size={18} color={theme.colors.primary} strokeWidth={2.1} />
             </View>
             <View style={styles.permInfo}>
@@ -66,7 +92,7 @@ export default function PermissionsScreen({ navigation }) {
               style={[
                 styles.permBtn,
                 nearbyGranted
-                  ? { backgroundColor: theme.colors.successGlow, borderColor: theme.colors.success, borderWidth: 1 }
+                  ? { backgroundColor: theme.colors.successGlow, borderColor: 'transparent', borderWidth: 1 }
                   : { backgroundColor: theme.colors.primary }
               ]}
               onPress={handleGrantNearby}
@@ -85,7 +111,7 @@ export default function PermissionsScreen({ navigation }) {
           </View>
 
           <View style={[styles.permRow, styles.borderTop, { borderTopColor: theme.colors.border }]}>
-            <View style={[styles.permGlyph, { backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.primary }]}>
+            <View style={[styles.permGlyph, { backgroundColor: theme.colors.primaryGlow, borderColor: 'transparent' }]}>
               <Icon name="radar" size={18} color={theme.colors.primary} strokeWidth={2.1} />
             </View>
             <View style={styles.permInfo}>
@@ -98,7 +124,7 @@ export default function PermissionsScreen({ navigation }) {
               style={[
                 styles.permBtn,
                 bluetoothGranted
-                  ? { backgroundColor: theme.colors.successGlow, borderColor: theme.colors.success, borderWidth: 1 }
+                  ? { backgroundColor: theme.colors.successGlow, borderColor: 'transparent', borderWidth: 1 }
                   : { backgroundColor: theme.colors.primary }
               ]}
               onPress={handleGrantBluetooth}
@@ -117,7 +143,7 @@ export default function PermissionsScreen({ navigation }) {
           </View>
 
           <View style={[styles.permRow, styles.borderTop, { borderTopColor: theme.colors.border }]}>
-            <View style={[styles.permGlyph, { backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.primary }]}>
+            <View style={[styles.permGlyph, { backgroundColor: theme.colors.primaryGlow, borderColor: 'transparent' }]}>
               <Icon name="folder" size={18} color={theme.colors.primary} strokeWidth={2.1} />
             </View>
             <View style={styles.permInfo}>
@@ -130,7 +156,7 @@ export default function PermissionsScreen({ navigation }) {
               style={[
                 styles.permBtn,
                 storageGranted
-                  ? { backgroundColor: theme.colors.successGlow, borderColor: theme.colors.success, borderWidth: 1 }
+                  ? { backgroundColor: theme.colors.successGlow, borderColor: 'transparent', borderWidth: 1 }
                   : { backgroundColor: theme.colors.primary }
               ]}
               onPress={handleGrantStorage}
@@ -147,6 +173,29 @@ export default function PermissionsScreen({ navigation }) {
               )}
             </TouchableOpacity>
           </View>
+
+          {locationNeeded ? (
+            <View style={[styles.permRow, styles.borderTop, { borderTopColor: theme.colors.border }]}>
+              <View style={[styles.permGlyph, { backgroundColor: theme.colors.warningGlow, borderColor: 'transparent' }]}>
+                <Icon name="alert" size={18} color={theme.colors.warning} strokeWidth={2.1} />
+              </View>
+              <View style={styles.permInfo}>
+                <Text style={[styles.permTitle, { color: theme.colors.text }]}>Location Service</Text>
+                <Text style={[styles.permDesc, { color: theme.colors.textSecondary }]}>
+                  On this Android version, sharing without Wi-Fi can only find phones while Location is on.
+                </Text>
+              </View>
+              <TouchableOpacity
+                testID="permissions-location-service"
+                style={[styles.permBtn, { backgroundColor: theme.colors.primary }]}
+                onPress={handleOpenLocation}
+              >
+                <Text style={[styles.permBtnText, { color: theme.mode === 'light' ? '#ffffff' : '#000000' }]}>
+                  Turn on
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
         </GlassCard>
 
         <TouchableOpacity
@@ -179,13 +228,13 @@ const styles = StyleSheet.create({
   },
   badge: {
     fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1,
+    fontWeight: '700',
+    letterSpacing: 0.4,
     marginBottom: 6
   },
   title: {
     fontSize: 22,
-    fontWeight: '800',
+    fontWeight: '700',
     textAlign: 'center',
     marginBottom: 8
   },
@@ -237,7 +286,7 @@ const styles = StyleSheet.create({
   },
   permBtnText: {
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
     marginLeft: 4
   },
   continueBtn: {
@@ -249,7 +298,7 @@ const styles = StyleSheet.create({
   },
   continueBtnText: {
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
     marginRight: 8
   }
 });

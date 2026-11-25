@@ -4,7 +4,7 @@ import Icon from './Icon';
 import { useTheme } from '../theme';
 
 /**
- * Clean themed EmptyState component used when no items exist.
+ * Empty state: a small neutral icon tile, a short title and one line of help.
  * @param {object} props
  * @param {string} props.title - Headline message.
  * @param {string} props.description - Explanatory subtitle.
@@ -17,20 +17,12 @@ export default function EmptyState({ title, description, icon, iconName = 'radar
 
   return (
     <View style={styles.container} testID="empty-state-container">
-      <View
-        style={[
-          styles.iconContainer,
-          {
-            backgroundColor: theme.colors.card,
-            borderColor: theme.colors.borderHighlight
-          }
-        ]}
-      >
-        {icon || <Icon name={iconName} size={28} color={theme.colors.primary} strokeWidth={1.8} />}
+      <View style={[styles.iconContainer, { backgroundColor: theme.colors.fill }]}>
+        {icon || <Icon name={iconName} size={22} color={theme.colors.textSecondary} strokeWidth={1.8} />}
       </View>
       <Text style={[styles.title, { color: theme.colors.text }]}>{title}</Text>
       {description ? (
-        <Text style={[styles.description, { color: theme.colors.textSecondary }]}>
+        <Text style={[styles.description, { color: theme.colors.textMuted }]}>
           {description}
         </Text>
       ) : null}
@@ -44,27 +36,30 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 28
+    paddingHorizontal: 32,
+    paddingVertical: 40
   },
   iconContainer: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    borderWidth: 1.5,
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    borderCurve: 'continuous',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16
+    marginBottom: 14
   },
   title: {
-    fontSize: 18,
-    fontWeight: '800',
+    fontSize: 16,
+    fontWeight: '600',
+    letterSpacing: -0.2,
     textAlign: 'center',
-    marginBottom: 8
+    marginBottom: 6
   },
   description: {
     fontSize: 14,
     textAlign: 'center',
-    lineHeight: 20
+    lineHeight: 20,
+    maxWidth: 300
   },
   actionContainer: {
     marginTop: 20

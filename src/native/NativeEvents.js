@@ -6,12 +6,28 @@ const {
   TransferServerModule,
   TransferClientModule,
   TransferForegroundService,
-  StorageModule
+  StorageModule,
+  NearbyModule,
+  OfflinePcModule
 } = NativeModules;
+
+/** Native NearbyModule event name -> handler key passed to subscribeNearby(). */
+const NEARBY_EVENTS = {
+  NearbyEndpointFound: 'onEndpointFound',
+  NearbyEndpointLost: 'onEndpointLost',
+  NearbyConnectionInitiated: 'onConnectionInitiated',
+  NearbyConnectionResult: 'onConnectionResult',
+  NearbyDisconnected: 'onDisconnected',
+  NearbyControl: 'onControl',
+  NearbyIncomingFile: 'onIncomingFile',
+  NearbyPayloadProgress: 'onPayloadProgress'
+};
 
 class NativeEventsManager {
   constructor() {
     this.subscriptions = [];
+    this.nearbySubscriptions = [];
+    this.offlinePcSubscriptions = [];
   }
 
   subscribeAll({
@@ -94,6 +110,63 @@ class NativeEventsManager {
       }
     }
     this.subscriptions = [];
+  }
+
+  /**
+   * Bind the Nearby transport events. Kept separate from subscribeAll() so offline
+   * sharing can be switched on and off without touching the LAN listeners.
+   * @param {Record<string, (payload: any) => void>} handlers
+   * @returns {() => void}
+   */
+  subscribeNearby(handlers) {
+    if (Platform.OS !== 'android' || !NearbyModule) {
+      return () => {};
+    }
+    const emitter = new NativeEventEmitter(NearbyModule);
+    for (const [eventName, key] of Object.entries(NEARBY_EVENTS)) {
+      const handler = handlers[key];
+      if (handler) {
+        this.nearbySubscriptions.push(emitter.addListener(eventName, handler));
+      }
+    }
+    return () => this.unsubscribeNearby();
+  }
+
+  unsubscribeNearby() {
+    for (const sub of this.nearbySubscriptions) {
+      if (sub && sub.remove) {
+        sub.remove();
+      }
+    }
+    this.nearbySubscriptions = [];
+  }
+
+  /**
+   * Bind the offline PC connect events (BLE bootstrap + hotspot).
+   * @param {{ onHello?: (e: any) => void, onState?: (e: any) => void }} handlers
+   * @returns {() => void}
+   */
+  subscribeOfflinePc(handlers) {
+    if (Platform.OS !== 'android' || !OfflinePcModule) {
+      return () => {};
+    }
+    const emitter = new NativeEventEmitter(OfflinePcModule);
+    if (handlers.onHello) {
+      this.offlinePcSubscriptions.push(emitter.addListener('OfflinePcHello', handlers.onHello));
+    }
+    if (handlers.onState) {
+      this.offlinePcSubscriptions.push(emitter.addListener('OfflinePcState', handlers.onState));
+    }
+    return () => this.unsubscribeOfflinePc();
+  }
+
+  unsubscribeOfflinePc() {
+    for (const sub of this.offlinePcSubscriptions) {
+      if (sub && sub.remove) {
+        sub.remove();
+      }
+    }
+    this.offlinePcSubscriptions = [];
   }
 }
 

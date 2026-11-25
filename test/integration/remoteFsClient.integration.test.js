@@ -5,18 +5,19 @@ const { TransferGateway } = require('../../nodejs-assets/nodejs-project/transfer
 
 // RemoteFsClient imports NativeBridge (react-native) which is not loadable in a
 // plain Node integration test, so exercise the real HTTP wire protocol directly.
-function buildClient(baseUrl) {
+function buildClient(baseUrl, token) {
+  const auth = { 'x-localshare-token': token };
   return {
     baseUrl,
     async list(p) {
-      const res = await fetch(`${baseUrl}/v1/fs/list?path=${encodeURIComponent(p || '')}`);
+      const res = await fetch(`${baseUrl}/v1/fs/list?path=${encodeURIComponent(p || '')}`, { headers: auth });
       if (!res.ok) throw new Error(`Remote list failed: HTTP ${res.status}`);
       return res.json();
     },
     async copy(sourcePath, destinationPath) {
       const res = await fetch(`${baseUrl}/v1/fs/copy`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...auth },
         body: JSON.stringify({ sourcePath, destinationPath })
       });
       if (!res.ok) throw new Error(`Remote copy failed: HTTP ${res.status}`);
@@ -25,23 +26,23 @@ function buildClient(baseUrl) {
     async remove(p) {
       const res = await fetch(`${baseUrl}/v1/fs/delete`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...auth },
         body: JSON.stringify({ path: p })
       });
       if (!res.ok) throw new Error(`Remote delete failed: HTTP ${res.status}`);
       return res.json();
     },
     async getClipboard() {
-      const res = await fetch(`${baseUrl}/v1/clipboard`);
+      const res = await fetch(`${baseUrl}/v1/clipboard`, { headers: auth });
       if (!res.ok) throw new Error(`Clipboard fetch failed: HTTP ${res.status}`);
       const data = await res.json();
       return typeof data.text === 'string' ? data.text : '';
     },
     downloadUrl(p) {
-      return `${baseUrl}/v1/fs/download?path=${encodeURIComponent(p)}`;
+      return `${baseUrl}/v1/fs/download?path=${encodeURIComponent(p)}&token=${encodeURIComponent(token)}`;
     },
     streamUrl(p) {
-      return `${baseUrl}/v1/fs/stream?path=${encodeURIComponent(p)}`;
+      return `${baseUrl}/v1/fs/stream?path=${encodeURIComponent(p)}&token=${encodeURIComponent(token)}`;
     }
   };
 }
@@ -61,7 +62,7 @@ describe('Remote FS client wire protocol (real HTTP)', () => {
     server = new TransferGateway({ port: 0, storageDir, browseRoot: root });
     const addr = await server.start();
     port = addr.port;
-    client = buildClient(`http://127.0.0.1:${port}`);
+    client = buildClient(`http://127.0.0.1:${port}`, server.issueAccessToken({ deviceId: 'client-test' }));
   });
 
   afterAll(async () => {

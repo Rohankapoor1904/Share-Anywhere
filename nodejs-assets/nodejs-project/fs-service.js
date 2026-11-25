@@ -52,6 +52,97 @@ function getDefaultRoot() {
 }
 
 /**
+ * Report an error that is deliberately not surfaced to the caller (an unreadable
+ * entry during a scan, a drive that cannot be probed). Printed only when
+ * LOCALSHARE_DEBUG is set so normal scans stay quiet.
+ * @param {string} context
+ * @param {any} err
+ */
+function logIgnored(context, err) {
+  if (process.env.LOCALSHARE_DEBUG) {
+    console.warn(`[fs-service] ${context}:`, err && err.message ? err.message : err);
+  }
+}
+
+/**
+ * Resolve a path through symlinks/junctions so a containment check cannot be
+ * bypassed by a link that points outside a shared root. Paths that do not exist
+ * yet (a copy destination) are resolved through their nearest existing ancestor.
+ * @param {string} p
+ * @returns {string}
+ */
+function canonicalPath(p) {
+  const absolute = path.resolve(p);
+  let current = absolute;
+  const tail = [];
+  for (;;) {
+    try {
+      const real = fs.realpathSync.native(current);
+      return tail.length > 0 ? path.join(real, ...tail.reverse()) : real;
+    } catch (err) {
+      const parent = path.dirname(current);
+      if (parent === current) {
+        logIgnored(`realpath ${absolute}`, err);
+        return absolute;
+      }
+      tail.push(path.basename(current));
+      current = parent;
+    }
+  }
+}
+
+/**
+ * True when `child` is `parent` or lies underneath it.
+ * @param {string} child
+ * @param {string} parent
+ * @returns {boolean}
+ */
+function isInside(child, parent) {
+  const rel = path.relative(parent, child);
+  return rel === '' || (rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel));
+}
+
+/**
+ * True when `targetPath` lies inside at least one of `allowedRoots`.
+ * Without roots there is no restriction (local callers such as unit tests);
+ * network-facing callers must always pass them.
+ * @param {string} targetPath
+ * @param {string[]} [allowedRoots]
+ * @returns {boolean}
+ */
+function isPathAllowed(targetPath, allowedRoots) {
+  if (!Array.isArray(allowedRoots) || allowedRoots.length === 0) return true;
+  const target = canonicalPath(targetPath);
+  return allowedRoots.some((root) => Boolean(root) && isInside(target, canonicalPath(root)));
+}
+
+/**
+ * Throw an EOUTSIDEROOT error when `targetPath` is outside the shared roots.
+ * @param {string} targetPath
+ * @param {string[]} [allowedRoots]
+ */
+function assertPathAllowed(targetPath, allowedRoots) {
+  if (!isPathAllowed(targetPath, allowedRoots)) {
+    throw Object.assign(new Error('Path is outside the shared folders'), { code: 'EOUTSIDEROOT' });
+  }
+}
+
+/**
+ * Turn a sender-supplied file name into one safe path segment: no directory
+ * parts, no reserved Windows characters, never "." or "..".
+ * @param {any} name
+ * @param {string} fallback
+ * @returns {string}
+ */
+function sanitizeFileName(name, fallback) {
+  const raw = typeof name === 'string' ? name : '';
+  const last = raw.replace(/\\/g, '/').split('/').pop() || '';
+  const cleaned = last.replace(/[<>:"|?*\u0000-\u001f]/g, '_').trim();
+  if (!cleaned || /^\.+$/.test(cleaned)) return fallback;
+  return cleaned;
+}
+
+/**
  * Get available drive letters on Windows or root on Unix.
  * @returns {Array<object>}
  */
@@ -81,9 +172,19 @@ function getAvailableDrives() {
           mimeType: 'inode/directory'
         });
       }
-    } catch (_) {}
+    } catch (err) {
+      logIgnored(`probe drive ${drive}`, err);
+    }
   }
   return drives;
+}
+
+/**
+ * Root paths of every available drive (or "/" on Unix).
+ * @returns {string[]}
+ */
+function getDriveRoots() {
+  return getAvailableDrives().map((drive) => drive.path);
 }
 
 /**
@@ -116,48 +217,63 @@ function getQuickFolders() {
           });
         }
       }
-    } catch (_) {}
+    } catch (err) {
+      logIgnored(`stat quick folder ${item.path}`, err);
+    }
   }
   return folders;
 }
 
 /**
  * Normalize a client-supplied path against the browsing root.
+ * Relative paths resolve against the root. When `allowedRoots` is given the
+ * result must lie inside one of them, otherwise an EOUTSIDEROOT error is thrown.
  * @param {string} rootDir
  * @param {string} requestedPath
+ * @param {string[]} [allowedRoots]
  * @returns {string}
  */
-function resolvePath(rootDir, requestedPath) {
+function resolvePath(rootDir, requestedPath, allowedRoots) {
   if (requestedPath === '__ROOT__' || requestedPath === 'ROOT') {
     return '__ROOT__';
   }
   const root = rootDir || getDefaultRoot();
-  if (!requestedPath) return path.resolve(root);
-  return path.resolve(requestedPath);
+  const target = requestedPath ? path.resolve(root, requestedPath) : path.resolve(root);
+  assertPathAllowed(target, allowedRoots);
+  return target;
 }
 
 /**
  * List a directory, sorting directories first (A-Z) then files (A-Z).
- * Supports '__ROOT__' virtual root for multi-drive and quick-folder browsing.
+ * Supports the '__ROOT__' virtual root (drives + quick folders) when drives are
+ * shared; otherwise '__ROOT__' is the browse root itself.
  * @param {string} rootDir
  * @param {string} requestedPath
+ * @param {{ allowedRoots?: string[], exposeDrives?: boolean }} [options]
  * @returns {{ currentPath: string, parentPath: string|null, entries: Array<object> }}
  */
-function listDirectory(rootDir, requestedPath) {
-  // Virtual root for drives and common quick folders
-  if (requestedPath === '__ROOT__' || requestedPath === 'ROOT' || (!rootDir && !requestedPath)) {
-    const drives = getAvailableDrives();
-    const quick = getQuickFolders();
-    const entries = [...drives, ...quick];
-    return {
-      currentPath: '__ROOT__',
-      parentPath: null,
-      entries
-    };
+function listDirectory(rootDir, requestedPath, options = {}) {
+  const allowedRoots = options.allowedRoots;
+  const restricted = Array.isArray(allowedRoots) && allowedRoots.length > 0;
+  const exposeDrives = !restricted || options.exposeDrives === true;
+  let requested = requestedPath;
+
+  const wantsVirtualRoot = requested === '__ROOT__' || requested === 'ROOT' || (!rootDir && !requested);
+  if (wantsVirtualRoot) {
+    if (exposeDrives) {
+      const drives = getAvailableDrives();
+      const quick = getQuickFolders().filter((item) => isPathAllowed(item.path, allowedRoots));
+      return {
+        currentPath: '__ROOT__',
+        parentPath: null,
+        entries: [...drives, ...quick]
+      };
+    }
+    requested = '';
   }
 
   const root = rootDir || getDefaultRoot();
-  const currentPath = resolvePath(root, requestedPath);
+  const currentPath = resolvePath(root, requested, allowedRoots);
   const stat = fs.statSync(currentPath);
   if (!stat.isDirectory()) {
     throw new Error('Requested path is not a directory');
@@ -166,11 +282,11 @@ function listDirectory(rootDir, requestedPath) {
   const names = fs.readdirSync(currentPath);
   const entries = names.map((name) => {
     const fullPath = path.join(currentPath, name);
-    let entryStat;
+    let entryStat = null;
     try {
       entryStat = fs.statSync(fullPath);
     } catch (err) {
-      entryStat = null;
+      logIgnored(`stat ${fullPath}`, err);
     }
     return {
       name,
@@ -187,15 +303,16 @@ function listDirectory(rootDir, requestedPath) {
     return a.name.localeCompare(b.name);
   });
 
-  const parsed = path.parse(path.resolve(currentPath));
-  const isDriveRoot = parsed.root === path.resolve(currentPath);
-  const isCustomRoot = rootDir && path.resolve(currentPath) === path.resolve(rootDir);
+  const resolvedCurrent = path.resolve(currentPath);
+  const isDriveRoot = path.parse(resolvedCurrent).root === resolvedCurrent;
+  const isCustomRoot = Boolean(rootDir) && resolvedCurrent === path.resolve(rootDir);
 
   let parentPath = null;
   if (isDriveRoot) {
-    parentPath = '__ROOT__';
+    parentPath = exposeDrives ? '__ROOT__' : null;
   } else if (!isCustomRoot) {
-    parentPath = path.dirname(currentPath);
+    const parent = path.dirname(resolvedCurrent);
+    parentPath = isPathAllowed(parent, allowedRoots) ? parent : null;
   }
 
   return {
@@ -227,11 +344,16 @@ function uniquePath(candidate) {
 /**
  * Copy a file or directory recursively.
  * @param {string} sourcePath
- * @param {string} destinationPath
+ * @param {string} [destinationPath]
+ * @param {string[]} [allowedRoots] - When given, source and destination must both lie inside these roots.
  * @returns {string} The new path.
  */
-function copyEntry(sourcePath, destinationPath) {
+function copyEntry(sourcePath, destinationPath, allowedRoots) {
+  if (!sourcePath || typeof sourcePath !== 'string') {
+    throw new Error('Missing sourcePath');
+  }
   const source = path.resolve(sourcePath);
+  assertPathAllowed(source, allowedRoots);
   if (!fs.existsSync(source)) {
     throw new Error(`Source does not exist: ${source}`);
   }
@@ -245,9 +367,13 @@ function copyEntry(sourcePath, destinationPath) {
   } else {
     destination = uniquePath(path.resolve(destinationPath));
   }
+  assertPathAllowed(destination, allowedRoots);
 
   const stat = fs.statSync(source);
   if (stat.isDirectory()) {
+    if (isInside(destination, source)) {
+      throw new Error('Cannot copy a folder into itself');
+    }
     fs.cpSync(source, destination, { recursive: true });
   } else {
     fs.copyFileSync(source, destination);
@@ -258,10 +384,24 @@ function copyEntry(sourcePath, destinationPath) {
 /**
  * Delete a file or directory recursively.
  * @param {string} targetPath
+ * @param {string[]} [allowedRoots] - When given, the target must lie inside, and not be, one of these roots.
  * @returns {string} The deleted path.
  */
-function deleteEntry(targetPath) {
+function deleteEntry(targetPath, allowedRoots) {
+  if (!targetPath || typeof targetPath !== 'string') {
+    throw new Error('Missing path');
+  }
   const target = path.resolve(targetPath);
+  assertPathAllowed(target, allowedRoots);
+  if (path.parse(target).root === target) {
+    throw Object.assign(new Error('Refusing to delete a drive root'), { code: 'EOUTSIDEROOT' });
+  }
+  if (Array.isArray(allowedRoots)) {
+    const canonicalTarget = canonicalPath(target);
+    if (allowedRoots.some((root) => Boolean(root) && canonicalPath(root) === canonicalTarget)) {
+      throw Object.assign(new Error('Refusing to delete a shared root folder'), { code: 'EOUTSIDEROOT' });
+    }
+  }
   if (!fs.existsSync(target)) {
     throw new Error(`Path does not exist: ${target}`);
   }
@@ -280,14 +420,26 @@ const CATEGORY_EXTENSIONS = {
 };
 
 /**
- * Scan directory recursively up to a depth limit, gathering files matching a predicate.
+ * Comparable form of a folder path (case-insensitive on Windows).
+ * @param {string} p
+ * @returns {string}
  */
-function walkFiles(dir, predicate, maxDepth = 4, currentDepth = 0, results = [], maxResults = 150) {
+function dirKey(p) {
+  const resolved = path.resolve(p);
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+}
+
+/**
+ * Scan directory recursively up to a depth limit, gathering files matching a predicate.
+ * Folders whose dirKey is in `excluded` are skipped entirely.
+ */
+function walkFiles(dir, predicate, maxDepth = 4, currentDepth = 0, results = [], maxResults = 150, excluded = null) {
   if (currentDepth > maxDepth || results.length >= maxResults) return results;
   let names;
   try {
     names = fs.readdirSync(dir);
-  } catch (_) {
+  } catch (err) {
+    logIgnored(`read ${dir}`, err);
     return results;
   }
   for (const name of names) {
@@ -297,7 +449,8 @@ function walkFiles(dir, predicate, maxDepth = 4, currentDepth = 0, results = [],
     try {
       const stat = fs.statSync(fullPath);
       if (stat.isDirectory()) {
-        walkFiles(fullPath, predicate, maxDepth, currentDepth + 1, results, maxResults);
+        if (excluded && excluded.has(dirKey(fullPath))) continue;
+        walkFiles(fullPath, predicate, maxDepth, currentDepth + 1, results, maxResults, excluded);
       } else if (stat.isFile() && predicate(name, fullPath, stat)) {
         results.push({
           name,
@@ -308,7 +461,9 @@ function walkFiles(dir, predicate, maxDepth = 4, currentDepth = 0, results = [],
           mimeType: getMimeType(fullPath)
         });
       }
-    } catch (_) {}
+    } catch (err) {
+      logIgnored(`stat ${fullPath}`, err);
+    }
   }
   return results;
 }
@@ -319,9 +474,12 @@ function walkFiles(dir, predicate, maxDepth = 4, currentDepth = 0, results = [],
  * @param {number} [limit=60]
  * @param {number} [offset=0]
  * @param {string} [rootDir]
+ * @param {{ excludeDirs?: string[] }} [options] - Folders left out of every category except
+ *   'downloads' (e.g. the folder holding files received from the phone, so the phone's
+ *   own photos aren't shown back to it as this device's media).
  * @returns {{ type: string, total: number, offset: number, limit: number, entries: Array<object> }}
  */
-function listCategory(type = 'photos', limit = 60, offset = 0, rootDir = null) {
+function listCategory(type = 'photos', limit = 60, offset = 0, rootDir = null, options = {}) {
   const home = rootDir || getDefaultRoot();
   let searchRoots = [];
 
@@ -354,9 +512,14 @@ function listCategory(type = 'photos', limit = 60, offset = 0, rootDir = null) {
   const allEntries = [];
   const seenPaths = new Set();
 
+  const excluded = type !== 'downloads' && Array.isArray(options.excludeDirs) && options.excludeDirs.length > 0
+    ? new Set(options.excludeDirs.filter(Boolean).map(dirKey))
+    : null;
+
   for (const root of searchRoots) {
     if (!fs.existsSync(root)) continue;
-    const found = walkFiles(root, predicate, 3, 0, [], 120);
+    if (excluded && excluded.has(dirKey(root))) continue;
+    const found = walkFiles(root, predicate, 3, 0, [], 120, excluded);
     for (const item of found) {
       if (!seenPaths.has(item.path)) {
         seenPaths.add(item.path);
@@ -432,7 +595,9 @@ function getTelemetry() {
       freeStorage = Number(s.bfree) * Number(s.bsize);
       totalStorage = Number(s.blocks) * Number(s.bsize);
     }
-  } catch (_) {}
+  } catch (err) {
+    logIgnored('statfs', err);
+  }
 
   const memTotal = os.totalmem();
   const memFree = os.freemem();
@@ -460,6 +625,10 @@ function getTelemetry() {
 module.exports = {
   getMimeType,
   getDefaultRoot,
+  getDriveRoots,
+  isPathAllowed,
+  sanitizeFileName,
+  uniquePath,
   resolvePath,
   listDirectory,
   copyEntry,

@@ -79,6 +79,11 @@ class TransferServerModule(
     )
 
     private val sessionMetricsMap = ConcurrentHashMap<String, SessionMetrics>()
+    /** Sessions the user approved; only these may write file data. */
+    private val acceptedSessions: MutableSet<String> = ConcurrentHashMap.newKeySet<String>()
+    /** "sessionId:fileId" -> (sha256 hex, byte count) computed while a file streamed in. */
+    private val streamDigests = ConcurrentHashMap<String, Pair<String, Long>>()
+    private val safeIdPattern = Regex("^[A-Za-z0-9._-]{1,128}$")
     private var lastClipboardHash: String = ""
     private var connectedPeer: JSONObject? = null
     private val thumbnailCache = LruCache<String, ByteArray>(10 * 1024 * 1024)
@@ -447,6 +452,10 @@ class TransferServerModule(
                 File(Environment.getExternalStorageDirectory(), "Android/media/com.whatsapp/WhatsApp/Media"),
                 File(Environment.getExternalStorageDirectory(), "WhatsApp/Media")
             )
+            "bluetooth" -> listOf(
+                File(Environment.getExternalStorageDirectory(), "Bluetooth"),
+                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Bluetooth")
+            )
             "recent" -> listOf(
                 Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM),
                 Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
@@ -500,6 +509,20 @@ class TransferServerModule(
             put("limit", limit)
             put("entries", entriesArr)
         }
+    }
+
+    private fun queryCategoryCounts(): JSONObject {
+        val categories = listOf("images", "videos", "audio", "documents", "archives", "apks", "whatsapp", "downloads", "bluetooth")
+        val counts = JSONObject()
+        for (cat in categories) {
+            try {
+                val catResult = queryMediaCategories(cat, 1, 0)
+                counts.put(cat, catResult.optInt("total", 0))
+            } catch (e: Exception) {
+                counts.put(cat, 0)
+            }
+        }
+        return counts
     }
 
     private fun searchFsFiles(query: String): JSONObject {
@@ -675,6 +698,8 @@ class TransferServerModule(
                 }
 
                 val contentLength = headers["content-length"]?.toIntOrNull() ?: 0
+                // Long form for streamed uploads, which can exceed 2 GB.
+                val contentLengthLong = headers["content-length"]?.toLongOrNull() ?: 0L
                 val isChunked = headers["transfer-encoding"]?.contains("chunked", ignoreCase = true) == true
 
                 // Read exactly contentLength bytes of the request body from the raw stream.
@@ -816,12 +841,76 @@ class TransferServerModule(
                                 resumeObj.put(fileId, offset)
                             }
 
+                            acceptedSessions.add(sessionId)
                             val resp = JSONObject().apply {
                                 put("sessionId", sessionId)
                                 put("accepted", true)
                                 put("resume", resumeObj)
+                                // Senders may upload each file as one request to /v1/stream.
+                                put("stream", true)
                             }
                             sendJsonResponse(output, 200, resp)
+                        }
+                    }
+
+                    path == "/v1/stream" && method == "PUT" -> {
+                        // The rest of one file in a single request, written and hashed as it arrives.
+                        val sessionId = headers["x-localshare-session-id"] ?: ""
+                        val fileId = headers["x-file-id"] ?: ""
+                        val offset = headers["x-offset"]?.toLongOrNull() ?: -1L
+                        val fileObj = activeSessions[sessionId]?.optJSONArray("files")?.let { arr ->
+                            (0 until arr.length())
+                                .mapNotNull { arr.optJSONObject(it) }
+                                .firstOrNull { it.optString("fileId") == fileId }
+                        }
+                        val declaredSize = fileObj?.optLong("fileSize", 0L) ?: 0L
+                        val partFile = File(receivedDir, "$fileId.localshare.part")
+                        val existingBytes = if (partFile.isFile) partFile.length() else 0L
+                        val validId = safeIdPattern.matches(fileId) && !fileId.all { it == '.' }
+
+                        if (!acceptedSessions.contains(sessionId) || fileObj == null || !validId) {
+                            sendJsonResponse(output, 403, JSONObject().put("error", "Unknown or unapproved session/file"))
+                        } else if (isChunked || offset < 0 || offset > existingBytes) {
+                            sendJsonResponse(
+                                output,
+                                409,
+                                JSONObject().put("error", "Bad offset or body encoding").put("expectedOffset", existingBytes)
+                            )
+                        } else if (offset + contentLengthLong > declaredSize) {
+                            sendJsonResponse(output, 413, JSONObject().put("error", "Upload exceeds the declared file size"))
+                        } else {
+                            val digestKey = "$sessionId:$fileId"
+                            streamDigests.remove(digestKey)
+                            val digest = if (offset == 0L) java.security.MessageDigest.getInstance("SHA-256") else null
+                            val buffer = ByteArray(1024 * 1024)
+                            var received = 0L
+                            java.io.RandomAccessFile(partFile, "rw").use { raf ->
+                                raf.setLength(offset)
+                                raf.seek(offset)
+                                while (received < contentLengthLong) {
+                                    val toRead = minOf(buffer.size.toLong(), contentLengthLong - received).toInt()
+                                    val r = input.read(buffer, 0, toRead)
+                                    if (r == -1) break
+                                    raf.write(buffer, 0, r)
+                                    digest?.update(buffer, 0, r)
+                                    received += r
+                                    emitReceiveProgress(sessionId, fileId, offset + received, false)
+                                }
+                            }
+                            // Sender disconnected: keep the partial file so the next session resumes from it.
+                            if (received < contentLengthLong) return
+                            if (digest != null) {
+                                val hex = digest.digest().joinToString("") { String.format("%02x", it) }
+                                streamDigests[digestKey] = Pair(hex, offset + received)
+                            }
+                            emitReceiveProgress(sessionId, fileId, offset + received, true)
+                            val ack = JSONObject().apply {
+                                put("sessionId", sessionId)
+                                put("fileId", fileId)
+                                put("offset", offset)
+                                put("received", received)
+                            }
+                            sendJsonResponse(output, 200, ack)
                         }
                     }
 
@@ -829,6 +918,7 @@ class TransferServerModule(
                         val sessionId = headers["x-localshare-session-id"] ?: ""
                         val fileId = headers["x-file-id"] ?: ""
                         val offset = headers["x-offset"]?.toLongOrNull() ?: 0L
+                        streamDigests.remove("$sessionId:$fileId")
 
                         val writtenLength: Long
                         if (contentLength > 0 && !isChunked) {
@@ -897,7 +987,14 @@ class TransferServerModule(
                         val expectedSha256 = commitJson.optString("sha256")
 
                         val partFile = File(receivedDir, "$fileId.localshare.part")
-                        val actualSha = if (partFile.exists()) HashingModule.computeSha256(partFile) else ""
+                        // Reuse the hash computed while the file streamed in when it covers the
+                        // whole file; otherwise (chunked or resumed upload) read the file back.
+                        val cachedDigest = streamDigests.remove("$sessionId:$fileId")
+                        val actualSha = when {
+                            !partFile.exists() -> ""
+                            cachedDigest != null && cachedDigest.second == partFile.length() -> cachedDigest.first
+                            else -> HashingModule.computeSha256(partFile)
+                        }
 
                         val sessionJson = activeSessions[sessionId]
                         val advertisedName = sessionJson?.optJSONArray("files")?.let { filesArr ->
@@ -1051,6 +1148,11 @@ class TransferServerModule(
                         sendJsonResponse(output, 200, telemetry)
                     }
 
+                    path == "/v1/fs/category-counts" && method == "GET" -> {
+                        val countsJson = queryCategoryCounts()
+                        sendJsonResponse(output, 200, countsJson)
+                    }
+
                     path == "/v1/fs/categories" && method == "GET" -> {
                         val type = urlQueryParam(requestTarget, "type") ?: "photos"
                         val limit = urlQueryParam(requestTarget, "limit")?.toIntOrNull() ?: 60
@@ -1100,6 +1202,8 @@ class TransferServerModule(
                             putString("address", resolvedAddress)
                             putInt("port", body.optInt("port", 53318))
                             putString("platform", body.optString("platform"))
+                            // Token the connecting PC issued so this phone can call it back.
+                            putString("accessToken", body.optString("accessToken", ""))
                         }
                         sendEvent("LivePeerConnected", eventParams)
                         sendJsonResponse(output, 200, resp)
@@ -1222,6 +1326,31 @@ class TransferServerModule(
                 "Connection: close\r\n\r\n"
         output.write(header.toByteArray(Charsets.UTF_8))
         output.flush()
+    }
+
+    /**
+     * Emit ReceiveProgress for a file at most every 150 ms (always when [force]).
+     */
+    private fun emitReceiveProgress(sessionId: String, fileId: String, transferred: Long, force: Boolean) {
+        val metrics = sessionMetricsMap[sessionId] ?: return
+        metrics.transferredBytes = transferred
+        val now = System.currentTimeMillis()
+        val elapsed = now - metrics.lastEmittedTime
+        if (!force && elapsed < 150) return
+        val speed = if (elapsed > 0) ((transferred - metrics.lastEmittedBytes) * 1000.0) / elapsed else 0.0
+        metrics.lastEmittedTime = now
+        metrics.lastEmittedBytes = transferred
+        val params = Arguments.createMap().apply {
+            putString("sessionId", sessionId)
+            putString("fileId", fileId)
+            putString("fileName", metrics.fileName)
+            putDouble("transferredBytes", transferred.toDouble())
+            putDouble("totalBytes", metrics.totalBytes.toDouble())
+            putDouble("speed", speed)
+            putString("direction", "receive")
+            putString("status", "in_progress")
+        }
+        sendEvent("ReceiveProgress", params)
     }
 
     private fun sendJsonResponse(output: OutputStream, statusCode: Int, json: JSONObject) {

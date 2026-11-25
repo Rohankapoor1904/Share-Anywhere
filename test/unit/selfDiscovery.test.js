@@ -73,4 +73,27 @@ describe('Self-discovery filtering', () => {
     expect(peers[0].deviceId).toBe('remote-id');
     expect(peers[0].address).toBe('10.2.76.9');
   });
+
+  test('a stale copy of this phone seen before its IP was known is removed once the IP is learned', () => {
+    node.detectedLocalIp = '';
+    node.selfDevice.address = '127.0.0.1';
+    node._handlePeerSighting({
+      deviceId: 'ls-android-old-launch',
+      displayName: 'This Phone (old)',
+      address: '10.2.48.200',
+      port: 53318,
+      platform: 'android'
+    });
+    node._handlePeerSighting({ deviceId: 'pc-1', displayName: 'PC', address: '10.2.48.20', port: 53318, platform: 'desktop' });
+    expect(node.getPeers()).toHaveLength(2);
+
+    const lost = [];
+    node.events.on(EngineEventType.PEER_LOST, (p) => lost.push(p.deviceId));
+    node.detectedLocalIp = '10.2.48.200';
+    node.selfDevice.address = '10.2.48.200';
+    node._purgeSelfPeers();
+
+    expect(node.getPeers().map((p) => p.deviceId)).toEqual(['pc-1']);
+    expect(lost).toEqual(['ls-android-old-launch']);
+  });
 });

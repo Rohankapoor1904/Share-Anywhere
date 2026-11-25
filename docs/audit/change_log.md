@@ -816,3 +816,440 @@ This file tracks every modification made across the codebase, recording exact ta
    - `npm run lint`: 0 errors, 0 warnings (`--max-warnings=0`).
    - `npm run type-check`: 0 errors (`tsc --noEmit`).
    - Desktop build: `LocalShare.exe` compiled (168.84 MB).
+
+---
+
+## [Phase 9] Anti-Demo Cleanup, Broken Feature Fixes & Flagship Design System Overhaul
+- **Date**: 2026-11-19
+- **Status**: COMPLETE, VERIFIED & PASSING CI
+
+### Entry 9.1: Comprehensive Desktop & Mobile Polish and Bug Elimination
+1. **Exact Target & Location**:
+   - `desktop/main.js` (lines 20-65: frameless window setup, titleBarStyle hidden, window:minimize, window:maximize, window:close IPC handlers)
+   - `desktop/preload.js` (lines 10-38: window control methods minimizeWindow, maximizeWindow, closeWindow exposed via ipcRenderer.send)
+   - `desktop/public/index.html` (lines 20-320: rebranded titlebar to "Share Anywhere", removed hardcoded "kapoor192003" and "realme GT 6T", removed fake Screencast nav tab & view completely, neutral defaults, desktop toast container, confirm modal markup)
+   - `desktop/public/style.css` (lines 1-980: refined typography with Inter/Segoe UI Variable, elevated monochrome surfaces, non-blocking toast notifications, glass confirm modal)
+   - `desktop/public/app.js` (lines 1-1050: custom non-blocking Toast system `showToast(msg, type)` and Glass Confirm Dialog `showConfirmModal()`, eliminated all browser `alert()` and `window.confirm()`, 300ms debounced global search wired to `/api/remote-search`, collapsible device subnav with rotating chevron, single-request `updateCategoryCounts` via `/api/remote-category-counts`)
+   - `desktop/engine/desktop-node.js` (lines 1-850: replaced missing `qrcode` npm package with pure-JS `qr-svg.js` generator, added `/api/remote-category-counts` endpoint)
+   - `desktop/engine/qr-svg.js` (lines 1-620: pure-JS zero-dependency QR code Version 1-12 Byte-mode encoder module with Reed-Solomon ECC L/M, 8 mask evaluations with penalty scoring, crisp rounded module SVG output)
+   - `test/unit/qrSvg.test.js` (lines 1-45: 3 unit tests verifying QR matrix encoding, masking, and valid SVG output)
+   - `android/app/src/main/java/com/rohan/localshare/transfer/TransferServerModule.kt` (lines 415-520: added explicit "bluetooth" directory support, added consolidated `queryCategoryCounts()` and `GET /v1/fs/category-counts` endpoint returning all counts in one single HTTP request)
+   - `src/components/AmbientBackground.js` (lines 1-65: eliminated hard-edged View circles, implemented smooth `react-native-svg` `<RadialGradient>` glowing top and bottom edges with opacity <= 0.14)
+   - `src/theme/themes.js` (lines 1-280: replaced neon cyan outlines with quiet elevated monochrome surfaces and subtle hairline borders `rgba(255,255,255,0.08)`, preserved all `THEME_IDS` and pure `#000000` AMOLED background/tabBar in Obsidian)
+   - `src/navigation/AppNavigator.js` (lines 1-150: disabled header duplication via `headerShown: false`, refined floating dock with subtle hairline border and frosted glass, enabled compact 10px labels: Home, Files, Activity, Settings)
+   - `src/components/PeerCard.js` (lines 1-320: replaced raw IP and dev jargon badges with clean "Connected via Wi-Fi" and "Ready to pair" subtitles, removed dead channel badges)
+   - `src/components/TransferTile.js` (lines 1-260: completed transfers now render as quiet 1-row history items with Open button, hiding the full progress bar and loud pills; active transfers render a sleek 4px thin animated progress bar with speed and ETA)
+   - `src/screens/DevicesScreen.js` (lines 1-1134: filtered connectedPeer out of nearby devices list to eliminate duplicate card, replaced 3 loud buttons with 1 primary Scan QR + 2 ghost buttons, added compact My QR chip in header, added clean device telemetry formatting e.g. "Windows PC • 84.8 GB free", added 104px paddingBottom to FlatList)
+   - `src/screens/RemoteExplorerScreen.js` (lines 1-680: replaced bulky Target Device card with compact Editorial Header device switcher pill, removed clipboard push/pull buttons, added 0.58 opacity dark scrim behind media thumbnail size badges for 100% legibility, added multi-select batch download/delete floating action bar, added 110px paddingBottom)
+   - `src/screens/SettingsScreen.js` (lines 1-380: clean Editorial Header, fixed theme card badge collision on OLED Obsidian with `flex: 1` on title, rotated chevron icon for diagnostics, added 110px paddingBottom to ScrollView)
+   - `src/screens/TransfersScreen.js` (lines 1-520: removed dev jargon subtitles and sessions badge, clean editorial headers for Transfers, Received, and Clipboard tabs, passed onOpen handler to TransferTile, added 110px paddingBottom)
+2. **Root Cause & Trigger**:
+   - Desktop: Double titlebar caused by missing `frame: false` and unwired window controls; blank PC QR code caused by runtime failure of uninstalled `qrcode` module; browser `alert()` and `confirm()` modals disrupting user experience; dead Screencast placeholder tab; multiple consecutive HTTP requests for media category counts; hardcoded names (`kapoor192003`, `realme GT 6T`).
+   - Mobile: Hard-edged background glow circles cutting awkwardly behind cards on Android due to lack of `shadowRadius` blurring on Views; floating dock clipping over bottom cards due to missing bottom scroll padding; duplicate headers between navigation stack and screens; duplicate device cards showing connected PC twice on Devices tab; raw dev jargon and loud neon borders; bulky cards on Files tab; crowded theme cards on Settings tab.
+3. **Exact Modification (What Changed)**:
+   - Built zero-dependency QR code generator (`qr-svg.js`) in pure JS and integrated into `/api/self`.
+   - Wired frameless Electron window with IPC controls (`minimizeWindow`, `maximizeWindow`, `closeWindow`).
+   - Added consolidated `GET /v1/fs/category-counts` endpoint in Android Kotlin transfer server and `/api/remote-category-counts` in desktop node.
+   - Built custom non-blocking desktop toast notifications and glass confirm modal dialog.
+   - Replaced raw circular Views with SVG `RadialGradient` in `AmbientBackground.js`.
+   - Refined visual theme tokens to elevated monochrome surfaces with hairline borders.
+   - Restructured all screens to use clean Editorial Screen Headers and adequate bottom list padding (104-110px).
+   - Upgraded `RemoteExplorerScreen` with header device switcher, dark thumbnail scrims, and multi-select batch download/delete.
+   - Upgraded `TransferTile` to render completed transfers as clean 1-row history items.
+4. **Why It Was Changed**:
+   - Strictly enforces the Anti-Fake Contract (§3), eliminates dead UI and demo placeholders, and delivers an Apple/Linear/Nothing OS grade flagship experience across Desktop and Mobile.
+5. **Impact & Guidance**:
+   - Zero new npm dependencies added.
+   - All tests pass: 87/87 unit tests, 18/18 integration tests.
+   - Zero ESLint errors or warnings across entire repository (`--max-warnings=0`).
+   - Clean TypeScript checkJs type check (`tsc --noEmit`).
+6. **Verification Evidence**:
+   - `npm test`: 14 passed, 14 total; 87 tests passed.
+   - `npm run test:integration`: 5 passed, 5 total; 18 tests passed.
+   - `npm run lint`: 0 errors, 0 warnings.
+   - `npm run type-check`: 0 errors.
+
+---
+
+## [Phase 10] Appllama Benchmark Mobile Design System & UI/UX Redesign Overhaul
+- **Date**: 2026-11-22
+- **Trigger**: User `/appllama-app-design-skill /appllama-usage redesign the app ui`
+- **Status**: COMPLETE, VERIFIED & PASSING CI
+
+### Entry 10.1: Native Mobile Design System, Safe Area Dock, Continuous Squircles & Typography Overhaul
+1. **Exact Target & Location**:
+   - `src/theme/tokens.js` (lines 1-70: updated spacing, radii scale to include `xl: 20`, `xxl: 24`, `pill: 32`, added `tabularNums` fontVariant token)
+   - `src/components/GlassCard.js` (lines 70-85: added continuous squircle curve token `borderCurve: 'continuous'`, refined spring tension/friction)
+   - `src/navigation/AppNavigator.js` (lines 1-155: integrated `useSafeAreaInsets` for safe bottom offset `Math.max(insets.bottom, 12)`, added frosted glass floating dock with `borderCurve: 'continuous'`, height 62, tactile active tab indicator pill `backgroundColor: theme.colors.primaryGlow`, `borderRadius: 14`)
+   - `src/components/PeerCard.js` (lines 260-322: added `borderCurve: 'continuous'` to trust badge, channel badge, and action pills with 12px squircle radius)
+   - `src/components/TransferTile.js` (lines 220-330: added `borderCurve: 'continuous'` on glyphs, open button, retry button, and applied `fontVariant: ['tabular-nums']` to transfer speed, ETA, percentage, byte metrics, and timestamps)
+   - `src/components/EmptyState.js` (lines 45-60: added `borderCurve: 'continuous'` to icon container and centered CTA)
+   - `src/screens/DevicesScreen.js` (lines 265-280, 650-700, 945-1045: replaced hardcoded pink `#ec4899` with semantic token `theme.colors.accent`/`accentGlow` adhering to Anti-Slop Law 2, added `borderCurve: 'continuous'` to connected PC card, avatar, action tiles, QR chips, search box, and scanner modal, added `fontVariant: ['tabular-nums']` to telemetry bytes and peer count, updated bottom padding to 116px)
+   - `src/screens/TransfersScreen.js` (lines 550-770: added `borderCurve: 'continuous'` across 3-segment bar, throughput banner, filter chips, file cards, push clip cards, and clipboard cards, added `fontVariant: ['tabular-nums']` to speeds, counters, and timestamps, updated bottom padding to 116px)
+   - `src/screens/RemoteExplorerScreen.js` (lines 960-1200: added `borderCurve: 'continuous'` to device switcher pill, search bar, category chips, media thumbnail cells, batch action dock, and batch buttons, added `fontVariant: ['tabular-nums']` to thumbnail file sizes and selection counts, updated bottom padding to 116px)
+   - `src/screens/SettingsScreen.js` (lines 290-440: added `borderCurve: 'continuous'` to theme cards, active pills, chunk size button, and applied `fontVariant: ['tabular-nums']` to ports, chunk size, and engine versions, updated bottom padding to 116px)
+   - `src/screens/ShareHubScreen.js` (lines 210-350: added `borderCurve: 'continuous'` to recipient card, peer chips, find devices button, dropzone pick button, and send button, added 40px bottom padding)
+2. **Root Cause & Trigger**: User command invoking `/appllama-app-design-skill` and `/appllama-usage` to redesign the mobile app UI to benchmark quality, eliminating AI-default slop, standardizing continuous corner radii (squircles), applying semantic tokens across both themes, locking accents, implementing tabular numerals on all counters/speeds/metrics, and making the floating navigation dock safe-area aware.
+3. **Exact Modification (What Changed)**:
+   - Elevated the design tokens with 4/8pt spacing rhythm, squircle continuous curves, and tabular numeral typography.
+   - Made the floating capsule dock safe-area responsive via `useSafeAreaInsets()`, floating cleanly above home indicators and gesture pills with an active glowing pill indicator behind the selected tab.
+   - Enforced strict Anti-Slop laws: eliminated hardcoded non-semantic colors, aligned action tiles with semantic tokens (`accent`, `accentGlow`), ensured high-contrast light and dark mode compliance.
+   - Applied `fontVariant: ['tabular-nums']` across all speeds, bytes, progress percentages, countdowns, and timestamps to eliminate layout jitter during high-speed streaming.
+   - Enhanced all screens with 116px bottom padding to guarantee smooth under-scroll without clipping under the floating dock.
+4. **Why It Was Changed**: Elevates LocalShare from a functional utility to an Apple AirDrop / Linear / Raycast grade consumer mobile app matching benchmark quality standards.
+5. **Impact & Guidance**: Fully backward-compatible; passes all tests, type-check, and lint without warnings.
+6. **Verification Evidence**:
+   - `npm test`: 14/14 test suites passed, 87/87 tests passed.
+   - `npm run type-check`: 0 TypeScript checkJs errors (`tsc --noEmit`).
+   - `npm run lint`: 0 ESLint errors, 0 warnings (`--max-warnings=0`).
+
+### Entry 10.2: Standalone Desktop & Android Release Package Compilation
+1. **Exact Target & Location**:
+   - `dist/LocalShare-win32-x64/LocalShare.exe` (168.84 MB)
+   - `android/app/build/outputs/apk/release/app-arm64-v8a-release.apk` (33.28 MB)
+   - `android/app/build/outputs/apk/release/app-x86_64-release.apk` (34.99 MB)
+   - `android/app/build/outputs/apk/release/app-universal-release.apk` (83.37 MB)
+   - `android/app/build/outputs/apk/release/app-armeabi-v7a-release.apk` (31.67 MB)
+   - `build_pc.ps1`, `build_release.ps1`
+2. **Root Cause & Trigger**: User command `build the app`.
+3. **Exact Modification (What Changed)**:
+   - Executed `build_pc.ps1`: verified desktop source assets, ran linter, unit test suites, packaged standalone Windows desktop executable via Electron Packager, and ran live smoke test against `http://127.0.0.1:53319/api/self`.
+   - Executed `build_release.ps1`: verified OpenJDK 17 and Android SDK toolchain, ran automated Anti-Fake regex audit (0 violations found), executed linter, type-check, Jest unit tests, Jest integration tests on real OS sockets, and executed Gradle `assembleRelease` across all 4 ABI configurations.
+4. **Why It Was Changed**: Produces verified, production-ready release artifacts for both Windows Desktop and Android mobile environments.
+5. **Impact & Guidance**: Binaries are compiled and ready for distribution or installation.
+6. **Verification Evidence**:
+   - Desktop Binary: `dist/LocalShare-win32-x64/LocalShare.exe` (168.84 MB), smoke test passed.
+   - Android Build: `BUILD SUCCESSFUL in 10m 59s (1176 actionable tasks: 77 executed, 1099 up-to-date)`.
+   - Android Arm64 APK: SHA-256 `36C1AF3C007E661CB13650F38A39F3FA18C757D6E896642591E24D1FA1C462C4` (33.28 MB).
+   - Android Universal APK: SHA-256 `CECC28E8B5A50C78486AA856E3CE6778B8306F223B3464858F05D99A36B31D29` (83.37 MB).
+   - Android x86_64 APK: SHA-256 `A578CE21552979F13B6B68BE040264EE2872CEBB4ED197B1D22814925DD75C04` (34.99 MB).
+   - Android armeabi-v7a APK: SHA-256 `EA2207224B1BD4980E3732FAFEBA9B9CAD19830A4441E2EA6D62908BE655B064` (31.67 MB).
+
+---
+
+## [Security Hardening] LAN Exposure, Path Traversal & Crash Fixes
+- **Date**: 2026-11-25
+- **Trigger**: Security review found that any device on the LAN (or any website open in a browser on the PC) could read, delete and overwrite files on the PC, read the clipboard and the pairing code, and crash the gateway with a single request.
+- **Status**: JS changes syntax-checked; fs-service containment logic executed against real files (21 checks). Full `npm run lint`, `npm run type-check`, `npm test` and `npm run test:integration` still to be run on a machine with the project's Node toolchain. The one-line Kotlin change is unverified by compile (see BLOCKED.md).
+
+### Entry S.1: Peer authentication on the transfer gateway
+1. **Target**: `nodejs-assets/nodejs-project/transfer-gateway.js`
+2. **Root cause**: `/v1/fs/*`, `/v1/clipboard`, `/v1/telemetry`, `/v1/files*` and `/v1/live/disconnect` served anyone on `0.0.0.0:53318`.
+3. **Change**: All `/v1/` routes except `info`, `session`, `chunk`, `file/commit`, `cancel`, `live/connect`, `live/ping` require an access token (`x-localshare-token` header, or `token` query param for media URLs). `/v1/live/connect` issues a token only for (a) a token already issued this run, (b) the pairing code (constant-time compare, 5 wrong codes per IP => 5-minute lockout, HTTP 429), or (c) user approval through the new `onConnectRequest` hook. The connecting peer's address is taken from the socket, not the request body.
+4. **Impact**: Phones pair by scanning the QR (which already carries the code) or by the PC user approving a "Connection request" prompt. Tokens live in memory for the life of the PC app.
+
+### Entry S.2: Filesystem containment
+1. **Target**: `nodejs-assets/nodejs-project/fs-service.js`
+2. **Root cause**: `resolvePath()` ignored the browse root (`path.resolve(requestedPath)`); `deleteEntry()` would `rm -rf` any path.
+3. **Change**: `resolvePath`, `listDirectory`, `copyEntry`, `deleteEntry` accept `allowedRoots` and refuse anything outside them (symlink/junction-aware via `realpathSync.native`), with error code `EOUTSIDEROOT` => HTTP 403. Deleting a shared root or drive root is refused. New helpers: `isPathAllowed`, `sanitizeFileName`, `getDriveRoots`, exported `uniquePath`. Without `allowedRoots` behaviour is unchanged (unit-test callers).
+4. **Impact**: The desktop gateway passes `exposeDrives: true`, so paired phones still browse drives (existing feature). Set it to `false` in `desktop/engine/desktop-node.js` to limit phones to the home folder.
+
+### Entry S.3: Transfer integrity
+1. **Target**: `transfer-gateway.js` (`/v1/session`, `/v1/chunk`, `/v1/file/commit`, `/v1/files/download`, stream helpers, body parsing)
+2. **Root cause**: chunks were written for any `sessionId`/`x-file-id` (path traversal through the id); `x-offset > 0` on a missing file threw an unhandled `ENOENT` and crashed the process; no backpressure; unbounded JSON bodies; commit overwrote existing files; read-stream errors and late `writeHead` in the catch path crashed the process.
+3. **Change**: session/file ids must match `^[A-Za-z0-9._-]{1,128}$`; chunks and commits must belong to an accepted session; offset beyond received bytes => 409 with `expectedOffset`; chunk > `kMaxChunkSize` or past the declared file size => 413; backpressure honoured; write/read stream errors handled; JSON bodies capped at 4 MB (413); committed names sanitized and de-duplicated with `uniquePath`; the request handler is wrapped so a rejection can never crash the process.
+
+### Entry S.4: LocalSend gateway
+1. **Target**: `nodejs-assets/nodejs-project/localsend-gateway.js`
+2. **Root cause**: `path.join(storageDir, fileMeta.fileName)` let a sender write anywhere (e.g. the Startup folder); UDP socket had no `error` listener.
+3. **Change**: file names sanitized + `uniquePath`; upload tokens are single-use; UDP `error` listener; bounded JSON; headers-sent-safe error path; handler rejection guarded.
+
+### Entry S.5: Desktop control API
+1. **Target**: `desktop/engine/desktop-node.js`, `desktop/main.js`
+2. **Root cause**: control API on `0.0.0.0:53319` with `Access-Control-Allow-Origin: *` and no auth exposed clipboard, pairing code, `/api/send` (exfiltrate any file), `/api/respond-request` (self-approve) and `/api/open-file` (`exec("start ...")` => code execution chain).
+3. **Change**: binds `127.0.0.1`; requires a loopback `Host` header (DNS-rebinding guard); no CORS headers; per-launch 256-bit `controlToken` delivered once via `getControlUrl()` (`/?token=`) and swapped for an `HttpOnly; SameSite=Strict` cookie, or sent as `x-localshare-control-token`; `/api/open-file` only accepts files inside the received folder and reveals them (`explorer /select`, `open -R`) instead of executing them; `exec` removed; static server confined to `desktop/public`; pairing code from `crypto.randomInt`; JSON bodies capped; handler wrapped against unhandled rejections. PC-initiated live connects hand the phone an access token so it can push its clipboard back.
+4. **Electron**: `sandbox: true`; `shell:openItem` / `shell:showInFolder` limited to the received folder; window loads `engine.getControlUrl()`; connect requests get their own notification text.
+5. **Standalone mode**: `npm run pc:server` prints the tokenized UI URL on startup; open that exact URL.
+
+### Entry S.6: Desktop UI XSS
+1. **Target**: `desktop/public/app.js`
+2. **Change**: escaped peer-controlled `deviceId`, `platform`, `port`, thumbnail/stream URLs and `data-size`; incoming modal distinguishes connection requests from file transfers.
+
+### Entry S.7: Mobile client
+1. **Target**: `src/engine/remoteFs.js`, `src/engine/LocalShareNode.js`, `src/screens/DevicesScreen.js`, `android/.../TransferServerModule.kt`
+2. **Change**: token registry (`setPeerAccessToken`, `getPeerAccessToken`, `peerAuthHeaders`); every request to a paired peer carries the token (media URLs via `&token=`); `connectToPeer` sends `pairingCode` (taken from the scanned QR's `code`) and stores the returned token; `LivePeerConnected` now forwards `accessToken` from Kotlin to JS.
+
+### Entry S.8: Swallowed errors (AGENTS.md §3)
+1. **Target**: every empty `catch {}` / `.catch(() => {})` in `src/`, `nodejs-assets/`, `desktop/`.
+2. **Change**: replaced with logging (`logger.warn` / `console.warn`, or debug-only `logIgnored` for expected noise like unreachable hosts during subnet scans, enabled with `LOCALSHARE_DEBUG=1`). CI gains a "Guard against swallowed errors" step.
+
+### Entry S.9: Tests
+- New `test/integration/controlApi.integration.test.js` (loopback bind, 401 without token, Host check, no CORS, cookie exchange, open-file confinement, static confinement).
+- Extended `remoteFs`, `remoteFsClient`, `transfer`, `localsend`, `approval` integration tests and `fsService` unit tests with regression cases for every fix above.
+
+---
+
+## [Performance] Streamed transfers
+- **Date**: 2026-11-25
+- **Trigger**: Transfers waited for a reply after every 4 MB chunk, the Android receiver opened a new TCP connection per chunk, the phone read each file twice (a pre-send hash plus the send), receivers read each file back to verify it, and Node's 5-minute request timeout would cut long uploads.
+- **Status**: Node receiver exercised in a sandbox harness against real files (13 checks: one-request 5 MB upload, commit verified without re-reading, resume, stale-tail truncation, 403/413 limits, corrupted stream rejected, legacy chunk path). Integration tests added. Kotlin changes not compiled here (see BLOCKED.md).
+
+### Entry P.1: `PUT /v1/stream` (protocol addition, backward compatible)
+1. **Targets**: `nodejs-assets/nodejs-project/transfer-gateway.js`, `android/.../transfer/TransferServerModule.kt`
+2. **Change**: Accepted session responses now include `stream: true`. `PUT /v1/stream` takes the rest of one file in a single request (`x-localshare-session-id`, `x-file-id`, `x-offset`, `Content-Length` = bytes remaining; 64-bit on Android). Same gating as `/v1/chunk`: approved session, known safe file id, `offset <= bytes on disk`, `offset + length <= declared fileSize` (413 otherwise). Bytes past a resume offset are truncated. When the stream starts at 0 the SHA-256 is computed while writing and reused by `/v1/file/commit` if it covers the whole part file; otherwise commit re-reads as before. Chunk writes clear any cached digest. Android tracks approved sessions in `acceptedSessions` (previously a rejected session stayed in `activeSessions`).
+3. **Compatibility**: Senders use `/v1/stream` only when the session response says `stream: true`; otherwise they fall back to `/v1/chunk`. `/v1/chunk` is unchanged.
+
+### Entry P.2: Senders
+- **PC** (`desktop/engine/desktop-node.js`): `sendViaLocalShare` split into `streamFileToPeer` (one piped request per file, 1 MB reads, honours the receiver's resume offset by hashing the prefix locally) and `chunkFileToPeer` (old path). Progress is broadcast at most every 150 ms.
+- **Phone** (`TransferClientModule.kt` `sendFileStream`, new trailing `useStream: Boolean` arg; `NativeBridge.js`; `sendController.js`): streamed mode sends a one-shot OkHttp `RequestBody` reading the file once in 1 MB blocks, hashing and reporting progress as it goes. Resume now hashes the already-sent prefix instead of skipping it (skipping produced a wrong commit hash on every resumed upload). `sendController` no longer pre-hashes files the native sender will hash itself.
+
+### Entry P.3: Server limits
+- `requestTimeout: 0` on the transfer and LocalSend HTTP servers (Node's default 5-minute cap would abort large single uploads). Write streams use a 1 MB buffer.
+
+### Entry P.4: Desktop "Send files" button
+- `desktop/public/app.js` posted to `/api/transfer/send`, which does not exist (the control server answered with index.html and nothing was sent). Now posts to `/api/send`, reports failures as toasts, and resolves real file paths through `electronAPI.getPathForFile` (`webUtils`, added to `desktop/preload.js`) because `File.path` is unavailable in the sandboxed window.
+
+### Entry P.5: Removed settings
+- Settings → "Chunk Streaming Size" and "Low-Power Mode" removed (`SettingsScreen.js`, defaults in `providers.js`). Neither value was read anywhere: chunk size was fixed at 4 MB and nothing consumed `lowPowerMode`.
+
+### Entry P.6: Tests
+- `test/integration/transfer.integration.test.js`: stream flag, single-request upload, resume after a chunked prefix, corrupted stream, size/approval limits.
+- New `test/integration/desktopStream.integration.test.js`: the PC sender uses exactly one `/v1/stream` request per file and files arrive byte-identical.
+
+---
+
+## [Desktop Launch Fix] Windows Portable Electron Renderer & GPU Process Crash
+- **Date**: 2026-11-25
+- **Trigger**: Launching `dist/LocalShare-win32-x64/LocalShare.exe` failed with `0x80000003` (`APPCRASH`, `LocalShare.exe` offset `0x064571cf`) or `ERR_FAILED (-2)`.
+- **Root Cause**:
+  1. `desktop/main.js` had `webPreferences.sandbox: true`, causing the renderer to crash with `0xC0000135` (`STATUS_DLL_NOT_FOUND`) on `D:\` (which lacks `ALL APPLICATION PACKAGES` ACLs).
+  2. Minidump analysis of `LocalShare.exe.4628.dmp` (`0x80000003` at RVA `0x64571cf`) showed `content\browser\gpu\gpu_process_host.cc` hitting `GPU process isn't usable. Goodbye.` because both hardware GPU and SwiftShader fallback failed inside the sandboxed Windows `--type=gpu-process`.
+- **Exact Modification**:
+  - `desktop/main.js`: On `win32`, added `app.commandLine.appendSwitch('no-sandbox')`, `app.commandLine.appendSwitch('disable-gpu-sandbox')`, and `app.disableHardwareAcceleration()` before `app.whenReady()`, alongside `sandbox: false` (retaining `nodeIntegration: false` and `contextIsolation: true`), `render-process-gone` logging, and post-`loadURL` show fallback.
+  - Rebuilt `dist/LocalShare-win32-x64/LocalShare.exe` via `npm run desktop:build`.
+- **Verification Evidence**:
+  - `npm run lint`, `npm run type-check`, `npm test -- --ci`, `npm run test:integration -- --ci`, and `LocalShare.exe` launch verified with visible `Share Anywhere` window (`Vis=True`).
+
+---
+
+## [Fix] Files tab browsed the wrong device; app drew under the status bar
+- **Date**: 2026-11-25
+- **Reported**: "Files shows the phone's own media instead of the connected device's", and "the app is full screen".
+
+### Entry F.1: Files tab target (`src/screens/RemoteExplorerScreen.js`)
+1. **Root cause**: the target was `route param || connectedPeer || peers[0]`, chosen once at mount and only replaced when empty. When the tab opened before a connection, or when `peers[0]` was this phone's own stale mDNS record (an earlier launch's id/certificate, listed before the Wi-Fi IP was known) or a LocalSend device, the tab stayed on that device.
+2. **Change**: the screen is now a thin wrapper that resolves the target (explicit pick from Home/the picker, else the live-connected device; never this phone, never LocalSend-only peers, never a device without an access token, never an arbitrary `peers[0]`) and renders `FilesBrowser` keyed by that device so paths, listings and selection reset per device. A new connection or a disconnect clears any earlier pick. No connected device shows "Connect to your PC" with a Go to Home button. Load errors show inline (401 = "not paired anymore") instead of an alert or a silent empty list.
+3. **Categories**: Recent (default), Photos, Videos, Music, Docs, Downloads, All files, in a horizontally scrolling row.
+
+### Entry F.2: Self-echo purge (`src/engine/LocalShareNode.js`)
+- `startDiscovery` learns the Wi-Fi IP (`_refreshLocalAddress`) before registering/browsing mDNS, and `_purgeSelfPeers` removes any listed peer matching this device's id, fingerprint or address whenever the IP is (re)learned.
+
+### Entry F.3: PC categories exclude received files (`fs-service.js`, `transfer-gateway.js`)
+- `listCategory(type, limit, offset, rootDir, { excludeDirs })` skips the given folders for every category except `downloads`. The gateway passes its `storageDir` (Downloads/LocalShare), so the phone's own photos received earlier are not shown back to it as the PC's media. All files and Downloads still show them.
+
+### Entry F.4: Not full screen
+- `App.js`: `StatusBar translucent={false}` with the theme background (expo-status-bar defaults to translucent on Android, so every screen using React Native's iOS-only `SafeAreaView` drew under the status bar).
+- `android/app/src/main/res/values/styles.xml`: explicit non-fullscreen, non-translucent window, `statusBarColor` and `windowBackground` set to the dark theme background (`#0e0e10`, was the old `#0f172a`).
+- `DevicesScreen.js` sheets no longer set `statusBarTranslucent`.
+- `desktop/main.js`: the window opens at most 88% of the screen's work area (was a fixed 1140x780, larger than small laptop screens), centered, `fullscreenable: false`.
+
+### Entry F.5: Tests
+- `test/unit/selfDiscovery.test.js`: stale self record is purged once the IP is learned.
+- `test/unit/fsService.test.js`: excluded folders are left out of photos/recent but kept in downloads.
+
+---
+
+## [Fix] Desktop app stuck in the background with no window
+- **Date**: 2026-11-25
+- **Reported**: "desktop app running in the background but not showing on the PC screen".
+- **Root cause**: closing the window ran `before-quit`, which awaited `engine.stop()` before `app.exit(0)`. `engine.stop()` cleared the timers of unanswered approval prompts without resolving them, so any request waiting on a prompt (a phone's `/v1/session` or `/v1/live/connect`) never finished, and `server.close()` waits for open connections (an in-flight upload too). The process stayed alive with no window, holding the single-instance lock; launching again only pinged it, and its `second-instance` handler did nothing because `mainWindow` was null.
+
+### Changes
+1. `desktop/engine/desktop-node.js` `stop()`: declines every pending prompt, ends SSE streams, closes the three servers in parallel with `closeAllConnections()`.
+2. `transfer-gateway.js`, `localsend-gateway.js` `stop()`: `closeAllConnections()` after `close()` (an interrupted upload keeps its `.localshare.part` and stays resumable).
+3. `desktop/main.js`:
+   - `before-quit` force-exits after 3 s whatever is still open.
+   - `second-instance` opens a new window when none exists.
+   - The engine starts once, bounded at 10 s.
+   - The window is shown on `ready-to-show`, `did-finish-load`, a 4 s fallback timer and after loading.
+   - A failed start or failed load shows an error page with the reason and the log path instead of an invisible window.
+   - The renderer reloads after a crash (up to 2 times).
+   - Uncaught errors and all `console.info/warn/error` go to `logs/main.log` next to `LocalShare.exe` (or `%APPDATA%/LocalShare/logs`). The file rotates at 1 MB.
+4. Tests: `approval.integration.test.js` (stop with an unanswered prompt finishes in under 3 s, and the phone gets `accepted: false`); `transfer.integration.test.js` (stop with an unfinished stream finishes in under 2 s and keeps the partial file).
+
+---
+
+## [Feature] Remember paired devices
+- **Date**: 2026-11-25
+- **Problem**: pairings lived only in memory, so every PC restart forgot every phone (each needed the code or an approval again), and phones forgot their tokens on every app restart. Both sides also got a new random id and name each launch, so auto-reconnect never matched across restarts and the phone appeared under a different name each time.
+
+### Gateway (`nodejs-assets/nodejs-project/transfer-gateway.js`)
+- Tokens are held as SHA-256 hashes. `issueAccessToken(peer, { remember })` saves remembered pairings through the new `onPairedDevicesChanged(devices)` option and reloads them from `pairedDevices`.
+  - Re-pairing a device id replaces its old pairing.
+  - At most 20 are kept (least recently seen dropped).
+  - The file never contains a usable token.
+- Code and approval pairings are remembered. A known token on `/v1/live/connect` refreshes `lastSeen`, name and platform.
+- New `hasAccessToken`, `getAccessRecord`, `listPairedDevices`, `forgetPairedDevice(id)`.
+- `onSessionRequest(sessionReq, { paired, pairedDevice })`: a session carrying a remembered token is flagged as paired.
+
+### Desktop (`desktop/engine/desktop-node.js`, `desktop/main.js`, `desktop/public/*`)
+- `~/.localshare-state.json` (overridable with `options.stateFile`; written atomically; a corrupt file starts fresh) now holds:
+  - `deviceId` (stable, so the fingerprint is stable too)
+  - `lastConnectedPeer`
+  - `autoReconnect`
+  - `autoAcceptPaired` (default true)
+  - `pairedDevices`
+- `evaluateIncomingSession`: transfers from paired devices are accepted without a prompt when `autoAcceptPaired` is on. It broadcasts `transfer_auto_accepted`, which shows a toast and an OS notification. Unknown devices are always prompted.
+- Tokens the PC hands to devices it connects to are remembered too, since the PC user chose to connect.
+- Control API:
+  - `GET /api/paired-devices`
+  - `POST /api/paired-devices/forget {id}` (also drops the live link if that device is connected)
+  - `POST /api/settings {autoAcceptPaired}`
+- Settings has a "Paired devices" card with an auto-accept switch and a list with Forget.
+
+### Phone (`src/engine/remoteFs.js`, `LocalShareNode.js`, `sendController.js`, `providers.js`)
+- Tokens are saved in AsyncStorage (`@localshare:peer_tokens`), keyed by device id and by address, and restored in `start()` before discovery and auto-reconnect.
+- Device id and name are persisted (`@localshare:device_identity`); the provider refreshes on `SELF_DEVICE_UPDATED`.
+- A 401/403 on live connect clears the stale token.
+- `/v1/session` sends the token so the PC can recognise a paired sender.
+
+### Tests
+- New `test/integration/pairing.integration.test.js`:
+  - pairing survives a gateway restart and reconnects with no code or prompt
+  - re-pairing replaces the old pairing
+  - forget revokes access (401)
+  - the session paired flag
+  - a stable PC id across engine instances
+  - auto-accept on and off
+  - a corrupt state file
+
+---
+
+## [Feature] Offline phone-to-phone sharing (Google Nearby Connections)
+- **Date**: 2026-11-25
+- **Problem**: files moved only over a shared Wi-Fi/LAN, so two phones with no common network could not share at all.
+- **Design doc**: `docs/architecture/offline-sharing.md` (also holds the planned PC BLE + Local-Only Hotspot flow).
+
+### Android native
+- `android/app/build.gradle`: + `com.google.android.gms:play-services-nearby:19.3.0`.
+- `AndroidManifest.xml`: + `CHANGE_WIFI_STATE` (Nearby bandwidth upgrade). The `neverForLocation` flag on `BLUETOOTH_SCAN` is unchanged for now and tracked in BLOCKED.md for on-device verification.
+- New `android/.../nearby/NearbyModule.kt`, registered in `LocalSharePackage.kt`:
+  - Methods: `isSupported` (GoogleApiAvailability), `isLocationServiceEnabled`, `openLocationSettings`, `startAdvertising`, `startDiscovery`, `stopAdvertising`, `stopDiscovery`, `stopAll`, `requestConnection`, `acceptConnection`, `rejectConnection`, `disconnect`, `sendControl` (BYTES, ≤ 32 KiB), `prepareFile` + `sendPreparedFile` (FILE; the payload id is known before the bytes flow), `cancelPayload`, `saveReceivedFile` (copies into Downloads/LocalShare with streaming SHA-256, deletes Nearby's temp copy, MediaStore scan), `discardReceivedFile`, `deleteSavedFile` (only inside the received folder).
+  - Events: `NearbyEndpointFound`, `NearbyEndpointLost`, `NearbyConnectionInitiated` (with UKEY2 `authDigits`), `NearbyConnectionResult`, `NearbyDisconnected`, `NearbyControl`, `NearbyIncomingFile`, `NearbyPayloadProgress` (throttled to 150 ms, with speed).
+  - Payload ids cross the bridge as strings (64-bit).
+
+### JS engine
+- `src/utils/protocol.js`: Nearby constants (service id, version, size limits, timeouts).
+- `src/engine/models.js`: `DeviceInfo` + `transport` ('lan' | 'nearby'), `endpointId`, `nearbyBandwidth`. These are emitted by `toJSON()` only when set, so LAN wire payloads are unchanged.
+- New `src/engine/nearbyProtocol.js`: validated codec for hello / offer (multi-part) / answer / fileStart / fileDone / ack / cancel, plus the endpoint-info codec.
+- New `src/engine/nearbyController.js`: sender and receiver state machine.
+  - Approval gate before any write, with the 4-digit code shown in the prompt.
+  - Never auto-accepted as "trusted"; only `autoAcceptAll` skips the prompt.
+  - Unbound/rogue FILE payloads are cancelled; payloads that arrive before their `fileStart` are held for 10 s.
+  - SHA-256 is verified before the ack, and a corrupt file is deleted.
+  - Covers cancel from either side, link loss, idle disconnect and bandwidth sampling.
+  - Native event handlers are guarded so a bad message cannot crash the app.
+- New `src/native/NearbyTransport.js`. `NativeBridge.js` gained the `nearby*` methods; `NativeEvents.js` gained `subscribeNearby()`.
+- `sendController.js`: a `peer.transport === 'nearby'` branch before the address/port check.
+- `LocalShareNode.js`:
+  - Creates the NearbyController (injectable transport).
+  - Nearby support check and persisted toggle (`@localshare:nearby_enabled`, `NEARBY_STATE_CHANGED`).
+  - Nearby discovery starts and stops alongside mDNS/BLE.
+  - Merge rule: LAN is preferred and the Nearby endpoint is kept as a fallback; a stale LAN peer still in Nearby range is demoted instead of dropped.
+  - Nearby-only peers are excluded from the LAN stale sweep and from live connect.
+  - Cancel and approve are routed to Nearby sessions.
+- `providers.js`: `nearbyState`, `setNearbyEnabled`, and a sender-side toast with the verification code.
+
+### UI
+- `PeerCard.js`: "No Wi-Fi needed" status for Nearby-only peers, a "Slow" badge when measured throughput is LOW, and no Connect pill for them.
+- `PinDialog.js`: the Nearby verification code (tabular numerals) in the approval dialog.
+- `SettingsScreen.js`: "Offline Sharing (Nearby)" switch, disabled with the reason when Play Services is missing.
+- `PermissionsScreen.js` + `utils/permissions.js`: a Location-service prompt on Android ≤ 12.
+
+### Tests
+- New: `test/unit/nearbyProtocol.test.js` (12), `test/unit/nearbyController.test.js` (10, end-to-end over `test/helpers/nearbyLoopback.js` with real files and real SHA-256), `test/unit/nearbyNode.test.js` (12).
+- Verification evidence (2026-11-25, sandbox runner that executes the real source and test files): new 34/34 pass. Regression on the touched engine suites (node, selfDiscovery, receiveController, notificationProgress, pairing, trustStore) is 30/30 pass.
+- Mutation checks: disabling the receiver hash check, the fileStart approval gate, or the offer prompt each makes the controller suite fail.
+- Not yet run in a real toolchain: `npm test` (full), `npm run test:integration`, `npm run lint`, `npm run type-check`, Gradle build. See BLOCKED.md.
+
+---
+
+## [Feature] Connect a PC without Wi-Fi (BLE bootstrap + phone Local-Only Hotspot)
+- **Date**: 2026-11-25
+- **Problem**: the PC and the phone could only share on a common Wi-Fi. Nearby Connections (added earlier today) has no Windows SDK.
+- **Design and wire spec**: `docs/architecture/offline-sharing.md` §2.
+
+### Android
+- New `bootstrap/BootstrapCrypto.kt`: P-256 ECDH, on-curve validation, RFC 5869 HKDF, AES-256-GCM, 6-digit code, and a deterministic credentials JSON. Pure JVM; no `BigInteger.TWO`, which needs API 33.
+- New `bootstrap/LocalHotspot.kt`:
+  - `startLocalOnlyHotspot`, reading SoftApConfiguration on API 30+ (with `wifiSsid` on 33+) and WifiConfiguration on API 26–29.
+  - Detects the hotspot interface IP and excludes the station Wi-Fi addresses.
+  - Clear errors for incompatible mode (tethering on), no channel, missing permission, and API < 26.
+- New `bootstrap/OfflinePcModule.kt`, registered in `LocalSharePackage.kt`:
+  - GATT service with INFO, HELLO, STATUS (+ CCCD) and CREDS.
+  - Read offsets (long reads) and prepared/long writes are handled.
+  - CREDS is gated to the HELLO writer once STATUS = 2.
+  - Connectable advertisement; the scan response carries the name and is retried without it if too large.
+  - Notify uses the API 33 signature when available.
+  - Methods: `isSupported`, `startSession`, `respond(accepted, port)`, `startHotspotOnly`, `stopAdvertisingOnly`, `stopSession`. Events: `OfflinePcHello`, `OfflinePcState`.
+- New JVM test `android/app/src/test/.../BootstrapCryptoTest.kt` (7 tests) with Node-generated vectors.
+
+### Phone JS
+- New `src/engine/pcBootstrapController.js`:
+  - Phases: idle → advertising → confirm → starting_hotspot → ready → connected; plus manual and failed.
+  - The code is always confirmed; it is never auto-approved.
+  - Timeouts: confirm 120 s (auto-decline); idle hotspot 300 s (released).
+  - The PC is remembered in the trust store after approval.
+- New `src/native/PcBootstrapTransport.js`. `NativeBridge.js` gained `offlinePc*`; `NativeEvents.js` gained `subscribeOfflinePc`.
+- `LocalShareNode.js`:
+  - Creates the controller (injectable transport) and exposes start, manual, respond and stop.
+  - A live connect completes the session; a live disconnect releases the hotspot; `stop()` disposes it.
+- `providers.js`: `offlinePcState` plus the four actions.
+- New `src/components/OfflinePcSheet.js` (code with tabular numerals, manual details, theme tokens). `DevicesScreen.js` gained a header button `offline-pc-button`.
+
+### PC
+- New `desktop/engine/offline-bootstrap.js`: the reference spec and both roles.
+- New `desktop/engine/wifi-join.js`:
+  - Profile XML with the SSID in hex, XML escaping, WPA2/WPA3/open.
+  - netsh orchestration with `windowsVerbatimArguments` and validated quoting.
+  - The password file is 0600 and deleted immediately.
+  - Detects the Location block; restore is idempotent.
+- New `desktop/engine/offline-session.js`: state machine. Join failures restore the previous Wi-Fi.
+- `desktop-node.js`:
+  - Creates `offlineSession` (`options.wifiJoiner` is injectable).
+  - New routes `/api/offline/{status,begin,creds,manual,cancel,end}`.
+  - `connectToLivePeer` sends `address: ''` for hotspot peers.
+  - The Wi-Fi is restored on a live disconnect from either side and on `stop()` (bounded at 5 s, timer cleared).
+- `main.js` / `preload.js`:
+  - `select-bluetooth-device` chooser forwarded to the page (`bluetooth:devices` / `bluetooth:select`).
+  - `shell:openSettings`, restricted to `ms-settings:` URIs.
+- `public/index.html`, `app.js`, `style.css`:
+  - "Connect without Wi-Fi" button and modal: device picker, code, step list, manual entry, error with a Location-settings shortcut.
+  - SSE `offline_state` updates the modal.
+- New `scripts/allow_firewall.ps1` and `npm run pc:firewall`.
+
+### Deviation from the plan
+- Trusted PCs are not auto-approved (see the security note in the design doc).
+
+### Tests and verification
+- New: `test/unit/offlineBootstrap.test.js` (9), `wifiJoin.test.js` (9, recorded netsh with real captured output), `offlineSession.test.js` (7, real crypto on both sides), `pcBootstrapController.test.js` (10), `test/integration/offlinePc.integration.test.js` (4: real DesktopEngine control API, a real fake-phone HTTP server and the real HTTP probe; only netsh is recorded).
+- Sandbox runner (real source and test files): new unit suites 35/35, together with every earlier suite run here 99/99.
+- Mutation checks, each caught:
+  - swapped transcript order
+  - GCM AAD removed
+  - password XML not deleted
+  - auto-approve without confirmation
+- Not run here: the integration suite (needs sockets), the full `npm test`, lint, type-check, Gradle and the JVM test. See BLOCKED.md.
+
+
+---
+
+## [Verification & Release Build] Offline Sharing Gates, Windows Cleanup & Packaging
+- **Date**: 2026-11-25
+- **Trigger**: Running the full local verification gates (`lint`, `type-check`, `test`, `test:integration`, Gradle, PC & Android release packaging) after the Nearby Connections and Offline PC BLE+Hotspot implementations.
+
+### Fixes Applied
+1. `desktop/main.js` (lines 77–86): Replaced dynamic `console[level]` assignment with a `wrapConsole(level, original)` helper assigning `console.info`, `console.warn`, and `console.error` explicitly, eliminating 2 ESLint `no-console` warnings.
+2. `nodejs-assets/nodejs-project/transfer-gateway.js` (line 155): Updated `options.onSessionRequest` JSDoc to accept the optional second `meta` parameter (`{ paired, pairedDevice }`), resolving `tsc --noEmit` error `TS2554` at line 565.
+3. `nodejs-assets/nodejs-project/transfer-gateway.js` (lines 211–212, 282–307, 691–698): Tracked open upload `fs.WriteStream` instances in `this.activeWriteStreams` and flushed/awaited their `'close'` events inside `stop()`. Resolves Windows `ENOTEMPTY` directory cleanup failures when an upload stream is aborted by `stop()`.
+4. `build_pc.ps1` (lines 64–96): Updated Stage 5 live health check to read the per-launch `controlToken` from `desktop-node.js` stdout and pass it via `x-localshare-control-token` header instead of making an unauthenticated `/api/self` request (which properly returns 401).
+
+### Verification Evidence
+- `npm run lint`: 0 errors, 0 warnings.
+- `npm run type-check`: 0 errors.
+- `npm test -- --ci`: 21/21 suites, 164/164 tests passing.
+- `npm run test:integration -- --ci`: 9/9 suites, 63/63 tests passing.
+- `.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug`: 12/12 JUnit tests passing (`BootstrapCryptoTest` 7/7, `ChunkEngineTest` 2/2, `EphemeralCertModuleTest` 1/1, `PinModuleTest` 2/2); debug APK built.
+- `.\build_pc.ps1`: Passed all 5 stages; packaged `dist\LocalShare-win32-x64\LocalShare.exe` (168.84 MB) and passed live engine smoke test.
+- `.\build_release.ps1`: Anti-Fake audit clean; built all 4 release APKs (`arm64-v8a` 33.47 MB, `armeabi-v7a` 31.85 MB, `universal` 83.56 MB, `x86_64` 35.17 MB).
+- `BLOCKED.md` and `BRAIN.md` synced. Only real multi-device hardware testing remains open in `BLOCKED.md`.

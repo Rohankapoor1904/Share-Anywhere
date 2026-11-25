@@ -95,7 +95,7 @@ export default function ReceivedScreen() {
         <View style={styles.header}>
           <View style={styles.headerTitleRow}>
             <Text style={[styles.headerTitle, { color: theme.colors.text }]}>Received Files</Text>
-            <View style={[styles.countBadge, { backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.primary }]}>
+            <View style={[styles.countBadge, { backgroundColor: theme.colors.primaryGlow, borderColor: 'transparent' }]}>
               <Text style={[styles.countBadgeText, { color: theme.colors.primary }]}>
                 {receivedFiles.length} {receivedFiles.length === 1 ? 'file' : 'files'}
               </Text>
@@ -168,7 +168,7 @@ export default function ReceivedScreen() {
           renderItem={({ item }) => (
             <GlassCard style={styles.fileCard} variant="interactive">
               <View style={styles.fileRow}>
-                <View style={[styles.fileTypeBadge, { backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.primary }]}>
+                <View style={[styles.fileTypeBadge, { backgroundColor: theme.colors.primaryGlow, borderColor: 'transparent' }]}>
                   <Icon name={fileTypeIcon(item.name)} size={19} color={theme.colors.primary} strokeWidth={1.9} />
                 </View>
                 <View style={styles.fileInfo}>
@@ -180,7 +180,7 @@ export default function ReceivedScreen() {
                   </Text>
                 </View>
                 <TouchableOpacity
-                  style={[styles.openBtn, { backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.primary }]}
+                  style={[styles.openBtn, { backgroundColor: theme.colors.primaryGlow, borderColor: 'transparent' }]}
                   onPress={() => handleOpenFile(item)}
                 >
                   <Icon name="eye" size={12} color={theme.colors.primary} strokeWidth={2.4} />
@@ -220,7 +220,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 22,
-    fontWeight: '800'
+    fontWeight: '700'
   },
   countBadge: {
     paddingHorizontal: 10,
@@ -230,7 +230,7 @@ const styles = StyleSheet.create({
   },
   countBadgeText: {
     fontSize: 11,
-    fontWeight: '800'
+    fontWeight: '700'
   },
   headerSubtitle: {
     fontSize: 13,
@@ -312,7 +312,7 @@ const styles = StyleSheet.create({
   },
   openBtnText: {
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
     marginLeft: 5
   }
 });

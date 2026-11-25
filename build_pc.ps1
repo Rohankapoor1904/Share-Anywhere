@@ -63,18 +63,35 @@ Write-Host " - Standalone Executable: $exePath ($([Math]::Round($exeSize, 2)) MB
 
 # 5. Live Health Check
 Write-Host "`n[5/5] Performing Live Desktop Engine Smoke Test..." -ForegroundColor Yellow
-$process = Start-Process node -ArgumentList "desktop\engine\desktop-node.js" -PassThru -NoNewWindow
+$smokeOut = [System.IO.Path]::GetTempFileName()
+$smokeErr = [System.IO.Path]::GetTempFileName()
+$process = Start-Process node -ArgumentList "desktop\engine\desktop-node.js" -PassThru -NoNewWindow -RedirectStandardOutput $smokeOut -RedirectStandardError $smokeErr
 try {
-    Start-Sleep -Seconds 3
-    $selfInfo = Invoke-RestMethod -Uri "http://127.0.0.1:53319/api/self" -Method Get -TimeoutSec 5
+    $token = $null
+    for ($i = 0; $i -lt 20; $i++) {
+        Start-Sleep -Milliseconds 300
+        if (Test-Path $smokeOut) {
+            $outText = Get-Content -Path $smokeOut -Raw -ErrorAction SilentlyContinue
+            if ($outText -match 'http://127\.0\.0\.1:53319/\?token=([0-9a-f]+)') {
+                $token = $Matches[1]
+                break
+            }
+        }
+    }
+    if (-not $token) {
+        throw "Desktop engine did not emit a control token within timeout."
+    }
+    $headers = @{ "x-localshare-control-token" = $token }
+    $selfInfo = Invoke-RestMethod -Uri "http://127.0.0.1:53319/api/self" -Headers $headers -Method Get -TimeoutSec 5
     Write-Host " - Self Device: $($selfInfo.displayName) ($($selfInfo.address):$($selfInfo.port))" -ForegroundColor Green
     Write-Host " - Storage:     $($selfInfo.storageDir)" -ForegroundColor Green
     Write-Host " - Platform:    $($selfInfo.platform)" -ForegroundColor Green
 
-    $peers = Invoke-RestMethod -Uri "http://127.0.0.1:53319/api/peers" -Method Get -TimeoutSec 5
+    $peers = Invoke-RestMethod -Uri "http://127.0.0.1:53319/api/peers" -Headers $headers -Method Get -TimeoutSec 5
     Write-Host " - Peer Service: Online (Active Peers: $($peers.Count))" -ForegroundColor Green
 } finally {
     Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+    Remove-Item -Path $smokeOut, $smokeErr -Force -ErrorAction SilentlyContinue
 }
 
 Write-Host "`n==========================================" -ForegroundColor Green

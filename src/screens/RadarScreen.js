@@ -75,7 +75,7 @@ export function PeerBlip({ peer, position, onPress }) {
             }
           ]}
         />
-        <View style={[styles.blipIcon, { backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.primary }]}>
+        <View style={[styles.blipIcon, { backgroundColor: theme.colors.primaryGlow, borderColor: 'transparent' }]}>
           <Icon name={platformIcon(peer.platform)} size={17} color={theme.colors.primary} strokeWidth={1.9} />
         </View>
       </View>
@@ -171,7 +171,7 @@ export default function RadarScreen({ navigation }) {
                 style={[
                   styles.toggleBtn,
                   isDiscovering
-                    ? { backgroundColor: theme.colors.dangerGlow, borderColor: theme.colors.danger, borderWidth: 1 }
+                    ? { backgroundColor: theme.colors.dangerGlow, borderColor: 'transparent', borderWidth: 1 }
                     : { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary, borderWidth: 1 }
                 ]}
                 onPress={() => {
@@ -227,7 +227,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 22,
-    fontWeight: '800'
+    fontWeight: '700'
   },
   headerSubtitle: {
     fontSize: 13,
@@ -277,7 +277,7 @@ const styles = StyleSheet.create({
   },
   blipName: {
     fontSize: 10,
-    fontWeight: '800'
+    fontWeight: '700'
   },
   blipIp: {
     fontSize: 8,
@@ -302,7 +302,7 @@ const styles = StyleSheet.create({
   },
   summaryTitle: {
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
     marginLeft: 7
   },
   summaryDesc: {
@@ -318,7 +318,7 @@ const styles = StyleSheet.create({
   },
   toggleBtnText: {
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
     marginLeft: 6
   }
 });

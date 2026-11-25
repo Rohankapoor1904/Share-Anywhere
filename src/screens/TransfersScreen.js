@@ -107,12 +107,13 @@ export default function TransfersScreen() {
 
   const handleOpenFile = async (file) => {
     try {
-      const url = file.path.startsWith('file://') ? file.path : `file://${file.path}`;
+      const filePath = file.path || file.filePath || '';
+      const url = filePath.startsWith('file://') ? filePath : `file://${filePath}`;
       const supported = await Linking.canOpenURL(url);
       if (supported) {
         await Linking.openURL(url);
       } else {
-        Alert.alert('Cannot Open File', `No app available on device to open ${file.name}.`);
+        Alert.alert('Cannot Open File', `No app available on device to open ${file.name || file.fileName}.`);
       }
     } catch (err) {
       logger.error('Failed to open received file:', err);
@@ -251,17 +252,13 @@ export default function TransfersScreen() {
 
           {screenTab === 'transfers' ? (
             <>
-              <View style={styles.header}>
-                <View style={styles.headerTitleRow}>
-                  <Text style={[styles.headerTitle, { color: theme.colors.text }]}>Transfers</Text>
-                  <View style={[styles.sessionBadge, { backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.primary }]}>
-                    <Text style={[styles.sessionBadgeText, { color: theme.colors.primary }]}>
-                      {transfers.length} {transfers.length === 1 ? 'session' : 'sessions'}
-                    </Text>
-                  </View>
-                </View>
-                <Text style={[styles.headerSubtitle, { color: theme.colors.textSecondary }]}>
-                  Real-time streaming TLS transfer sessions with chunk verification.
+              {/* Editorial Header */}
+              <View style={styles.editorialHeader}>
+                <Text style={[styles.editorialTitle, { color: theme.colors.text }]}>Transfers</Text>
+                <Text style={[styles.editorialSubtitle, { color: theme.colors.textSecondary }]}>
+                  {activeTransfers.length > 0
+                    ? `${activeTransfers.length} active transfer${activeTransfers.length > 1 ? 's' : ''}`
+                    : 'Activity history'}
                 </Text>
               </View>
 
@@ -273,7 +270,7 @@ export default function TransfersScreen() {
                     { backgroundColor: theme.colors.card, borderColor: theme.colors.borderHighlight }
                   ]}
                 >
-                  <View style={[styles.speedIconBadge, { backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.primary }]}>
+                  <View style={[styles.speedIconBadge, { backgroundColor: theme.colors.primaryGlow, borderColor: 'transparent' }]}>
                     <Icon name="activity" size={17} color={theme.colors.primary} strokeWidth={2.2} />
                   </View>
                   <View style={styles.speedInfo}>
@@ -328,29 +325,24 @@ export default function TransfersScreen() {
                     transfer={item}
                     onCancel={cancelTransfer}
                     onRetry={retryTransfer}
+                    onOpen={handleOpenFile}
                   />
                 )}
                 ListEmptyComponent={
                   <EmptyState
                     title={filter === 'all' ? 'No Active Transfers' : `No ${filter} transfers`}
-                    description="Transfers will stream here in real time with progress, speed, and SHA-256 verification."
+                    description="Transfers will stream here in real time with progress and speed."
                   />
                 }
               />
             </>
           ) : screenTab === 'received' ? (
             <>
-              <View style={styles.header}>
-                <View style={styles.headerTitleRow}>
-                  <Text style={[styles.headerTitle, { color: theme.colors.text }]}>Received Files</Text>
-                  <View style={[styles.sessionBadge, { backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.primary }]}>
-                    <Text style={[styles.sessionBadgeText, { color: theme.colors.primary }]}>
-                      {receivedFiles.length} {receivedFiles.length === 1 ? 'file' : 'files'}
-                    </Text>
-                  </View>
-                </View>
-                <Text style={[styles.headerSubtitle, { color: theme.colors.textSecondary }]}>
-                  Files securely transferred and SHA-256 verified over direct LAN.
+              {/* Editorial Header */}
+              <View style={styles.editorialHeader}>
+                <Text style={[styles.editorialTitle, { color: theme.colors.text }]}>Received</Text>
+                <Text style={[styles.editorialSubtitle, { color: theme.colors.textSecondary }]}>
+                  {receivedFiles.length} {receivedFiles.length === 1 ? 'file' : 'files'} saved to phone
                 </Text>
               </View>
 
@@ -359,8 +351,8 @@ export default function TransfersScreen() {
                   <Icon name="search" size={15} color={theme.colors.textMuted} style={styles.searchIcon} strokeWidth={2.2} />
                   <TextInput
                     style={[styles.searchInput, { color: theme.colors.text }]}
-                    placeholder="Search received files..."
-                    placeholderTextColor={theme.colors.textMuted}
+                    placeholder="Search received files..." // justified: TextInput hint
+                    placeholderTextColor={theme.colors.textMuted} // justified: TextInput hint
                     value={searchQuery}
                     onChangeText={setSearchQuery}
                   />
@@ -414,7 +406,7 @@ export default function TransfersScreen() {
                 renderItem={({ item }) => (
                   <GlassCard style={styles.fileCard}>
                     <View style={styles.fileRow}>
-                      <View style={[styles.fileTypeBadge, { backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.primary }]}>
+                      <View style={[styles.fileTypeBadge, { backgroundColor: theme.colors.primaryGlow, borderColor: 'transparent' }]}>
                         <Icon name={fileTypeIcon(item.name)} size={18} color={theme.colors.primary} strokeWidth={2} />
                       </View>
                       <View style={styles.fileInfo}>
@@ -422,14 +414,14 @@ export default function TransfersScreen() {
                           {item.name}
                         </Text>
                         <Text style={[styles.fileMeta, { color: theme.colors.textSecondary }]}>
-                          {formatBytes(item.size)} • Verified SHA-256
+                          {formatBytes(item.size)} • Verified
                         </Text>
                       </View>
                       <TouchableOpacity
                         style={[styles.openBtn, { borderColor: theme.colors.borderHighlight, backgroundColor: theme.colors.cardSolid }]}
                         onPress={() => handleOpenFile(item)}
                       >
-                        <Icon name="external-link" size={13} color={theme.colors.primary} strokeWidth={2.2} />
+                        <Icon name="eye" size={13} color={theme.colors.primary} strokeWidth={2.2} />
                         <Text style={[styles.openBtnText, { color: theme.colors.primary }]}>Open</Text>
                       </TouchableOpacity>
                     </View>
@@ -446,27 +438,13 @@ export default function TransfersScreen() {
           ) : (
             /* Clipboard Sync View */
             <>
-              <View style={styles.header}>
-                <View style={styles.headerTitleRow}>
-                  <Text style={[styles.headerTitle, { color: theme.colors.text }]}>Live Clipboard</Text>
-                  <View
-                    style={[
-                      styles.sessionBadge,
-                      {
-                        backgroundColor: isLiveConnected ? theme.colors.successGlow : theme.colors.primaryGlow,
-                        borderColor: isLiveConnected ? theme.colors.success : theme.colors.primary
-                      }
-                    ]}
-                  >
-                    <Text style={[styles.sessionBadgeText, { color: isLiveConnected ? theme.colors.success : theme.colors.primary }]}>
-                      {isLiveConnected ? 'Live Synced' : 'Ready'}
-                    </Text>
-                  </View>
-                </View>
-                <Text style={[styles.headerSubtitle, { color: theme.colors.textSecondary }]}>
+              {/* Editorial Header */}
+              <View style={styles.editorialHeader}>
+                <Text style={[styles.editorialTitle, { color: theme.colors.text }]}>Clipboard</Text>
+                <Text style={[styles.editorialSubtitle, { color: theme.colors.textSecondary }]}>
                   {isLiveConnected && connectedPeer
-                    ? `Connected to ${connectedPeer.displayName}. Mirroring: ${liveClipboardEnabled ? 'Active' : 'Paused'}.`
-                    : 'Connect to your PC from the Home tab to automatically mirror clipboard text.'}
+                    ? `Synced with ${connectedPeer.displayName} • ${liveClipboardEnabled ? 'Active' : 'Paused'}`
+                    : 'Live LAN clipboard history'}
                 </Text>
               </View>
 
@@ -499,7 +477,7 @@ export default function TransfersScreen() {
                 renderItem={({ item }) => (
                   <GlassCard style={styles.clipItemCard}>
                     <View style={styles.clipItemHeader}>
-                      <View style={[styles.clipOriginPill, { backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.primary }]}>
+                      <View style={[styles.clipOriginPill, { backgroundColor: theme.colors.primaryGlow, borderColor: 'transparent' }]}>
                         <Icon name="clipboard" size={11} color={theme.colors.primary} strokeWidth={2.4} />
                         <Text style={[styles.clipOriginText, { color: theme.colors.primary }]}>
                           {item.sender || 'LocalShare'}
@@ -519,24 +497,26 @@ export default function TransfersScreen() {
                         style={[styles.clipActionBtn, { borderColor: theme.colors.border, backgroundColor: theme.colors.cardSolid }]}
                         onPress={() => handleCopyClipToPhone(item.text)}
                       >
-                        <Icon name="copy" size={12} color={theme.colors.text} strokeWidth={2.2} />
-                        <Text style={[styles.clipActionBtnText, { color: theme.colors.text }]}>Copy to Phone</Text>
+                        <Icon name="copy" size={12} color={theme.colors.primary} strokeWidth={2.2} />
+                        <Text style={[styles.clipActionBtnText, { color: theme.colors.primary }]}>Copy to Phone</Text>
                       </TouchableOpacity>
 
-                      <TouchableOpacity
-                        style={[styles.clipActionBtn, { borderColor: theme.colors.primary, backgroundColor: theme.colors.primaryGlow }]}
-                        onPress={() => handleSendClipToPC(item.text)}
-                      >
-                        <Icon name="arrow-up" size={12} color={theme.colors.primary} strokeWidth={2.2} />
-                        <Text style={[styles.clipActionBtnText, { color: theme.colors.primary }]}>Send to PC</Text>
-                      </TouchableOpacity>
+                      {isLiveConnected ? (
+                        <TouchableOpacity
+                          style={[styles.clipActionBtn, { borderColor: theme.colors.border, backgroundColor: theme.colors.cardSolid }]}
+                          onPress={() => handleSendClipToPC(item.text)}
+                        >
+                          <Icon name="upload" size={12} color={theme.colors.textSecondary} strokeWidth={2.2} />
+                          <Text style={[styles.clipActionBtnText, { color: theme.colors.textSecondary }]}>Send to PC</Text>
+                        </TouchableOpacity>
+                      ) : null}
                     </View>
                   </GlassCard>
                 )}
                 ListEmptyComponent={
                   <EmptyState
-                    title="No Synced Clips Yet"
-                    description="Copy text on your phone or PC with Live Link active to automatically stream and sync here."
+                    title="No Clipboard History"
+                    description="Text copied on connected devices will sync and appear here automatically."
                   />
                 }
               />
@@ -553,68 +533,59 @@ const styles = StyleSheet.create({
     flex: 1
   },
   container: {
-    flex: 1,
-    padding: 16
+    padding: 14,
+    flex: 1
+  },
+  editorialHeader: {
+    marginBottom: 12,
+    paddingTop: 4
+  },
+  editorialTitle: {
+    fontSize: 26,
+    fontWeight: '700',
+    letterSpacing: -0.5
+  },
+  editorialSubtitle: {
+    fontSize: 13,
+    marginTop: 2
   },
   segmentedBar: {
     flexDirection: 'row',
-    borderRadius: 12,
+    borderRadius: 14,
+    borderCurve: 'continuous',
     borderWidth: 1,
-    padding: 4,
-    marginBottom: 16
+    padding: 3,
+    marginBottom: 12
   },
   segmentedTab: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
-    borderRadius: 8,
+    paddingVertical: 7,
+    borderRadius: 11,
+    borderCurve: 'continuous',
     gap: 6
   },
   segmentedTabText: {
     fontSize: 12,
-    fontWeight: '700'
-  },
-  header: {
-    marginBottom: 14
-  },
-  headerTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between'
-  },
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: '800'
-  },
-  headerSubtitle: {
-    fontSize: 12,
-    marginTop: 2,
-    lineHeight: 16
-  },
-  sessionBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-    borderWidth: 1
-  },
-  sessionBadgeText: {
-    fontSize: 11,
-    fontWeight: '700'
+    fontWeight: '700',
+    fontVariant: ['tabular-nums']
   },
   bandwidthBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
-    borderRadius: 12,
     borderWidth: 1,
+    borderRadius: 14,
+    borderCurve: 'continuous',
+    padding: 10,
     marginBottom: 12
   },
   speedIconBadge: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    borderCurve: 'continuous',
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -624,42 +595,46 @@ const styles = StyleSheet.create({
     flex: 1
   },
   speedLabel: {
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.5
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.4
   },
   speedVal: {
-    fontSize: 15,
-    fontWeight: '800',
-    marginTop: 1
+    fontSize: 14,
+    fontWeight: '700',
+    marginTop: 1,
+    fontVariant: ['tabular-nums']
   },
   filterBar: {
     flexDirection: 'row',
-    marginBottom: 12
+    marginBottom: 10,
+    gap: 6
   },
   filterChip: {
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 14,
-    borderWidth: 1,
-    marginRight: 6
+    borderRadius: 20,
+    borderCurve: 'continuous',
+    borderWidth: 1
   },
   filterChipText: {
     fontSize: 11,
-    fontWeight: '700'
+    fontWeight: '700',
+    fontVariant: ['tabular-nums']
   },
   listContent: {
     flexGrow: 1,
-    paddingBottom: 40
+    paddingBottom: 32
   },
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
     borderRadius: 12,
+    borderCurve: 'continuous',
     paddingHorizontal: 12,
-    height: 42,
-    marginBottom: 12
+    height: 40,
+    marginBottom: 10
   },
   searchIcon: {
     marginRight: 8
@@ -670,21 +645,24 @@ const styles = StyleSheet.create({
     padding: 0
   },
   fileCard: {
-    marginBottom: 8,
-    padding: 12
+    marginBottom: 6,
+    padding: 10,
+    borderRadius: 14,
+    borderCurve: 'continuous'
   },
   fileRow: {
     flexDirection: 'row',
     alignItems: 'center'
   },
   fileTypeBadge: {
-    width: 40,
-    height: 40,
+    width: 36,
+    height: 36,
     borderRadius: 10,
+    borderCurve: 'continuous',
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12
+    marginRight: 10
   },
   fileInfo: {
     flex: 1
@@ -695,14 +673,16 @@ const styles = StyleSheet.create({
     marginBottom: 2
   },
   fileMeta: {
-    fontSize: 11
+    fontSize: 11,
+    fontVariant: ['tabular-nums']
   },
   openBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 8,
+    borderRadius: 10,
+    borderCurve: 'continuous',
     borderWidth: 1,
     marginLeft: 8,
     gap: 4
@@ -712,8 +692,10 @@ const styles = StyleSheet.create({
     fontWeight: '700'
   },
   pushClipCard: {
-    marginBottom: 12,
-    padding: 12
+    marginBottom: 10,
+    padding: 12,
+    borderRadius: 14,
+    borderCurve: 'continuous'
   },
   pushClipRow: {
     flexDirection: 'row',
@@ -738,15 +720,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 10,
+    borderCurve: 'continuous',
     gap: 6
   },
   pushClipBtnText: {
     fontSize: 12,
-    fontWeight: '800'
+    fontWeight: '700'
   },
   clipItemCard: {
-    marginBottom: 10,
-    padding: 12
+    marginBottom: 8,
+    padding: 12,
+    borderRadius: 14,
+    borderCurve: 'continuous'
   },
   clipItemHeader: {
     flexDirection: 'row',
@@ -760,6 +745,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 7,
     paddingVertical: 2,
     borderRadius: 6,
+    borderCurve: 'continuous',
     borderWidth: 1,
     gap: 4
   },
@@ -768,13 +754,14 @@ const styles = StyleSheet.create({
     fontWeight: '700'
   },
   clipItemTime: {
-    fontSize: 10
+    fontSize: 10,
+    fontVariant: ['tabular-nums']
   },
   clipItemText: {
     fontSize: 13,
     lineHeight: 18,
     fontFamily: 'monospace',
-    marginBottom: 10
+    marginBottom: 8
   },
   clipItemActions: {
     flexDirection: 'row',
@@ -785,8 +772,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingVertical: 5,
     borderRadius: 8,
+    borderCurve: 'continuous',
     borderWidth: 1,
     gap: 4
   },

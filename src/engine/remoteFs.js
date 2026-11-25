@@ -1,7 +1,92 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NativeBridge } from '../native/NativeBridge';
 import { defaultLogger } from '../utils/logger';
 
 const logger = defaultLogger;
+
+const TOKEN_HEADER = 'x-localshare-token';
+const TOKENS_STORAGE_KEY = '@localshare:peer_tokens';
+
+/**
+ * Access tokens issued by paired peers. Stored under `id:<deviceId>` (survives the
+ * PC changing IP) and `addr:<address>:<port>` (for peers seen without an id), and
+ * saved so pairing survives app restarts.
+ * @type {Map<string, string>}
+ */
+const peerTokens = new Map();
+
+/**
+ * @param {object} peer
+ * @returns {string[]}
+ */
+function peerKeys(peer) {
+  const keys = [];
+  if (peer.deviceId) keys.push(`id:${peer.deviceId}`);
+  if (peer.address) keys.push(`addr:${peer.address}:${peer.port || 53318}`);
+  return keys;
+}
+
+function persistPeerTokens() {
+  AsyncStorage.setItem(TOKENS_STORAGE_KEY, JSON.stringify(Object.fromEntries(peerTokens)))
+    .catch((err) => logger.warn('Failed to save paired-device tokens:', err));
+}
+
+/**
+ * Restore saved tokens. Call once at startup, before reconnecting to a peer.
+ * @returns {Promise<void>}
+ */
+export async function loadPeerTokens() {
+  try {
+    const raw = await AsyncStorage.getItem(TOKENS_STORAGE_KEY);
+    if (!raw) return;
+    const saved = JSON.parse(raw);
+    if (!saved || typeof saved !== 'object') return;
+    Object.entries(saved).forEach(([key, token]) => {
+      if (typeof token === 'string' && token && !peerTokens.has(key)) peerTokens.set(key, token);
+    });
+  } catch (err) {
+    logger.warn('Failed to restore paired-device tokens:', err);
+  }
+}
+
+/**
+ * Remember (or forget, with an empty token) the access token a peer issued on /v1/live/connect.
+ * @param {object} peer
+ * @param {string} token
+ */
+export function setPeerAccessToken(peer, token) {
+  if (!peer || (!peer.address && !peer.deviceId)) return;
+  peerKeys(peer).forEach((key) => {
+    if (token) peerTokens.set(key, token);
+    else peerTokens.delete(key);
+  });
+  persistPeerTokens();
+}
+
+/**
+ * Access token for a peer this device has paired with, or ''.
+ * @param {object} peer
+ * @returns {string}
+ */
+export function getPeerAccessToken(peer) {
+  if (!peer || (!peer.address && !peer.deviceId)) return '';
+  if (peer.accessToken) return peer.accessToken;
+  for (const key of peerKeys(peer)) {
+    const token = peerTokens.get(key);
+    if (token) return token;
+  }
+  return '';
+}
+
+/**
+ * Headers that authorize a request to a paired peer.
+ * @param {object} peer
+ * @returns {Record<string, string>}
+ */
+export function peerAuthHeaders(peer) {
+  const token = getPeerAccessToken(peer);
+  return token ? { [TOKEN_HEADER]: token } : {};
+}
 
 /**
  * Build the base HTTP URL for a peer's LocalShare transfer gateway.
@@ -31,12 +116,31 @@ export class RemoteFsClient {
   }
 
   /**
+   * @param {Record<string, string>} [extra]
+   * @returns {Record<string, string>}
+   */
+  headers(extra = {}) {
+    return { ...extra, ...peerAuthHeaders(this.peer) };
+  }
+
+  /**
+   * Add the access token to a media URL (image/video sources and native
+   * downloads cannot send headers).
+   * @param {string} url
+   * @returns {string}
+   */
+  withToken(url) {
+    const token = getPeerAccessToken(this.peer);
+    return token ? `${url}&token=${encodeURIComponent(token)}` : url;
+  }
+
+  /**
    * List a directory on the remote peer.
    * @param {string} [path]
    * @returns {Promise<{ currentPath: string, parentPath: string|null, entries: Array<object> }>}
    */
   async list(path = '') {
-    const res = await fetch(`${this.baseUrl}/v1/fs/list?path=${encodeURIComponent(path)}`);
+    const res = await fetch(`${this.baseUrl}/v1/fs/list?path=${encodeURIComponent(path)}`, { headers: this.headers() });
     if (!res.ok) {
       throw new Error(`Remote list failed: HTTP ${res.status}`);
     }
@@ -52,7 +156,7 @@ export class RemoteFsClient {
   async copy(sourcePath, destinationPath) {
     const res = await fetch(`${this.baseUrl}/v1/fs/copy`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.headers({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ sourcePath, destinationPath })
     });
     if (!res.ok) {
@@ -69,7 +173,7 @@ export class RemoteFsClient {
   async remove(path) {
     const res = await fetch(`${this.baseUrl}/v1/fs/delete`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.headers({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ path })
     });
     if (!res.ok) {
@@ -84,7 +188,7 @@ export class RemoteFsClient {
    * @returns {string}
    */
   streamUrl(path) {
-    return `${this.baseUrl}/v1/fs/stream?path=${encodeURIComponent(path)}`;
+    return this.withToken(`${this.baseUrl}/v1/fs/stream?path=${encodeURIComponent(path)}`);
   }
 
   /**
@@ -93,7 +197,7 @@ export class RemoteFsClient {
    * @returns {string}
    */
   downloadUrl(path) {
-    return `${this.baseUrl}/v1/fs/download?path=${encodeURIComponent(path)}`;
+    return this.withToken(`${this.baseUrl}/v1/fs/download?path=${encodeURIComponent(path)}`);
   }
 
   /**
@@ -103,7 +207,7 @@ export class RemoteFsClient {
    * @returns {string}
    */
   thumbnailUrl(path, size = 240) {
-    return `${this.baseUrl}/v1/fs/thumbnail?path=${encodeURIComponent(path)}&size=${size}`;
+    return this.withToken(`${this.baseUrl}/v1/fs/thumbnail?path=${encodeURIComponent(path)}&size=${size}`);
   }
 
   /**
@@ -114,7 +218,7 @@ export class RemoteFsClient {
    * @returns {Promise<{ type: string, total: number, offset: number, limit: number, entries: Array<object> }>}
    */
   async categories(type = 'photos', limit = 60, offset = 0) {
-    const res = await fetch(`${this.baseUrl}/v1/fs/categories?type=${encodeURIComponent(type)}&limit=${limit}&offset=${offset}`);
+    const res = await fetch(`${this.baseUrl}/v1/fs/categories?type=${encodeURIComponent(type)}&limit=${limit}&offset=${offset}`, { headers: this.headers() });
     if (!res.ok) {
       throw new Error(`Categories fetch failed: HTTP ${res.status}`);
     }
@@ -127,7 +231,7 @@ export class RemoteFsClient {
    * @returns {Promise<{ query: string, count: number, entries: Array<object> }>}
    */
   async search(q) {
-    const res = await fetch(`${this.baseUrl}/v1/fs/search?q=${encodeURIComponent(q || '')}`);
+    const res = await fetch(`${this.baseUrl}/v1/fs/search?q=${encodeURIComponent(q || '')}`, { headers: this.headers() });
     if (!res.ok) {
       throw new Error(`Search failed: HTTP ${res.status}`);
     }
@@ -139,7 +243,7 @@ export class RemoteFsClient {
    * @returns {Promise<object>}
    */
   async telemetry() {
-    const res = await fetch(`${this.baseUrl}/v1/telemetry`);
+    const res = await fetch(`${this.baseUrl}/v1/telemetry`, { headers: this.headers() });
     if (!res.ok) {
       throw new Error(`Telemetry fetch failed: HTTP ${res.status}`);
     }
@@ -171,7 +275,7 @@ export class RemoteFsClient {
    * @returns {Promise<string>}
    */
   async getClipboard() {
-    const res = await fetch(`${this.baseUrl}/v1/clipboard`);
+    const res = await fetch(`${this.baseUrl}/v1/clipboard`, { headers: this.headers() });
     if (!res.ok) {
       throw new Error(`Clipboard fetch failed: HTTP ${res.status}`);
     }
@@ -188,7 +292,7 @@ export class RemoteFsClient {
   async setClipboard(text, sender = '') {
     const res = await fetch(`${this.baseUrl}/v1/clipboard`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.headers({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ text, sender })
     });
     if (!res.ok) {

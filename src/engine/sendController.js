@@ -12,6 +12,7 @@ import {
   IntegrityCheckFailedError
 } from '../utils/errors';
 import { NativeBridge } from '../native/NativeBridge';
+import { peerAuthHeaders } from './remoteFs';
 import { defaultLogger } from '../utils/logger';
 
 const logger = defaultLogger;
@@ -105,12 +106,14 @@ export class SendController {
    * @param {import('./trustStore').TrustStore} options.trustStore
    * @param {import('./pairing').PairingEngine} options.pairing
    * @param {object} options.selfDevice
+   * @param {import('./nearbyController').NearbyController} [options.nearby] - Offline transport.
    */
-  constructor({ events, trustStore, pairing, selfDevice }) {
+  constructor({ events, trustStore, pairing, selfDevice, nearby }) {
     this.events = events;
     this.trustStore = trustStore;
     this.pairing = pairing;
     this.selfDevice = selfDevice;
+    this.nearby = nearby || null;
 
     /** @type {Map<string, { abortController: AbortController, isCancelled: boolean }>} */
     this.activeTransfers = new Map();
@@ -139,11 +142,18 @@ export class SendController {
   }
 
   /**
-   * Send files to a peer (Native LocalShare TLS or LocalSend v2.2).
+   * Send files to a peer (Native LocalShare TLS, LocalSend v2.2, or Nearby when there is no shared Wi-Fi).
    * @param {object} peer - Target peer.
    * @param {Array<object>} files - Staged file descriptors.
    */
   async send(peer, files) {
+    // Nearby peers have no IP address, so they branch off before the address check.
+    if (peer && peer.transport === 'nearby') {
+      if (!this.nearby) {
+        throw new Error('Offline sharing (Nearby) is not available on this device');
+      }
+      return this.nearby.send(peer, files);
+    }
     if (!peer || !peer.address || !peer.port) {
       throw new Error('Invalid peer target: address and port required');
     }
@@ -188,7 +198,11 @@ export class SendController {
     for (let idx = 0; idx < files.length; idx++) {
       const f = files[idx];
       let sha256 = f.sha256 || '';
-      if (!sha256 && NativeBridge.isAvailable()) {
+      // The native sender hashes while it sends, so only hash up front when it can't be used.
+      const sendsNatively = NativeBridge.isAvailable() &&
+        typeof NativeBridge.sendFileStream === 'function' &&
+        Boolean(f.path || f.uri || f.id);
+      if (!sha256 && NativeBridge.isAvailable() && !sendsNatively) {
         try {
           sha256 = await computeFileSha256(f);
         } catch (err) {
@@ -228,9 +242,10 @@ export class SendController {
       });
 
       // 1. Handshake POST /v1/session
+      // The token lets a PC that paired with this phone accept the files without a prompt.
       const handshakeRes = await fetch(`${baseUrl}/v1/session`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...peerAuthHeaders(peer) },
         body: JSON.stringify(sessionReq.toJSON()),
         signal: abortController.signal
       });
@@ -245,6 +260,8 @@ export class SendController {
       }
 
       const resumeOffsets = sessionResp.resume || {};
+      // Receivers that advertise `stream` take each file as one continuous upload.
+      const useStream = sessionResp.stream === true;
 
       // 2. Transfer each file
       for (let idx = 0; idx < descriptors.length; idx++) {
@@ -261,7 +278,8 @@ export class SendController {
             desc.fileName,
             desc.fileSize,
             resumeOffsets[desc.fileId] || 0,
-            4 * 1024 * 1024
+            4 * 1024 * 1024,
+            useStream
           );
         } else {
           await this._uploadFileChunks(

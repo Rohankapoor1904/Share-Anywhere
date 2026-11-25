@@ -5,9 +5,14 @@ import { TrustStore } from './trustStore';
 import { PairingEngine } from './pairing';
 import { SendController } from './sendController';
 import { ReceiveController } from './receiveController';
+import { NearbyController } from './nearbyController';
+import { PcBootstrapController } from './pcBootstrapController';
 import { DeviceInfo } from './models';
+import { setPeerAccessToken, peerAuthHeaders, loadPeerTokens } from './remoteFs';
 import { NativeBridge } from '../native/NativeBridge';
 import { NativeEvents } from '../native/NativeEvents';
+import { NativeNearbyTransport } from '../native/NearbyTransport';
+import { NativePcBootstrapTransport } from '../native/PcBootstrapTransport';
 import { generateDeviceName } from '../utils/deviceName';
 import { requestDiscoveryPermissions, ensureNotificationPermission } from '../utils/permissions';
 import {
@@ -19,6 +24,8 @@ import { defaultLogger } from '../utils/logger';
 import { formatBytes } from '../utils/byteFormat';
 
 const logger = defaultLogger;
+
+const NEARBY_ENABLED_KEY = '@localshare:nearby_enabled';
 
 /**
  * Safely resolve local Wi-Fi IP address across mobile native and desktop/test environments.
@@ -68,7 +75,12 @@ function isLocalAddress(ip, localAddresses) {
 }
 
 export class LocalShareNode {
-  constructor() {
+  /**
+   * @param {object} [options]
+   * @param {any} [options.nearbyTransport] - Nearby transport (defaults to the native module).
+   * @param {any} [options.pcBootstrapTransport] - Offline PC connect transport (defaults to the native module).
+   */
+  constructor(options = {}) {
     this.events = new EngineEventEmitter();
     this.trustStore = new TrustStore();
 
@@ -90,11 +102,35 @@ export class LocalShareNode {
       platform: Platform.OS || 'unknown'
     });
 
+    // Offline phone-to-phone transport (Google Nearby Connections).
+    this.nearbySupported = false;
+    this.nearbyEnabled = true;
+    this.nearbyReason = '';
+    this.nearby = new NearbyController({
+      events: this.events,
+      pairing: this.pairing,
+      trustStore: this.trustStore,
+      selfDevice: this.selfDevice,
+      transport: options.nearbyTransport || NativeNearbyTransport,
+      onPeerSeen: (peer) => this._handlePeerSighting(peer),
+      onPeerGone: (endpointId, deviceId) => this._handleNearbyGone(endpointId, deviceId),
+      onPeerBandwidth: (endpointId, quality) => this._handleNearbyBandwidth(endpointId, quality)
+    });
+
+    // "Connect a PC without Wi-Fi": BLE handshake + phone hotspot.
+    this.pcBootstrap = new PcBootstrapController({
+      events: this.events,
+      trustStore: this.trustStore,
+      selfDevice: this.selfDevice,
+      transport: options.pcBootstrapTransport || NativePcBootstrapTransport
+    });
+
     this.sendController = new SendController({
       events: this.events,
       trustStore: this.trustStore,
       pairing: this.pairing,
-      selfDevice: this.selfDevice
+      selfDevice: this.selfDevice,
+      nearby: this.nearby
     });
 
     this.receiveController = new ReceiveController({
@@ -120,7 +156,7 @@ export class LocalShareNode {
     this.pingIntervalId = null;
     this.lastClipboardHash = '';
     this.appStateSub = null;
-    this.loadLastConnectedPeer().catch(() => {});
+    this.loadLastConnectedPeer().catch((err) => logger.warn('Failed to restore last connected peer:', err));
   }
 
   async loadLastConnectedPeer() {
@@ -133,7 +169,9 @@ export class LocalShareNode {
       if (autoVal !== null) {
         this.autoReconnectEnabled = autoVal === 'true';
       }
-    } catch (_) {}
+    } catch (err) {
+      logger.warn('Failed to read saved live-link settings:', err);
+    }
   }
 
   addClipboardHistory(text, hash, sender = 'local') {
@@ -156,13 +194,17 @@ export class LocalShareNode {
   async fetchPeerTelemetry(peer = this.connectedPeer) {
     if (!peer || !peer.address) return null;
     try {
-      const res = await fetch(`http://${peer.address}:${peer.port || 53318}/v1/telemetry`);
+      const res = await fetch(`http://${peer.address}:${peer.port || 53318}/v1/telemetry`, {
+        headers: peerAuthHeaders(peer)
+      });
       if (res.ok) {
         const data = await res.json();
         this.events.emit('LIVE_TELEMETRY_UPDATED', { peer, telemetry: data });
         return data;
       }
-    } catch (_) {}
+    } catch (err) {
+      logger.warn('Telemetry fetch failed:', err);
+    }
     return null;
   }
 
@@ -181,7 +223,38 @@ export class LocalShareNode {
   /**
    * Start the engine, load certificate, start native transfer server, and bind native listeners.
    */
+  /**
+   * Keep this phone's id and name the same across launches, so paired PCs
+   * recognise it and the name doesn't change every time the app opens.
+   */
+  async _loadIdentity() {
+    const KEY = '@localshare:device_identity';
+    try {
+      const raw = await AsyncStorage.getItem(KEY);
+      const saved = raw ? JSON.parse(raw) : null;
+      if (saved && typeof saved.deviceId === 'string' && /^[A-Za-z0-9._-]{3,64}$/.test(saved.deviceId)) {
+        this.selfDevice.deviceId = saved.deviceId;
+        if (typeof saved.displayName === 'string' && saved.displayName.trim()) {
+          this.selfDevice.displayName = saved.displayName;
+        }
+      } else {
+        await AsyncStorage.setItem(KEY, JSON.stringify({
+          deviceId: this.selfDevice.deviceId,
+          displayName: this.selfDevice.displayName
+        }));
+      }
+    } catch (err) {
+      logger.warn('Could not load the saved device identity:', err);
+    }
+    this.events.emit('SELF_DEVICE_UPDATED', this.selfDevice);
+  }
+
   async start() {
+    // Identity and saved pairings first: everything after this advertises the id,
+    // and auto-reconnect needs the stored token to connect without a prompt.
+    await this._loadIdentity();
+    await loadPeerTokens();
+
     // Notifications must be permitted before the status notification is posted,
     // otherwise Android 13+ silently drops it and the user gets no feedback until
     // a transfer is already in flight.
@@ -237,7 +310,7 @@ export class LocalShareNode {
         try {
           await fetch(`http://${this.connectedPeer.address}:${this.connectedPeer.port}/v1/clipboard`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...peerAuthHeaders(this.connectedPeer) },
             body: JSON.stringify({
               text,
               hash,
@@ -256,11 +329,17 @@ export class LocalShareNode {
         this.events.emit('CLIPBOARD_SYNCED', { text, hash, senderDeviceId });
       },
       onLivePeerConnected: (peerInfo) => {
+        // A PC that connects to this phone hands over a token for calling it back.
+        if (peerInfo && peerInfo.accessToken) {
+          setPeerAccessToken(peerInfo, peerInfo.accessToken);
+        }
         this.connectedPeer = peerInfo;
         this.refreshPeerLastSeen(peerInfo.deviceId);
         if (NativeBridge.isAvailable()) {
           NativeBridge.startClipboardMonitoring();
         }
+        // A PC joining this phone's hotspot completes an offline PC session.
+        this.pcBootstrap.handleLiveConnected(peerInfo);
         this.events.emit('LIVE_STATUS_CHANGED', { connected: true, peer: peerInfo });
       },
       onLivePeerDisconnected: () => {
@@ -268,6 +347,7 @@ export class LocalShareNode {
         if (NativeBridge.isAvailable()) {
           NativeBridge.stopClipboardMonitoring();
         }
+        this.pcBootstrap.handleLiveDisconnected();
         this.events.emit('LIVE_STATUS_CHANGED', { connected: false, peer: null });
       }
     });
@@ -297,11 +377,165 @@ export class LocalShareNode {
       this._sweepStalePeers();
     }, 5000);
 
+    await this._initNearby();
+
     // Post a persistent status notification immediately on launch so the user
     // is informed before any peer connection or transfer is established.
     this._updateNotification('LocalShare ready', 'Waiting for nearby devices to connect…');
 
     logger.info(`LocalShareNode started. Self device: ${this.selfDevice.displayName} (${this.selfDevice.deviceId})`);
+  }
+
+  /**
+   * Load the offline-sharing preference and find out whether Nearby can run here.
+   */
+  async _initNearby() {
+    try {
+      const saved = await AsyncStorage.getItem(NEARBY_ENABLED_KEY);
+      if (saved !== null) {
+        this.nearbyEnabled = saved === 'true';
+      }
+    } catch (err) {
+      logger.warn('Failed to read the offline sharing setting:', err);
+    }
+    try {
+      const support = await this.nearby.checkSupport();
+      this.nearbySupported = support.supported;
+      this.nearbyReason = support.reason;
+    } catch (err) {
+      this.nearbySupported = false;
+      this.nearbyReason = err && err.message ? err.message : 'Nearby availability check failed';
+      logger.warn('Nearby availability check failed:', err);
+    }
+    this.events.emit('NEARBY_STATE_CHANGED', this.getNearbyState());
+    // The device list can start discovery before start() finishes; catch up here.
+    if (this.discovering) {
+      await this._startNearby();
+    }
+  }
+
+  /**
+   * @returns {{ supported: boolean, enabled: boolean, reason: string }}
+   */
+  getNearbyState() {
+    return {
+      supported: this.nearbySupported,
+      enabled: this.nearbyEnabled,
+      reason: this.nearbyReason
+    };
+  }
+
+  /**
+   * Turn offline (Nearby) sharing on or off and remember the choice.
+   * @param {boolean} enabled
+   */
+  async setNearbyEnabled(enabled) {
+    this.nearbyEnabled = Boolean(enabled);
+    try {
+      await AsyncStorage.setItem(NEARBY_ENABLED_KEY, String(this.nearbyEnabled));
+    } catch (err) {
+      logger.warn('Failed to save the offline sharing setting:', err);
+    }
+    if (!this.nearbyEnabled) {
+      try {
+        await this.nearby.stop();
+      } catch (err) {
+        logger.warn('Failed stopping Nearby:', err.message);
+      }
+      this._dropNearbyPeers();
+    } else if (this.discovering) {
+      await this._startNearby();
+    }
+    this.events.emit('NEARBY_STATE_CHANGED', this.getNearbyState());
+    return this.getNearbyState();
+  }
+
+  async _startNearby() {
+    if (!this.nearbySupported || !this.nearbyEnabled) return;
+    try {
+      await this.nearby.startDiscovery();
+    } catch (err) {
+      logger.warn('Nearby discovery could not start:', err && err.message ? err.message : err);
+    }
+  }
+
+  /** Forget every peer that was only reachable over Nearby. */
+  _dropNearbyPeers() {
+    for (const [id, peer] of Array.from(this.peerMap.entries())) {
+      if (peer.transport === 'nearby') {
+        this.peerMap.delete(id);
+        this.events.emit(EngineEventType.PEER_LOST, peer);
+      } else if (peer.endpointId) {
+        const updated = new DeviceInfo({ ...peer.toJSON(), endpointId: '', nearbyBandwidth: '' });
+        this.peerMap.set(id, updated);
+        this.events.emit(EngineEventType.PEER_UPDATED, updated);
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------------
+  // Offline PC connect (BLE bootstrap + phone hotspot)
+  // ---------------------------------------------------------------------------------
+
+  /** @returns {object} Current offline PC session state. */
+  getOfflinePcState() {
+    return this.pcBootstrap.getState();
+  }
+
+  /** Advertise over Bluetooth so a PC can connect without a shared Wi-Fi. */
+  startOfflinePc() {
+    return this.pcBootstrap.start();
+  }
+
+  /** Fallback for a PC without Bluetooth: start the hotspot and show its details. */
+  startOfflinePcManual() {
+    return this.pcBootstrap.startManual();
+  }
+
+  /**
+   * @param {boolean} accepted - The user's answer after comparing the 6-digit code.
+   */
+  respondOfflinePc(accepted) {
+    return this.pcBootstrap.respond(accepted);
+  }
+
+  /** End the offline PC session (Bluetooth off, hotspot released). */
+  stopOfflinePc() {
+    return this.pcBootstrap.stop();
+  }
+
+  /**
+   * A Nearby endpoint went away: drop Nearby-only peers, keep LAN peers without the fallback.
+   * @param {string} endpointId
+   * @param {string} _deviceId
+   */
+  _handleNearbyGone(endpointId, _deviceId) {
+    for (const [id, peer] of Array.from(this.peerMap.entries())) {
+      if (!endpointId || peer.endpointId !== endpointId) continue;
+      if (peer.transport === 'nearby') {
+        this.peerMap.delete(id);
+        this.events.emit(EngineEventType.PEER_LOST, peer);
+      } else {
+        const updated = new DeviceInfo({ ...peer.toJSON(), endpointId: '', nearbyBandwidth: '' });
+        this.peerMap.set(id, updated);
+        this.events.emit(EngineEventType.PEER_UPDATED, updated);
+      }
+    }
+  }
+
+  /**
+   * Record measured Nearby throughput so the device list can flag a slow link.
+   * @param {string} endpointId
+   * @param {string} quality - 'LOW' or 'HIGH'
+   */
+  _handleNearbyBandwidth(endpointId, quality) {
+    for (const [id, peer] of this.peerMap.entries()) {
+      if (peer.endpointId === endpointId && peer.nearbyBandwidth !== quality) {
+        const updated = new DeviceInfo({ ...peer.toJSON(), nearbyBandwidth: quality });
+        this.peerMap.set(id, updated);
+        this.events.emit(EngineEventType.PEER_UPDATED, updated);
+      }
+    }
   }
 
   /**
@@ -366,6 +600,16 @@ export class LocalShareNode {
     }
     this.connectedPeer = null;
     try {
+      await this.nearby.stop();
+    } catch (err) {
+      logger.warn('Failed stopping Nearby:', err.message);
+    }
+    try {
+      await this.pcBootstrap.dispose();
+    } catch (err) {
+      logger.warn('Failed ending the offline PC session:', err.message);
+    }
+    try {
       await NativeBridge.stopServer();
     } catch (err) {
       logger.warn('Failed stopping native transfer server:', err.message);
@@ -386,8 +630,41 @@ export class LocalShareNode {
   /**
    * Start mDNS, BLE, and Subnet Range discovery.
    */
+  /**
+   * Learn this phone's Wi-Fi IP so its own mDNS/subnet echoes are never listed as a
+   * peer. Must run before discovery starts: mDNS can still return this phone's record
+   * from an earlier launch (different device id and certificate), and only the address
+   * identifies it.
+   */
+  async _refreshLocalAddress() {
+    try {
+      const ip = await getWifiIpAddress();
+      if (ip) {
+        this.detectedLocalIp = ip;
+        this.selfDevice.address = ip;
+        this._purgeSelfPeers();
+      }
+    } catch (err) {
+      logger.debug('Local IP detection failed:', err.message);
+    }
+  }
+
+  /** Drop any listed peer that is actually this phone. */
+  _purgeSelfPeers() {
+    for (const [id, peer] of this.peerMap.entries()) {
+      const isSelf = id === this.selfDevice.deviceId ||
+        (this.selfDevice.fingerprint && peer.fingerprint === this.selfDevice.fingerprint) ||
+        isLocalAddress(peer.address, [this.selfDevice.address, this.detectedLocalIp]);
+      if (isSelf) {
+        this.peerMap.delete(id);
+        this.events.emit(EngineEventType.PEER_LOST, peer);
+      }
+    }
+  }
+
   async startDiscovery() {
     this.discovering = true;
+    await this._refreshLocalAddress();
 
     try {
       await requestDiscoveryPermissions();
@@ -409,6 +686,9 @@ export class LocalShareNode {
     } catch (err) {
       logger.warn('Native discovery startup error:', err.message);
     }
+
+    // Offline phones (no shared Wi-Fi) are found over Nearby; failures never block LAN discovery.
+    await this._startNearby();
 
     // Trigger immediate subnet scan
     this.scanSubnet().catch((err) => {
@@ -452,6 +732,12 @@ export class LocalShareNode {
       logger.warn('Native discovery teardown error:', err.message);
     }
 
+    try {
+      await this.nearby.stopDiscovery();
+    } catch (err) {
+      logger.warn('Nearby discovery teardown error:', err.message);
+    }
+
     this.events.emit(EngineEventType.ENGINE_STATE_CHANGED, { discovering: false });
     logger.info('Discovery stopped.');
   }
@@ -471,6 +757,7 @@ export class LocalShareNode {
           localIp = detectedIp;
           this.detectedLocalIp = detectedIp;
           this.selfDevice.address = localIp;
+          this._purgeSelfPeers();
         }
       } catch (err) {
         logger.debug('Subnet scan IP detection error:', err.message);
@@ -532,8 +819,9 @@ export class LocalShareNode {
           return;
         }
       }
-    } catch (_e) {
+    } catch (err) {
       // Host unreachable
+      logger.debug(`Probe of ${ip} failed:`, err);
     }
 
     // 2. Probe LocalSend Port 53317
@@ -562,8 +850,9 @@ export class LocalShareNode {
           });
         }
       }
-    } catch (_e) {
+    } catch (err) {
       // Host unreachable
+      logger.debug(`Probe of ${ip} failed:`, err);
     }
   }
 
@@ -590,10 +879,30 @@ export class LocalShareNode {
     }
 
     const existing = this.peerMap.get(rawPeer.deviceId);
+
+    // Transport merge rule: a phone reachable on LAN keeps LAN routing (tested path, resumable),
+    // and a Nearby sighting only records the endpoint as a fallback. A LAN sighting of a
+    // Nearby-only peer upgrades it to LAN and keeps the endpoint.
+    let patch = rawPeer;
+    let refreshLastSeen = true;
+    if (rawPeer.transport === 'nearby') {
+      if (existing && existing.transport !== 'nearby') {
+        patch = {
+          deviceId: rawPeer.deviceId,
+          endpointId: rawPeer.endpointId,
+          ...(rawPeer.fingerprint && !existing.fingerprint ? { fingerprint: rawPeer.fingerprint } : {})
+        };
+        // LAN liveness is judged by LAN sightings only.
+        refreshLastSeen = false;
+      }
+    } else if (existing && existing.transport === 'nearby') {
+      patch = { ...rawPeer, transport: 'lan' };
+    }
+
     const updated = new DeviceInfo({
       ...(existing ? existing.toJSON() : {}),
-      ...rawPeer,
-      lastSeen: Date.now()
+      ...patch,
+      lastSeen: refreshLastSeen || !existing ? Date.now() : existing.lastSeen
     });
 
     this.peerMap.set(rawPeer.deviceId, updated);
@@ -604,11 +913,12 @@ export class LocalShareNode {
       this.events.emit(EngineEventType.PEER_FOUND, updated);
     }
 
-    if (this.autoReconnectEnabled && !this.connectedPeer && this.lastConnectedPeer) {
+    // The live link (clipboard, remote files) needs HTTP, so only LAN peers auto-reconnect.
+    if (this.autoReconnectEnabled && !this.connectedPeer && this.lastConnectedPeer && updated.transport !== 'nearby') {
       const match = (this.lastConnectedPeer.deviceId && this.lastConnectedPeer.deviceId === updated.deviceId) ||
                     (this.lastConnectedPeer.fingerprint && this.lastConnectedPeer.fingerprint === updated.fingerprint);
       if (match) {
-        this.connectToPeer(updated).catch(() => {});
+        this.connectToPeer(updated).catch((err) => logger.warn('Auto-reconnect failed:', err));
       }
     }
   }
@@ -624,7 +934,22 @@ export class LocalShareNode {
   _sweepStalePeers() {
     const now = Date.now();
     for (const [id, peer] of this.peerMap.entries()) {
+      // Nearby reports its own losses (onEndpointLost); its peers have no LAN heartbeat.
+      if (peer.transport === 'nearby') continue;
       if (now - peer.lastSeen > kPeerStaleMs) {
+        if (peer.endpointId && this.nearby.hasEndpoint(peer.endpointId)) {
+          // Left the Wi-Fi but still in Bluetooth range: fall back to Nearby instead of vanishing.
+          const demoted = new DeviceInfo({
+            ...peer.toJSON(),
+            transport: 'nearby',
+            address: '',
+            port: kDefaultPort,
+            lastSeen: now
+          });
+          this.peerMap.set(id, demoted);
+          this.events.emit(EngineEventType.PEER_UPDATED, demoted);
+          continue;
+        }
         this.peerMap.delete(id);
         this.events.emit(EngineEventType.PEER_LOST, peer);
       }
@@ -655,6 +980,10 @@ export class LocalShareNode {
   }
 
   cancelTransfer(sessionId) {
+    if (this.nearby.ownsSession(sessionId)) {
+      this.nearby.cancelSession(sessionId);
+      return;
+    }
     this.sendController.cancelTransfer(sessionId);
   }
 
@@ -679,6 +1008,8 @@ export class LocalShareNode {
    */
   respondIncomingSession(sessionId, accepted) {
     if (!sessionId) return;
+    // Nearby offers are answered over the Nearby link; everything else is the native HTTP server.
+    if (this.nearby.respondToOffer(sessionId, accepted)) return;
     this.receiveController.respondToSession(sessionId, accepted);
   }
 
@@ -701,13 +1032,18 @@ export class LocalShareNode {
    * @param {object} peer
    */
   async connectToPeer(peer) {
+    if (peer && peer.transport === 'nearby') {
+      throw new Error('A live connection needs both devices on the same Wi-Fi. Sending files works without it.');
+    }
     if (!peer || !peer.address || !peer.port) {
       throw new Error('Invalid peer for live connection');
     }
     const res = await fetch(`http://${peer.address}:${peer.port}/v1/live/connect`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...peerAuthHeaders(peer) },
       body: JSON.stringify({
+        // The code from the PC's QR/PIN screen pairs instantly; without it the PC asks its user.
+        pairingCode: peer.pairingCode || undefined,
         deviceId: this.selfDevice.deviceId,
         displayName: this.selfDevice.displayName,
         address: this.selfDevice.address,
@@ -717,9 +1053,13 @@ export class LocalShareNode {
       })
     });
     if (!res.ok) {
+      // The PC forgot this phone or declined it: drop the stale token so the next
+      // attempt asks for approval (or uses a fresh code) instead of failing silently.
+      if (res.status === 401 || res.status === 403) setPeerAccessToken(peer, '');
       throw new Error(`Connection rejected by peer: HTTP ${res.status}`);
     }
     const data = await res.json();
+    setPeerAccessToken(peer, typeof data.accessToken === 'string' ? data.accessToken : '');
     this.connectedPeer = peer;
     this.refreshPeerLastSeen(peer.deviceId);
     this.lastConnectedPeer = {
@@ -731,7 +1071,9 @@ export class LocalShareNode {
     };
     try {
       await AsyncStorage.setItem('@localshare:last_connected_peer', JSON.stringify(this.lastConnectedPeer));
-    } catch (_) {}
+    } catch (err) {
+      logger.warn('Failed to save last connected peer:', err);
+    }
     if (data.currentClipboard) {
       try {
         await NativeBridge.setClipboardText(data.currentClipboard);
@@ -744,7 +1086,7 @@ export class LocalShareNode {
     if (NativeBridge.isAvailable()) {
       NativeBridge.startClipboardMonitoring();
     }
-    this.fetchPeerTelemetry(peer).catch(() => {});
+    this.fetchPeerTelemetry(peer).catch((err) => logger.warn('Telemetry fetch failed:', err));
     this.events.emit('LIVE_STATUS_CHANGED', { connected: true, peer });
     return data;
   }
@@ -757,7 +1099,7 @@ export class LocalShareNode {
       try {
         await fetch(`http://${this.connectedPeer.address}:${this.connectedPeer.port}/v1/live/disconnect`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' }
+          headers: { 'Content-Type': 'application/json', ...peerAuthHeaders(this.connectedPeer) }
         });
       } catch (err) {
         logger.warn('Failed to notify peer of live disconnect:', err);

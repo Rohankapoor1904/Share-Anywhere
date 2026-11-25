@@ -11,7 +11,9 @@ const {
   TransferServerModule,
   TransferClientModule,
   TransferForegroundService,
-  StorageModule
+  StorageModule,
+  NearbyModule,
+  OfflinePcModule
 } = NativeModules;
 
 export const NativeBridge = {
@@ -158,8 +160,9 @@ export const NativeBridge = {
     throw new Error('TransferClientModule.uploadChunkFromUri is not available');
   },
 
-  // Native single-stream sender (sequential read from single open stream, 4MB chunks, incremental SHA-256)
-  async sendFileStream(baseUrl, sessionId, fileId, fileUri, fileName, totalBytes, startOffset = 0, chunkSize = 4194304) {
+  // Native sender: reads the file once, hashes as it goes. useStream sends the whole
+  // remainder in one request (/v1/stream); otherwise sequential chunkSize PUTs to /v1/chunk.
+  async sendFileStream(baseUrl, sessionId, fileId, fileUri, fileName, totalBytes, startOffset = 0, chunkSize = 4194304, useStream = false) {
     if (TransferClientModule && TransferClientModule.sendFileStream) {
       return TransferClientModule.sendFileStream(
         baseUrl,
@@ -169,7 +172,8 @@ export const NativeBridge = {
         fileName,
         totalBytes,
         startOffset,
-        chunkSize
+        chunkSize,
+        Boolean(useStream)
       );
     }
     throw new Error('TransferClientModule.sendFileStream is not available');
@@ -257,6 +261,176 @@ export const NativeBridge = {
   async checkClipboardOnActive() {
     if (StorageModule && StorageModule.checkClipboardOnActive) {
       return StorageModule.checkClipboardOnActive();
+    }
+    return false;
+  },
+
+  // Google Nearby Connections (offline phone-to-phone transport)
+  hasNearbyModule() {
+    return Platform.OS === 'android' && Boolean(NearbyModule);
+  },
+
+  async nearbyIsSupported() {
+    if (NearbyModule && NearbyModule.isSupported) {
+      return NearbyModule.isSupported();
+    }
+    return { supported: false, reason: 'Offline sharing needs the Android app with Google Play Services' };
+  },
+
+  async nearbyIsLocationServiceEnabled() {
+    if (NearbyModule && NearbyModule.isLocationServiceEnabled) {
+      return NearbyModule.isLocationServiceEnabled();
+    }
+    return true;
+  },
+
+  async nearbyOpenLocationSettings() {
+    if (NearbyModule && NearbyModule.openLocationSettings) {
+      return NearbyModule.openLocationSettings();
+    }
+    throw new Error('NearbyModule.openLocationSettings is not available');
+  },
+
+  async nearbyStartAdvertising(endpointInfo) {
+    if (NearbyModule && NearbyModule.startAdvertising) {
+      return NearbyModule.startAdvertising(endpointInfo);
+    }
+    throw new Error('NearbyModule.startAdvertising is not available');
+  },
+
+  async nearbyStartDiscovery() {
+    if (NearbyModule && NearbyModule.startDiscovery) {
+      return NearbyModule.startDiscovery();
+    }
+    throw new Error('NearbyModule.startDiscovery is not available');
+  },
+
+  async nearbyStopAdvertising() {
+    if (NearbyModule && NearbyModule.stopAdvertising) {
+      return NearbyModule.stopAdvertising();
+    }
+  },
+
+  async nearbyStopDiscovery() {
+    if (NearbyModule && NearbyModule.stopDiscovery) {
+      return NearbyModule.stopDiscovery();
+    }
+  },
+
+  async nearbyStopAll() {
+    if (NearbyModule && NearbyModule.stopAll) {
+      return NearbyModule.stopAll();
+    }
+  },
+
+  async nearbyRequestConnection(endpointId, endpointInfo) {
+    if (NearbyModule && NearbyModule.requestConnection) {
+      return NearbyModule.requestConnection(endpointId, endpointInfo);
+    }
+    throw new Error('NearbyModule.requestConnection is not available');
+  },
+
+  async nearbyAcceptConnection(endpointId) {
+    if (NearbyModule && NearbyModule.acceptConnection) {
+      return NearbyModule.acceptConnection(endpointId);
+    }
+    throw new Error('NearbyModule.acceptConnection is not available');
+  },
+
+  async nearbyDisconnect(endpointId) {
+    if (NearbyModule && NearbyModule.disconnect) {
+      return NearbyModule.disconnect(endpointId);
+    }
+  },
+
+  async nearbySendControl(endpointId, json) {
+    if (NearbyModule && NearbyModule.sendControl) {
+      return NearbyModule.sendControl(endpointId, json);
+    }
+    throw new Error('NearbyModule.sendControl is not available');
+  },
+
+  async nearbyPrepareFile(pathOrUri) {
+    if (NearbyModule && NearbyModule.prepareFile) {
+      return NearbyModule.prepareFile(pathOrUri);
+    }
+    throw new Error('NearbyModule.prepareFile is not available');
+  },
+
+  async nearbySendPreparedFile(endpointId, payloadId) {
+    if (NearbyModule && NearbyModule.sendPreparedFile) {
+      return NearbyModule.sendPreparedFile(endpointId, payloadId);
+    }
+    throw new Error('NearbyModule.sendPreparedFile is not available');
+  },
+
+  async nearbyCancelPayload(payloadId) {
+    if (NearbyModule && NearbyModule.cancelPayload) {
+      return NearbyModule.cancelPayload(payloadId);
+    }
+    throw new Error('NearbyModule.cancelPayload is not available');
+  },
+
+  async nearbySaveReceivedFile(payloadId, fileName) {
+    if (NearbyModule && NearbyModule.saveReceivedFile) {
+      return NearbyModule.saveReceivedFile(payloadId, fileName);
+    }
+    throw new Error('NearbyModule.saveReceivedFile is not available');
+  },
+
+  async nearbyDiscardReceivedFile(payloadId) {
+    if (NearbyModule && NearbyModule.discardReceivedFile) {
+      return NearbyModule.discardReceivedFile(payloadId);
+    }
+    throw new Error('NearbyModule.discardReceivedFile is not available');
+  },
+
+  async nearbyDeleteSavedFile(path) {
+    if (NearbyModule && NearbyModule.deleteSavedFile) {
+      return NearbyModule.deleteSavedFile(path);
+    }
+    throw new Error('NearbyModule.deleteSavedFile is not available');
+  },
+
+  // Offline PC connect (BLE bootstrap + Local-Only Hotspot)
+  async offlinePcIsSupported() {
+    if (OfflinePcModule && OfflinePcModule.isSupported) {
+      return OfflinePcModule.isSupported();
+    }
+    return { ble: false, hotspot: false, bluetoothOn: false, reason: 'Connecting a PC without Wi-Fi needs the Android app' };
+  },
+
+  async offlinePcStartSession(selfJson) {
+    if (OfflinePcModule && OfflinePcModule.startSession) {
+      return OfflinePcModule.startSession(selfJson);
+    }
+    throw new Error('OfflinePcModule.startSession is not available');
+  },
+
+  async offlinePcRespond(accepted, port) {
+    if (OfflinePcModule && OfflinePcModule.respond) {
+      return OfflinePcModule.respond(Boolean(accepted), port);
+    }
+    throw new Error('OfflinePcModule.respond is not available');
+  },
+
+  async offlinePcStartHotspotOnly(port) {
+    if (OfflinePcModule && OfflinePcModule.startHotspotOnly) {
+      return OfflinePcModule.startHotspotOnly(port);
+    }
+    throw new Error('OfflinePcModule.startHotspotOnly is not available');
+  },
+
+  async offlinePcStopAdvertising() {
+    if (OfflinePcModule && OfflinePcModule.stopAdvertisingOnly) {
+      return OfflinePcModule.stopAdvertisingOnly();
+    }
+    return false;
+  },
+
+  async offlinePcStopSession() {
+    if (OfflinePcModule && OfflinePcModule.stopSession) {
+      return OfflinePcModule.stopSession();
     }
     return false;
   }

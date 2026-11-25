@@ -14,10 +14,17 @@ export class DeviceInfo {
     this.protocolVersion = typeof data.protocolVersion === 'number' ? data.protocolVersion : kProtocolVersion;
     this.lastSeen = typeof data.lastSeen === 'number' ? data.lastSeen : Date.now();
     this.discoveryChannel = String(data.discoveryChannel || 'unknown');
+    // 'lan' (HTTP over Wi-Fi) or 'nearby' (Google Nearby Connections, no shared Wi-Fi needed).
+    this.transport = data.transport === 'nearby' ? 'nearby' : 'lan';
+    // Nearby endpoint id; set whenever the peer is reachable over Nearby, even when LAN is preferred.
+    this.endpointId = String(data.endpointId || '');
+    // Measured Nearby throughput class: '' (unknown), 'LOW' or 'HIGH'.
+    this.nearbyBandwidth = data.nearbyBandwidth === 'LOW' || data.nearbyBandwidth === 'HIGH' ? data.nearbyBandwidth : '';
   }
 
   toJSON() {
-    return {
+    /** @type {Record<string, any>} */
+    const json = {
       deviceId: this.deviceId,
       displayName: this.displayName,
       address: this.address,
@@ -28,6 +35,11 @@ export class DeviceInfo {
       lastSeen: this.lastSeen,
       discoveryChannel: this.discoveryChannel
     };
+    // Nearby fields are local routing state; LAN wire payloads stay unchanged without them.
+    if (this.transport === 'nearby') json.transport = this.transport;
+    if (this.endpointId) json.endpointId = this.endpointId;
+    if (this.nearbyBandwidth) json.nearbyBandwidth = this.nearbyBandwidth;
+    return json;
   }
 
   static fromJSON(json) {

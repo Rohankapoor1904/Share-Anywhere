@@ -9,12 +9,13 @@
     "type-check": "tsc --noEmit",
     "lint": "eslint . --max-warnings=0",
     "test": "jest",
-    "test:integration": "jest --config jest.integration.config.js",
+    "test:integration": "jest --config jest.integration.config.js --runInBand",
     "desktop": "node scripts/run_desktop.js",
     "desktop:build": "node ./scripts/build_desktop.js",
     "pc": "node scripts/run_desktop.js",
     "pc:server": "node desktop/engine/desktop-node.js",
-    "e2e": "detox test --configuration android.emu.debug"
+    "e2e": "detox test --configuration android.emu.debug",
+    "pc:firewall": "powershell -ExecutionPolicy Bypass -File scripts/allow_firewall.ps1"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^1.23.1",

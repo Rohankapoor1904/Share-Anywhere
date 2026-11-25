@@ -265,8 +265,8 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: '50%',
     fontSize: 8,
-    fontWeight: '800',
-    letterSpacing: 0.8,
+    fontWeight: '700',
+    letterSpacing: 0.4,
     marginLeft: 6
   },
   rangeNear: {
@@ -284,16 +284,16 @@ const styles = StyleSheet.create({
   },
   sweepArm: {
     width: 2.5,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.9,
-    shadowRadius: 8
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3
   },
   centerBeacon: {
     width: 14,
     height: 14,
     borderRadius: 7,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 1,
-    shadowRadius: 10
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4
   }
 });

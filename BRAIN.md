@@ -7,7 +7,36 @@
 - **Contract**: Anti-Fake Contract (§3) enforced. No mock data in app, no stubbed native modules, no swallowed errors, no fake progress, real sockets/tests only.
 
 ## Current State
-- **Status**: ALL PHASES COMPLETE, PHASE 16 O+ CONNECT-BEATING ARCHITECTURE & CONSUMER UI TRANSFORMATION IMPLEMENTED, ZERO MOCKS, 13/13 UNIT TESTS PASSING, 5/5 INTEGRATION TESTS PASSING, ZERO LINT WARNINGS, DESKTOP APP COMPILED, RELEASE APKs ASSEMBLED.
+- **Status**: ALL PHASES COMPLETE, OFFLINE SHARING (NEARBY + PC BLE/HOTSPOT) BUILT & VERIFIED, ZERO MOCKS, ZERO DEAD UI, 21/21 UNIT TEST SUITES (164/164 TESTS) PASSING, 9/9 INTEGRATION TEST SUITES (63/63 TESTS) PASSING, 12/12 ANDROID JUNIT TESTS PASSING, ZERO LINT WARNINGS/ERRORS, ZERO TS ERRORS.
+- **Offline Sharing: PC without Wi-Fi (2026-11-25)** (see `docs/architecture/offline-sharing.md` §2):
+  - Phone `OfflinePcModule.kt` runs a BLE GATT bootstrap (ECDH P-256 → 6-digit code → AES-GCM credentials) and starts a Local-Only Hotspot.
+  - The PC renderer uses Web Bluetooth; the engine (`offline-bootstrap.js`, `offline-session.js`, `wifi-join.js` netsh) joins the hotspot and opens the normal live link. The Wi-Fi is restored on disconnect or shutdown.
+  - The phone always confirms the code (no auto-approve).
+  - Manual fallback for PCs without Bluetooth. Firewall: `npm run pc:firewall`.
+  - Verified: `BootstrapCryptoTest` (7/7), `build_pc.ps1`, `build_release.ps1`, and full npm gates pass. Pending: physical PC+phone hardware checklist (`BLOCKED.md`).
+- **Offline Sharing: Nearby Connections (2026-11-25)** (see `docs/architecture/offline-sharing.md` and the change_log entry "Offline phone-to-phone sharing"):
+  - Phone↔phone without a shared Wi-Fi via `NearbyModule.kt` + `src/engine/nearbyController.js` + `nearbyProtocol.js`. LAN is preferred, Nearby is the fallback, and the existing TRANSFER_* events and approval UI are reused.
+  - Approval is gated, with the UKEY2 4-digit code in the dialog. Never auto-trusted. SHA-256 is verified per file. Rogue payloads are cancelled.
+  - Settings toggle "Offline Sharing (Nearby)" (needs Play Services). No resume on Nearby.
+  - Verified: `:app:assembleDebug`, `:app:assembleRelease`, and full npm gates pass. Pending: 2-phone real device tests (`BLOCKED.md`).
+- **Phase 10 Appllama Benchmark Mobile Design System & UI/UX Redesign Overhaul** (see `docs/audit/change_log.md` entry 10.1):
+  - **Platform Fidelity & Squircles**: Added `borderCurve: 'continuous'` and continuous corner radius scale across cards, modals, buttons, chips, and tiles (`tokens.js`, `GlassCard.js`, `PeerCard.js`, `TransferTile.js`, `EmptyState.js`).
+  - **Safe Area Aware Floating Navigation Dock**: Integrated `useSafeAreaInsets` in `AppNavigator.js` dynamically computing `bottom: Math.max(insets.bottom, 12)`, preventing overlap with iOS home indicators and Android navigation bars; added glowing pill indicator behind active tab.
+  - **Anti-Slop Token Enforcement**: Eliminated hardcoded non-semantic colors in `DevicesScreen.js` (replaced `#ec4899` with semantic `theme.colors.accent`/`accentGlow`), locked primary/accent palettes per theme, and verified high contrast across light (`daylight`) and dark themes.
+  - **Tabular Numeral Metrics**: Applied `fontVariant: ['tabular-nums']` across speeds, ETA countdowns, byte sizes, percentages, selection counts, and telemetry to prevent layout jitter during streaming transfers.
+  - **Scroll Clearance & Screen Harmony**: Standardized 116px bottom padding on all FlatLists and ScrollViews across `DevicesScreen`, `TransfersScreen`, `RemoteExplorerScreen`, and `SettingsScreen`.
+- **Phase 9 Anti-Demo Cleanup, Broken Feature Fixes & Flagship Design System Overhaul** (see `docs/audit/change_log.md` entry 9.1):
+  - **Zero-Dependency Pure-JS QR SVG Generator**: Created `desktop/engine/qr-svg.js` (versions 1-12, Reed-Solomon ECC L/M, 8 mask evaluations, crisp rounded module SVG output), eliminating the broken runtime `require('qrcode')` dependency and blank QR code on Desktop. Tested with `test/unit/qrSvg.test.js`.
+  - **Frameless Window Controls**: Configured `frame: false` and `titleBarStyle: 'hidden'` in `desktop/main.js`, exposed minimize, maximize, and close handlers via `preload.js` and wired them to custom controls.
+  - **Desktop Toast & Glass Confirm Modal System**: Replaced all native browser `alert()` and `confirm()` dialogs in `desktop/public/app.js` with non-blocking corner toast notifications (`showToast`) and a custom glass confirm modal dialog (`showConfirmModal`).
+  - **Single HTTP Request Media Category Counts**: Added explicit `bluetooth` directory support and `GET /v1/fs/category-counts` in `TransferServerModule.kt` and `/api/remote-category-counts` in `desktop-node.js`, fetching counts for all categories in a single request instead of 8 separate calls.
+  - **Smooth SVG Radial Gradient Ambiance**: Replaced harsh raw `View` circles in `src/components/AmbientBackground.js` with smooth `react-native-svg` `<RadialGradient>` glowing edges with opacity <= 0.14, eliminating hard visual circular cuts on Android.
+  - **Refined Elevated Monochrome Design System**: Softened neon cyan glow across `src/theme/themes.js` to quiet elevated surfaces with hairline borders (`rgba(255,255,255,0.08)`), preserving pure `#000000` AMOLED Obsidian and all `THEME_IDS`.
+  - **Mobile Floating Dock & Editorial Headers**: Enabled compact labels (Home, Files, Activity, Settings) and frosted glass dock styling in `src/navigation/AppNavigator.js`, hiding navigation stack headers to avoid duplication with in-screen 26px bold Editorial Screen Headers across all tabs.
+  - **DevicesScreen Cleanup**: Filtered connected PC out of nearby devices list, replaced 3 loud buttons with 1 primary Scan QR + 2 ghost buttons, added compact My QR header chip, formatted telemetry (e.g. "Windows PC • 84.8 GB free"), and added 104px paddingBottom.
+  - **RemoteExplorerScreen Upgrades**: Replaced bulky Target Device card with header device switcher pill, removed clipboard push/pull buttons, added 0.58 opacity dark scrim behind media thumbnail size badges for legibility, added multi-select batch download/delete floating action bar, and added 110px paddingBottom.
+  - **Transfers & Activity Polish**: Removed dev jargon subtitles and sessions badge in `src/screens/TransfersScreen.js`, passed open handler to `TransferTile`, and overhauled `TransferTile` to render completed transfers as quiet 1-row history items with an Open button while hiding full progress bars.
+  - **SettingsScreen Polish**: Fixed theme card badge collision on OLED Obsidian with `flex: 1` on title, rotated chevron icon for diagnostics, and added 110px paddingBottom to ScrollView.
 - **Phase 16 O+ Connect-Beating Flagship Architecture, Live Sync Fixes & Consumer UI Transformation** (see `docs/audit/change_log.md` entry 16.1):
   - **Echo-Free Clipboard Synchronization**: Added `ClipboardSyncState` shared thread-safe singleton in Kotlin (`ClipboardSyncState.kt`), synchronizing HTTP transfer server writes and Android OS primary clip changes to eliminate 100% of ping-pong echo loops. In PC Desktop (`desktop-node.js`), updated `lastClipboardHash` before UI broadcast and maintained last 15 clipboard history items.
   - **Bidirectional Live Connection & Real IP Resolution**: Fixed `/v1/live/ping` to accept both `GET` and `POST`. In `POST /v1/live/connect`, resolved caller IP from socket remote address if missing or loopback (`127.0.0.1` / `0.0.0.0`). Connected `onLiveConnected` and `onLiveDisconnected` lifecycle hooks across `TransferGateway` and `DesktopEngine`.
@@ -75,16 +104,25 @@
   - Interactive visual Theme Selector on `SettingsScreen` with live preview swatches and AsyncStorage persistence (`@localshare:theme_id`).
   - Dynamic React Navigation sync: active tab bar highlights, themed header backgrounds, and status bar styles (`light` / `dark`).
 - **Android Release APKs**:
-  - **Primary Phone APK (arm64-v8a)**: `android/app/build/outputs/apk/release/app-arm64-v8a-release.apk` (31.75 MB, SHA256: `DFEE787A137E8770D44C02A2A15F20EC8B99BDF186C2B8AD86067B4AF3FC59FE`)
-  - **Emulator / WSA APK (x86_64)**: `android/app/build/outputs/apk/release/app-x86_64-release.apk` (33.20 MB, SHA256: `BCB9179A6DC62805F0C52265DE92AAC88B104F8AA157423C11992C90855FFCA5`)
-  - **Legacy ARM APK (armeabi-v7a)**: `android/app/build/outputs/apk/release/app-armeabi-v7a-release.apk` (30.38 MB, SHA256: `625AAE12AF0867FF64AF8B2C77871945537710309A0232018DB21F58F98742FF`)
-  - **Universal APK**: `android/app/build/outputs/apk/release/app-universal-release.apk` (77.55 MB, SHA256: `6F0E4F18950224D8E34E58FBFA0D0FB0F2D85A814A643AE7C18E95815852E100`)
+  - **Primary Phone APK (arm64-v8a)**: `android/app/build/outputs/apk/release/app-arm64-v8a-release.apk` (33.47 MB, SHA256: `FAA93E8819BAC22833C711A0E6F9A4E39D4273EDD567873888FE31A3D264AB4A`)
+  - **Emulator / WSA APK (x86_64)**: `android/app/build/outputs/apk/release/app-x86_64-release.apk` (35.17 MB, SHA256: `65B6400E36ADC981D24B5902B3AD2A8760E0494AA777DCEBF6CEFD810712C063`)
+  - **Legacy ARM APK (armeabi-v7a)**: `android/app/build/outputs/apk/release/app-armeabi-v7a-release.apk` (31.85 MB, SHA256: `1FB671C72B3DF2FE222A43DC2886E09630C9C3061E085A339275C571FE4D23AF`)
+  - **Universal APK**: `android/app/build/outputs/apk/release/app-universal-release.apk` (83.56 MB, SHA256: `7830CE998E1E385F8D8F1310F6916F4652B8A24268D9CB65D18C6311003DED09`)
 - **Test Suite**:
-  - Unit Tests: 84/84 passing (`npm test`).
-  - Integration Tests: 18/18 passing on real sockets (`npm run test:integration`).
+  - Unit Tests: 164/164 passing across 21 suites (`npm test`).
+  - Integration Tests: 63/63 passing across 9 suites on real sockets (`npm run test:integration`).
+  - Android JUnit Tests: 12/12 passing (`./gradlew :app:testDebugUnitTest`, incl. `BootstrapCryptoTest` 7/7).
   - Linter: ESLint passing with 0 warnings and 0 errors (`npm run lint`).
   - Type-Check: TypeScript checkJs passing with 0 errors (`npm run type-check`).
   - Anti-Fake Audit: 0 forbidden markers, 0 swallowed errors, 0 skipped/todo tests.
+
+### Security model (2026-11-25)
+- **Control API (PC, 53319)**: loopback-only, loopback `Host` required, no CORS, per-launch `controlToken` (cookie `localshare_control` or header `x-localshare-control-token`). Electron loads `engine.getControlUrl()`.
+- **Transfer gateway (53318)**: protected `/v1/` routes need `x-localshare-token` (or `?token=` on media URLs). Tokens come from `/v1/live/connect` via pairing code (QR `code`), an existing token, or user approval (`incoming_request` with `kind: 'connect'`). Transfers stay gated by session approval.
+- **Filesystem**: remote paths confined to `getAllowedRoots()` (home + drive roots on desktop because `exposeDrives: true`); shared roots cannot be deleted.
+- **Received files**: names sanitized + de-duplicated; the PC reveals them in the file manager, never executes them.
+- **Transfers**: accepted sessions return `stream: true`; senders then PUT each file once to `/v1/stream` (hash computed in flight, reused at commit) and fall back to `/v1/chunk` otherwise.
+- **Not yet hardened**: the Android Kotlin `TransferServerModule` still serves `/v1/fs/*` and `/v1/live/connect` without auth.
 
 ## Architectural Map
 1. **Design System & Theme Engine (`src/theme/`)**:
@@ -101,6 +139,10 @@
    - `src/native/` (`NativeBridge.js`, `NativeEvents.js`)
 3. **Pure Standalone Windows Desktop Application (`desktop/`)**:
    - `desktop/main.js` (Electron native application window, IPC bridge, single instance lock, lifecycle)
+   - `desktop/preload.js` (secure contextBridge, window controls, IPC proxy)
+   - `desktop/engine/desktop-node.js` (desktop background node, multi-drive browsing, pooled streaming)
+   - `desktop/engine/qr-svg.js` (pure-JS zero-dependency scannable QR Code SVG generator)
+   - `desktop/public/` (3-pane O+ Connect desktop webview, date-grouped gallery, custom toasts & modals)
    - `desktop/preload.js` (secure `contextBridge` exposing `window.electronAPI`)
    - `desktop/engine/desktop-node.js` (TransferGateway 53318, LocalSendGateway 53317, `/api/send` socket engine, Control API 53319, high-contrast SVG QR generator)
    - `desktop/public/` (O+ Connect 3-pane layout: Primary sidebar, Secondary category drawer, Main content canvas with date-grouped gallery for APKs, photos, videos, and documents)

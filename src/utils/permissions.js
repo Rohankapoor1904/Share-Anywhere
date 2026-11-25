@@ -1,5 +1,6 @@
 import { PermissionsAndroid, Platform } from 'react-native';
 import { defaultLogger } from './logger';
+import { NativeBridge } from '../native/NativeBridge';
 
 const logger = defaultLogger;
 
@@ -111,6 +112,38 @@ export async function requestDiscoveryPermissions() {
     return true;
   } catch (err) {
     logger.warn('Failed requesting discovery permissions:', err);
+    return false;
+  }
+}
+
+/**
+ * Android 12 and older only report Bluetooth / Wi-Fi scan results (which Nearby relies on)
+ * while the system Location service is switched on.
+ * @returns {Promise<boolean>} true when offline sharing needs the user to turn Location on.
+ */
+export async function needsLocationServiceForNearby() {
+  if (Platform.OS !== 'android' || Number(Platform.Version) > 32) {
+    return false;
+  }
+  try {
+    const enabled = await NativeBridge.nearbyIsLocationServiceEnabled();
+    return !enabled;
+  } catch (err) {
+    logger.warn('Failed reading the Location service state:', err.message);
+    return false;
+  }
+}
+
+/**
+ * Open the system Location settings screen.
+ * @returns {Promise<boolean>}
+ */
+export async function openLocationSettings() {
+  try {
+    await NativeBridge.nearbyOpenLocationSettings();
+    return true;
+  } catch (err) {
+    logger.warn('Failed opening Location settings:', err.message);
     return false;
   }
 }
